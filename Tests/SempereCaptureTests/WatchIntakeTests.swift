@@ -173,8 +173,7 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 1)
         // And one already adopted (gone from the inbox) is in the received set.
         r.delivery.inboxes[r.vault] = []
-        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .duplicate)
-        XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 0)
+                XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 0)
     }
 
     // MARK: Routing by the capture's vault
@@ -294,9 +293,8 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertTrue(result.acknowledged)
         XCTAssertTrue(r.delivery.ledgers.isEmpty)
         XCTAssertTrue(r.delivery.inboxes.isEmpty)
-        XCTAssertTrue(r.intake.received.contains(meta.id), "a resend is a duplicate")
-        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .duplicate)
-        XCTAssertEqual(r.intake.held?.list().count, 1)
+        XCTAssertTrue(r.intake.received.contains(meta.id))
+                XCTAssertEqual(r.intake.held?.list().count, 1)
         // The user's decision: Add runs the normal path.
         r.delivery.enabled = true
         XCTAssertEqual(try r.intake.addHeld(try XCTUnwrap(r.intake.held?.list().first)), .vault)
@@ -343,6 +341,33 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertFalse(r.intake.canAddNow(item))
         r.delivery.epochs[r.vault] = nil
         XCTAssertTrue(r.intake.canAddNow(item))
+    }
+
+    /// Add and Delete renew a held note's received entry: a copy the watch sends again long after it arrived (its release
+    /// was lost) is a duplicate for the full `keepFor` after the Add or Delete, never judged again.
+    func testAddAndDeleteRenewTheReceivedEntry() throws {
+        final class Clock: @unchecked Sendable { var now = Date(timeIntervalSince1970: 1_800_000_000) }
+        let clock = Clock()
+        let r = try rig()
+        let intake = WatchIntake(received: WatchReceivedSet(url: nil, now: { clock.now }), delivery: r.delivery,
+                                 held: WatchHeldStore(root: r.dir.appendingPathComponent("held-renew")))
+        r.delivery.enabled = false
+        let (f1, m1, _) = try transfer(r)
+        let (f2, m2, _) = try transfer(r)
+        XCTAssertEqual(try intake.receive(file: f1, meta: m1).outcome, .held(.linkOff))
+        XCTAssertEqual(try intake.receive(file: f2, meta: m2).outcome, .held(.linkOff))
+        clock.now += WatchReceivedSet.keepFor - 24 * 3600   // held for almost the whole window
+        let items = try XCTUnwrap(intake.held?.list())
+        intake.deleteHeld(try XCTUnwrap(items.first { $0.id == m1.id }))
+        r.delivery.enabled = true
+        XCTAssertEqual(try intake.addHeld(try XCTUnwrap(items.first { $0.id == m2.id })), .vault)
+        clock.now += 30 * 24 * 3600   // past the window counted from receipt
+        try intake.received.insert(UUID())   // any insert prunes entries past the window
+        XCTAssertTrue(intake.received.contains(m1.id), "a deleted note's entry outlives its receipt")
+        XCTAssertTrue(intake.received.contains(m2.id), "an added note's entry outlives its receipt")
+        let (again, againMeta, _) = try transfer(r, id: m1.id)
+        XCTAssertEqual(try intake.receive(file: again, meta: againMeta).outcome, .duplicate)
+        XCTAssertEqual(intake.held?.list().count, 0, "the deleted note is not held again")
     }
 
     /// A second add of one held note (a double tap, two callers at once) is a no-op, not a failure or a second placement.

@@ -110,10 +110,15 @@ struct SyncTargetsSheet: View {
 
 /// One target: its kind, place and status line.
 private struct SyncTargetRow: View {
+    @AppModelEnvironment private var model
     let target: SyncTarget
     let session: SyncSession?
     let rechoose: () -> Void
     let remove: () -> Void
+    /// The provider syncs the folder as one item, or it has whole-folder conflict versions (docs/io.md "A vault folder
+    /// held as a package"): a warning, never a block.
+    @State private var packageWarning: FolderTargetPackageWarning?
+    @State private var showingPackageHelp = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -124,7 +129,8 @@ private struct SyncTargetRow: View {
                 Text(target.kind == .webdav ? (target.url ?? "") : (target.path ?? ""))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 if let session {
-                    Text(session.headline).font(.caption)
+                    // A problem stays in view while the next run goes (`settledKind`); otherwise syncing, synced, waiting.
+                    Text(session.needsAttention ? session.attentionHeadline : session.headline).font(.caption)
                         .foregroundStyle(session.needsAttention ? .orange : .secondary)
                     // A folder that went away, or a saved permission that no longer opens it (review of #72, G5).
                     if target.kind == .folder, session.status.kind == .problem(.notFound) || session.status.kind == .problem(.writeGrantLapsed) {
@@ -135,6 +141,16 @@ private struct SyncTargetRow: View {
                             .accessibilityIdentifier("syncTargetRechoose")
                     }
                 }
+                if let warning = packageWarning {
+                    Label(warningText(warning), systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                        .accessibilityIdentifier("syncTargetPackageWarning")
+                    Button("How to Fix…") { showingPackageHelp = true }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                        .help("How to move this sync folder to a plain folder")
+                        .accessibilityIdentifier("syncTargetPackageHelp")
+                }
             }
             Spacer(minLength: 0)
             Button(role: .destructive, action: remove) {
@@ -144,7 +160,43 @@ private struct SyncTargetRow: View {
             .help("Remove this sync target")
             .accessibilityIdentifier("syncTargetRemove")
         }
+        // Asked again when the row shows and whenever a run starts or ends (a run may merge or clear the flag).
+        .task(id: PackageCheck(target: target.id, syncing: session?.isSyncing == true)) {
+            packageWarning = await model.folderTargetPackageRecord(target)
+        }
+        .alert("Sync Folder Kept as a Package", isPresented: $showingPackageHelp) {
+            Button("OK") { showingPackageHelp = false }
+        } message: {
+            // No conflict versions of the folder (a new vault whose sync folder was a package from its first run): nothing
+            // to merge back, so the steps start at the new folder. Unknown (nil) gives the full steps.
+            let nothingToMerge = packageWarning?.record.hasUnresolvedConflicts == false
+            switch (packageWarning?.isICloudDrive ?? true, nothingToMerge) {
+            case (true, true):
+                Text("Your notes on this device are safe: they live in the app, and this folder has no conflicting versions to merge back. To give the other devices a plain folder: 1. On one device, choose Add Folder… and pick a folder in iCloud Drive that does not hold the old one (a new folder is simplest); Sempere makes a folder for the vault in it, ending in .sempere-vault, and copies the vault into it. 2. On each other device, add the same folder, then remove the old target. 3. Once every device syncs with the new folder, move the old folder to the Trash. Renaming the old folder does not help: iCloud Drive keeps it a package.")
+            case (false, true):
+                Text("Your notes on this device are safe: they live in the app, and this folder has no conflicting versions to merge back. To give the other devices a plain folder: 1. On one device, choose Add Folder… and pick a folder in the same cloud storage that does not hold the old one (a new folder is simplest); Sempere makes a folder for the vault in it, ending in .sempere-vault, and copies the vault into it. 2. On each other device, add the same folder, then remove the old target. 3. Once every device syncs with the new folder, move the old folder to the Trash. Renaming the old folder does not help: the provider keeps it a package.")
+            case (true, false):
+                Text("Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. Pause Sempere on every device (leave it closed) until step 3. 2. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its copy. 4. On one device, choose Add Folder… and pick a folder in iCloud Drive that does not hold the old one (a new folder is simplest); Sempere makes a folder for the vault in it, ending in .sempere-vault, and copies the vault into it. 5. On each other device, add the same folder, then remove the old target. 6. Before moving the old folder to the Trash, check that the files the merge copied back are in the new folder, and keep the merge’s quarantine folder. Renaming the old folder does not help: iCloud Drive keeps it a package.")
+            case (false, false):
+                Text("Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. Pause Sempere on every device (leave it closed) until step 3. 2. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its copy. 4. On one device, choose Add Folder… and pick a folder in the same cloud storage that does not hold the old one (a new folder is simplest); Sempere makes a folder for the vault in it, ending in .sempere-vault, and copies the vault into it. 5. On each other device, add the same folder, then remove the old target. 6. Before moving the old folder to the Trash, check that the files the merge copied back are in the new folder, and keep the merge’s quarantine folder. Renaming the old folder does not help: the provider keeps it a package.")
+            }
+        }
     }
+
+    private func warningText(_ warning: FolderTargetPackageWarning) -> String {
+        guard warning.record.heldAsPackage else {
+            return String(localized: "This folder has conflicting versions from other devices.")
+        }
+        return warning.isICloudDrive
+            ? String(localized: "iCloud Drive syncs this folder as one package, so changes made on two devices at once can hide each other’s files.")
+            : String(localized: "This folder’s provider syncs it as one package, so changes made on two devices at once can hide each other’s files.")
+    }
+}
+
+/// When a row asks again whether its folder is held as a package.
+private struct PackageCheck: Hashable {
+    var target: UUID
+    var syncing: Bool
 }
 
 /// A vault folder picked with "Open Vault…", waiting for the user's choice (`OpenVaultSheet`).

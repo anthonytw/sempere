@@ -9,6 +9,8 @@ extension MenuCommand {
     /// The menu item's title in `context` (nil: no window state known). Commands that
     /// switch something on and off say what they do next; the others are `title`.
     func title(in context: Context?) -> String {
+        // A saved tool's own name (user text, never translated).
+        if let n = savedToolNumber, let names = context?.savedToolNames, n <= names.count { return names[n - 1] }
         switch titleKind(in: context) {
         case .own: return title
         case .backToReading: return Self.backToReading
@@ -70,6 +72,7 @@ extension MenuCommand {
         case .deleteItem: return String(localized: "Delete Item", comment: "Note menu: delete the selected image, text box or other item")
         case .toggleRecording: return String(localized: "Start Recording", comment: "Note menu: start recording audio in the note")
         case .find: return String(localized: "Find Notes", comment: "Edit menu: search the notes")
+        case .askYourNotes: return String(localized: "Ask Your Notes…", comment: "Edit menu: ask a question the notes answer, on this device")
         case .undo: return String(localized: "Undo", comment: "Edit menu: undo")
         case .redo: return String(localized: "Redo", comment: "Edit menu: redo")
         case .toolPen: return String(localized: "Pen", comment: "Tools menu: select the pen")
@@ -77,6 +80,11 @@ extension MenuCommand {
         case .toolPencil: return String(localized: "Pencil", comment: "Tools menu: select the pencil tool")
         case .toolEraser: return String(localized: "Eraser", comment: "Tools menu: select the eraser")
         case .toolLasso: return String(localized: "Lasso", comment: "Tools menu: select the lasso")
+        case .savedTool1, .savedTool2, .savedTool3, .savedTool4, .savedTool5, .savedTool6, .savedTool7, .savedTool8,
+             .savedTool9:
+            return String(localized: "Saved Tool \(savedToolNumber ?? 0)", comment: "Tools menu: the nth saved tool, when its name is not known")
+        case .saveCurrentTool: return String(localized: "Save Current Tool as Preset…", comment: "Tools menu: save the pen or highlighter setup as a saved tool")
+        case .manageSavedTools: return String(localized: "Manage Saved Tools…", comment: "Tools menu: open Settings for the saved tools")
         case .toggleRuler: return String(localized: "Ruler", comment: "Tools menu: show or hide the ruler")
         case .toggleAnnotate: return String(localized: "Annotate", comment: "Tools menu: draw on the page (Annotate mode, the palette)")
         case .toggleHand: return String(localized: "Hand", comment: "Tools menu: Hand mode (select, move and resize items; nothing draws)")

@@ -41,7 +41,10 @@ final class SecretKeySharingTests: XCTestCase {
         }
         // SecretPasteboard is the one writer; on a Mac it also clears the item itself (Catalyst ignores the
         // expiration date), and the line that sets the item is the one with `setItems`.
-        XCTAssertTrue(writes.allSatisfy { $0.hasPrefix("KeyExportViews.swift:") }, "\(writes)")
+        // The one other write is Ask's explicit Copy button: the answer's text only (docs/design/1.3-ask.md §3.6, §5).
+        let others = writes.filter { !$0.hasPrefix("KeyExportViews.swift:") }
+        XCTAssertEqual(others.count, 1, "\(writes)")
+        XCTAssertTrue(others.first?.hasPrefix("AskViews.swift: UIPasteboard.general.string = result.answer") == true, "\(writes)")
         XCTAssertEqual(writes.filter { $0.contains("UIPasteboard.general.setItems") }.count, 1, "\(writes)")
         let board = try source("KeyExportViews.swift")
         XCTAssertTrue(board.contains("targetEnvironment(macCatalyst)") && board.contains("UIPasteboard.general.items = []"),
@@ -57,5 +60,28 @@ final class SecretKeySharingTests: XCTestCase {
         }
         let sheet = try source("ExportSheet.swift")
         XCTAssertTrue(sheet.contains("static let excluded: [UIActivity.ActivityType] = [.copyToPasteboard]"))
+    }
+
+    /// A key view shares a key only through `SecretSharing.present(` (UIKit over the screen) or its fallback
+    /// `ShareSheet(…, secret: true)`, and copies it only through `SecretPasteboard.copy(`: no share controller of its
+    /// own, no other pasteboard write.
+    func testSecretSharingAndSecretPasteboardAreTheOnlyPaths() throws {
+        for name in ["NewVaultView.swift", "KeyExportViews.swift"] {
+            let text = try source(name)
+            XCTAssertTrue(text.contains("SecretSharing.present("), name)
+            XCTAssertFalse(text.contains("UIActivityViewController("), "\(name): share a key through SecretSharing")
+            for line in text.split(separator: "\n") where line.contains("ShareSheet(") {
+                XCTAssertTrue(line.contains("secret: true"), "\(name): \(line)")
+            }
+        }
+        let receipt = try source("NewVaultView.swift")
+        XCTAssertTrue(receipt.contains("SecretPasteboard.copy("))
+        for line in receipt.split(separator: "\n") where line.contains("Pasteboard") && !line.contains("//") {
+            XCTAssertTrue(line.contains("SecretPasteboard.copy("), "NewVaultView.swift: \(line)")
+        }
+        // The one secret share controller is `SecretSharing.controller`, which `present` and `ShareSheet` use.
+        let sheet = try source("ExportSheet.swift")
+        XCTAssertTrue(sheet.contains("if secret { return SecretSharing.controller(items: items)"))
+        XCTAssertTrue(sheet.contains("let controller = controller(items: items)"))
     }
 }

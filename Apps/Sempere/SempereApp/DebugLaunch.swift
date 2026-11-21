@@ -229,7 +229,7 @@ enum DebugLaunch {
             return
         }
         if DemoLaunch.isActive {
-            await DemoLaunch.run(model, keys: keys)
+            await DemoLaunch.run(model, library: library, keys: keys)
             return
         }
         guard let vaultPath = env["SEMPERE_DEBUG_VAULT"] else { return }

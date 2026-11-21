@@ -189,17 +189,16 @@ final class FolderPickerUITests: XCTestCase {
             if skip.waitForExistence(timeout: 10) { skip.click() }
             XCTAssertTrue(skip.waitForNonExistence(timeout: 10), "the quick tour closed")
         }
-        // The note list's sync bar: the copy was written into the new folder.
-        let status = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label == %@", "webdavStatus",
-                                                          "Synced with the folder")).firstMatch
-        require(status, "the copy synced into the new folder", in: app, timeout: 120)
-        // File ▸ Sync Targets…: the target is the new folder.
+        // File ▸ Sync Targets…: the target is the new folder, and the copy was written into it (its status line; the note
+        // list shows a sync bar only when something is wrong, owner 2026-11-20).
         app.menuBars.menuBarItems["File"].firstMatch.click()
         let menuItem = app.menuBars.menuItems["Sync Targets…"].firstMatch
         require(menuItem, "File ▸ Sync Targets…", in: app)
         menuItem.click()
         require(element(app, "syncTargetsSheet"), "the Sync Targets sheet", in: app)
         require(text(app, containing: folderName), "the target in the new folder", in: app)
+        require(text(app, containing: "Synced with the folder"), "the copy synced into the new folder", in: app, timeout: 120)
+        XCTAssertFalse(app.descendants(matching: .any)["webdavStatus"].firstMatch.exists, "no sync bar while all is well")
         XCTAssertFalse(text(app, containing: "permission").exists, "no permission error")
         element(app, "syncTargetsDone").click()
         sleep(2)

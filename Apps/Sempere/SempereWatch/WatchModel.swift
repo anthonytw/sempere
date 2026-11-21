@@ -351,7 +351,8 @@ final class WatchModel {
         }
     }
 
-    private func updateUnsent() { unsent = outbox.unsentCount }
+    // Notes the phone holds for the user stay in the outbox (counted against its caps) but are not "unsent".
+    private func updateUnsent() { unsent = outbox.awaitingPhoneCount }
 
     /// Writes the status for the widgets and reloads them when it changed.
     private func publish() {
@@ -457,10 +458,12 @@ final class WatchModel {
     /// "Send now".
     func sendNow() { flushOutbox(launch: true) }
 
-    /// The phone's acknowledgement (`acked`) or its list (`have`): the files go.
+    /// The phone's acknowledgement (`acked`) or its list (`have`): the files go. Notes it holds (`held`) stay here until it
+    /// releases them; a note it no longer lists (its app was reinstalled) is sent again.
     func receive(ack: WatchAck) {
-        _ = try? outbox.acknowledge(ack)
+        let again = (try? outbox.apply(ack)) ?? []
         updateUnsent()
+        if !again.isEmpty { flushOutbox() }
     }
 
     /// `didFinish`: a failure keeps the file for a retry after a backoff; a success only says the phone's WatchConnectivity

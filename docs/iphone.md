@@ -19,8 +19,8 @@ column at a time:
    The phone and the iPad draw these rows themselves (`PhoneNotebookRows`): an outline row's tap only
    folds it on the phone's stack, and on the iPad a top-level row with sub-notebooks is a header whose
    tap only folds it; neither selects it, so a notebook holding sub-notebooks could not be opened
-   (PR #27 listed the whole tree unfolded for that; the iPad followed in 1.2.0's owner report). Only
-   the Mac keeps the system outline. A notebook chosen elsewhere is listed, its parents
+   (PR #27 listed the whole tree unfolded for that; the iPad followed in 1.2.0's owner report, the Mac,
+   whose top-level rows are headers too, in 1.3.0's). A notebook chosen elsewhere is listed, its parents
    unfolded,
 2. the note list (`NoteListView`, search field with scopes; New Note stays in the bar, Select, Sort
    and Handwriting move into the overflow menu),
@@ -270,6 +270,16 @@ why not share the palette across all devices for consistency?" So every device d
   Compact Palette elsewhere): pen, marker, eraser and lasso (plus a tool picked elsewhere, so the tool in use always
   shows), the choices in a popover; the iPhone's also has Undo and Redo (disabled when there is nothing to undo or redo). Pointer-friendly on a Mac: 36-point
   targets, hover highlights and a tooltip on every control.
+- **Saved tools** (1.3, issue #11, `docs/design/1.3-custom-tools.md`): a pen or highlighter setup (ink, color, exact
+  width, opacity) saved under a name. The full bar has a **Saved** group after the tools (one button per tool in its
+  color, lit while the palette's tool matches it exactly; **+** saves the current tool; a long press or right-click gives
+  Edit…, Duplicate, Move Left, Move Right, Delete; more than six scroll). The compact bar and the iPhone have a Saved
+  Tools button that opens the list (Edit to reorder and delete). The editor (`SavedToolEditor`, a sheet) has a name, the ink,
+  the swatches and any color, the width and the opacity, with a preview stroke. Applying a tool is a tool change like
+  any other (`DrawingToolState.apply`: the Pencil's "previous tool" returns to the one before). The list is the open vault's
+  shared settings with Sync Settings with This Vault on (`palette.tool.<uuid>`), else this device's own
+  (`Sempere.savedTools`); Settings ▸ Writing ▸ Saved Tools lists them; the Mac's Tools ▸ Saved Tools has ⌃⌘1–9.
+  `sempere tools` manages them from the command line.
 - **Apple Pencil**: double-tap and squeeze (`UIPencilInteraction`, while annotating) do what the user set in
   Settings ▸ Apple Pencil: switch to the eraser and back, switch to the previous tool, or show the color and width
   choices (`PencilPreferredAction`). PencilKit draws the tool's hover preview on the canvas by itself.

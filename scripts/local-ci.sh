@@ -18,6 +18,8 @@
 #                                     # release build (scripts/ci-linux.sh); posts `local/cli-suite`
 #   scripts/local-ci.sh --status      # the gate: also post `local/app-tests` to Gitea (informational; nothing requires it)
 #   scripts/local-ci.sh --no-status   # with any other mode: run, but post nothing to Gitea
+#   scripts/local-ci.sh --force-all   # with any mode: run every package test target again, here and in Docker, whatever passed before
+#                                     # (SEMPERE_CI_FORCE_ALL=1 does the same; --cli always does)
 #   scripts/local-ci.sh --list        # with any mode: print its steps and status, run nothing
 #   scripts/local-ci.sh --post-sweep SHA   # runs nothing: posts `local/release-sweep` for SHA if its tree equals the tree of a
 #                                     # commit that passed `--release` here (--no-status or not; the clean checkout's tree is
@@ -47,7 +49,8 @@ gate_context=local/app-tests
 mode=gate
 post=""
 list=false
-usage="usage: $0 [--testflight | --release | --cli] [--status | --no-status] [--list] | --post-sweep SHA"
+force_all=false
+usage="usage: $0 [--testflight | --release | --cli] [--status | --no-status] [--force-all] [--list] | --post-sweep SHA"
 if [[ ${1:-} == --post-sweep ]]; then
   [[ $# -eq 2 ]] || { echo "$usage" >&2; exit 2; }
   exec scripts/release-sweep-tree.sh post "$2"
@@ -59,6 +62,7 @@ for arg in "$@"; do
     --release) mode=release ;;
     --cli) mode=cli ;;
     --no-status) post=false ;;
+    --force-all) force_all=true ;;
     --list) list=true ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "$usage" >&2; exit 2 ;;
@@ -74,7 +78,7 @@ steps=("${gate_steps[@]}")
 case "$mode" in
   gate)       context=$gate_context ;;
   testflight) context=local/testflight-suite; steps+=(mac-perf mac-offline mac-smoke mac-ui watch-test) ;;
-  release)    context=local/release-sweep;    steps+=(mac-perf mac-offline mac-smoke ipad iphone pseudo mac-ui ipad-ui iphone-ui watch-test) ;;
+  release)    context=local/release-sweep;    steps+=(mac-perf mac-offline mac-smoke sim-unit pseudo mac-ui ipad-ui iphone-ui watch-test) ;;
   cli)        context=local/cli-suite; gate_steps=(); steps=(package linux webdav static) ;;
 esac
 
@@ -87,10 +91,12 @@ if [[ ${SEMPERE_CI_LINUX_LANE:-parallel} == parallel && $mode == gate ]]; then
   lane=(linux webdav); steps=(); for st in "${gate_steps[@]}"; do [[ $st == linux || $st == webdav ]] || steps+=("$st"); done; gate_steps=("${steps[@]}")
 fi
 
-# Only the gate skips targets that already passed with the same hash (docs/design/ci-lean.md); the release-bound
-# modes run every package test again, here and in the Docker jobs (ci-linux.sh passes the variable into the container).
-# The Linux jobs' records are in the same store as the Mac's (~/.cache/sempere-ci-pass, mounted into the container).
-[[ $mode == gate ]] || export SEMPERE_CI_FORCE_ALL=1
+# Every mode but --cli skips package test targets that already passed with the same hash on this machine
+# (docs/design/ci-lean.md); the posted status still means every step passed for this tree: a skipped target's inputs are
+# byte-identical to a run that passed. --cli, --force-all and SEMPERE_CI_FORCE_ALL=1 run every target, here and in the Docker
+# jobs (ci-linux.sh passes the variable into the container). The Linux jobs' records are in the same store as the Mac's
+# (~/.cache/sempere-ci-pass, mounted into the container).
+if [[ $mode == cli || $force_all == true ]]; then export SEMPERE_CI_FORCE_ALL=1; fi
 
 describe() {   # step: what it runs
   case "$1" in
@@ -104,8 +110,7 @@ describe() {   # step: what it runs
     mac-ui)     echo "scripts/app.sh test-mac-ui     (Mac UI tests; screen)" ;;
     mac-smoke)  echo "scripts/app.sh test-mac-smoke  (Mac launch smoke tests; screen)" ;;
     mac-perf)   echo "scripts/app.sh test-mac-perf   (the benchmarks: dense-note open time, scroll and zoom hitches, memory, note-open timings)" ;;
-    ipad)       echo "scripts/app.sh test            (iPad simulator unit tests)" ;;
-    iphone)     echo "scripts/app.sh test-phone      (iPhone simulator suites)" ;;
+    sim-unit)   echo "scripts/app.sh build-sim-unit, then test (iPad unit tests) and test-phone (iPhone suites) side by side on their own simulators, result bundles build/local-ci/{ipad,iphone}.xcresult; SEMPERE_SIM_UNIT=serial runs them one after the other" ;;
     iphone-ui)  echo "scripts/app.sh test-phone-ui   (iPhone simulator canvas UI tests: tap, hold, draw)" ;;
     ipad-ui)    echo "scripts/app.sh test-ui         (iPad simulator UI tests)" ;;
     pseudo)     echo "scripts/app.sh pseudo          (pseudo-languages on the iPad simulator)" ;;
@@ -116,6 +121,8 @@ describe() {   # step: what it runs
 }
 
 if [[ $list == true ]]; then
+  if [[ ${SEMPERE_CI_FORCE_ALL:-} == 1 || $mode == cli || $force_all == true ]]; then echo "local-ci $mode: every package test target runs (forced)"
+  else echo "local-ci $mode: package test targets whose hash already passed on this machine are skipped (--force-all runs them)"; fi
   echo "local-ci $mode: $([[ $post == true ]] && echo "posts $context$([[ $context != "$gate_context" && ${#gate_steps[@]} -gt 0 ]] && echo " (and $gate_context after the gate)")" || echo "posts nothing")"
   for step in "${steps[@]}"; do printf '  %-11s %s\n' "$step" "$(describe "$step")"; done
   for step in ${lane[@]+"${lane[@]}"}; do printf '  %-11s %s   [beside the steps above]\n' "$step" "$(describe "$step")"; done
@@ -149,6 +156,23 @@ status() {   # context, state, description
   forge_post_status "$sha" "$1" "$2" "$3"
 }
 
+# The iPad and iPhone unit suites on products built once, side by side (two simulators, two result bundles). One log, both outputs.
+sim_unit() {
+  # One simulator clone (the build lock's SEMPERE_SIM_ID) cannot run both suites at once: serial then.
+  if [[ ${SEMPERE_SIM_UNIT:-parallel} == serial || -n ${SEMPERE_SIM_ID:-} ]]; then scripts/app.sh test && scripts/app.sh test-phone; return; fi
+  scripts/app.sh build-sim-unit || return 1
+  local a b ra=0 rb=0
+  SEMPERE_XCB_ACTION=test-without-building SEMPERE_RESULT_BUNDLE=build/local-ci/ipad.xcresult \
+    scripts/app.sh test > build/local-ci/ipad.log 2>&1 & a=$!
+  SEMPERE_XCB_ACTION=test-without-building SEMPERE_RESULT_BUNDLE=build/local-ci/iphone.xcresult \
+    scripts/app.sh test-phone > build/local-ci/iphone.log 2>&1 & b=$!
+  wait "$a" || ra=$?
+  wait "$b" || rb=$?
+  echo "== iPad unit suites (exit $ra)"; cat build/local-ci/ipad.log
+  echo "== iPhone suites (exit $rb)"; cat build/local-ci/iphone.log
+  [[ $ra -eq 0 && $rb -eq 0 ]]
+}
+
 run_step() {
   case "$1" in
     help)       scripts/check-help.py --self-test && /usr/bin/python3 -I scripts/ci-hash.py --self-test && scripts/test-ci-hash-guard.sh && /usr/bin/python3 -I scripts/ci-hash.py check-reads && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && scripts/test-mirror-gitea.sh >/dev/null && scripts/test-release-flow.sh >/dev/null && scripts/test-release-sweep-tree.sh >/dev/null && /usr/bin/python3 -I scripts/ci-gate-decision.py --self-test && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
@@ -161,8 +185,7 @@ run_step() {
     mac-ui)     scripts/app.sh test-mac-ui ;;
     mac-smoke)  scripts/app.sh test-mac-smoke ;;
     mac-perf)   scripts/app.sh test-mac-perf ;;
-    ipad)       scripts/app.sh test ;;
-    iphone)     scripts/app.sh test-phone ;;
+    sim-unit)   sim_unit ;;
     iphone-ui)  scripts/app.sh test-phone-ui ;;
     ipad-ui)    scripts/app.sh test-ui ;;
     pseudo)     scripts/app.sh pseudo ;;
@@ -227,6 +250,18 @@ on_signal() {   # SIGINT/SIGTERM: nothing passed; stop everything, post no succe
   status "$context" error "interrupted on $host"
   exit 130
 }
+# Every exit path (a passed run, a failed step, a signal, `set -e`): nothing this run started is left running, its Docker lane's
+# containers are removed, its temp folder goes. The simulators and Mac test hosts are cleaned by app.sh's own exit trap
+# (scripts/app.sh "Cleanup on every exit path"), which runs when the step's process is stopped here.
+final_cleanup() {
+  trap - EXIT INT TERM
+  [[ -n $step_pid ]] && kill_tree "$step_pid"
+  [[ ${#lane[@]} -gt 0 ]] && lane_stop
+  local j
+  for j in $(jobs -p 2>/dev/null); do kill_tree "$j"; done
+  run_tmp_end
+}
+trap final_cleanup EXIT
 trap on_signal INT TERM
 if [[ ${#lane[@]} -gt 0 ]]; then
   rm -f build/local-ci/lane.result

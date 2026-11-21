@@ -14,16 +14,27 @@ extension Op {
         default: return false
         }
     }
+
+    /// A derived transcript op (format.md §8.3.2): the transcript of a recording (`setRecording` of `transcript`), which
+    /// the speech recognizer writes (on adoption, after a recording, `sempere transcribe`) and no user edit does.
+    public var isDerivedTranscript: Bool {
+        if case .setRecording(_, .transcript) = self { return true }
+        return false
+    }
+
+    /// An op software writes from the note's content and no user edit does (format.md §5.5, §8.3.2): recognition or a
+    /// transcript. A delta of only these leaves the note's modified date where it was.
+    public var isDerived: Bool { isDerivedRecognition || isDerivedTranscript }
 }
 
 extension Revision {
-    /// A delta that only records recognition: a non-empty `ops`, every one a
-    /// derived recognition op (`Op.isDerivedRecognition`), and not a version
+    /// A delta that only records derived data: a non-empty `ops`, every one a
+    /// derived op (`Op.isDerived`: recognition or a transcript), and not a version
     /// the user saved. A revision of newer content (`newer`) is never one: what
     /// it skipped is unknown.
     public var isDerivedOnly: Bool {
         guard case .delta(let ops) = body, !ops.isEmpty, newer == nil, checkpoint == nil else { return false }
-        return ops.allSatisfy(\.isDerivedRecognition)
+        return ops.allSatisfy(\.isDerived)
     }
 
     /// The date this revision gives the note's modified date (`ModifiedDate`),
@@ -53,8 +64,8 @@ extension Revision {
 
 /// A note's modified date: the latest `Revision.modifiedDate` of its
 /// revisions, or, when none gives one (every revision a derived-only delta),
-/// the greatest `wall` of them all. Recognition written by the app, the CLI
-/// or an import (format.md §5.5) and the snapshots compaction and thinning
+/// the greatest `wall` of them all. Recognition and transcripts written by the app, the CLI
+/// or an import (format.md §5.5, §8.3.2) and the snapshots compaction and thinning
 /// write (§5.3, §5.8.4) leave it where the user's last edit put it.
 ///
 /// Built up one revision at a time, so an incremental summary

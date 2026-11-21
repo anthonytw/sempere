@@ -433,7 +433,8 @@ public enum FolderTargetRun {
     /// upload-only (never writes the vault folder). Every received file is checked before it is placed and
     /// quarantined otherwise; the quarantine is the target's own (`stateURL`'s folder).
     public static func run(vaultFolder: URL, folder: URL, provider: (any FolderProvider)? = nil, vault: Vault?,
-                           stateURL: URL, twoWay: Bool, options base: SyncOptions = SyncOptions()) throws -> SyncReport {
+                           stateURL: URL, twoWay: Bool, options base: SyncOptions = SyncOptions(),
+                           writeLog: FolderRemote.WriteLog? = nil) throws -> SyncReport {
         try check(folder, stateURL: stateURL)
         var o = base
         o.dryRun = false
@@ -445,7 +446,8 @@ public enum FolderTargetRun {
             o.quarantineDirectory = stateURL.deletingPathExtension().appendingPathExtension("quarantine")
         }
         try FileIO.createPrivateDirectory(stateURL.deletingLastPathComponent())
-        let remote = FolderRemote(root: folder, provider: provider)
+        var remote = FolderRemote(root: folder, provider: provider)
+        remote.writeLog = writeLog
         let engine = SyncEngine(directory: vaultFolder, vault: twoWay ? vault : nil, remote: remote, stateURL: stateURL,
                                 options: o)
         return try engine.run()

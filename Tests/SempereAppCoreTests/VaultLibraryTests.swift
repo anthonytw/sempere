@@ -237,6 +237,34 @@ struct VaultLibraryTests {
         }
     }
 
+    /// A sync folder 1.3 makes (`<vault>.sempere-vault`, `SyncFolderName`) is a vault folder like a `.sempere`: picked
+    /// itself or in the folder above, it is the vault; it wins over a backup beside it and counts among several vaults.
+    /// A folder of any other name holding a `vault.json` counts too.
+    @Test func aSyncFolderResolvesLikeAVault() throws {
+        let parent = try Self.tempDir()
+        let plain = try VaultLibrary.createVault(Self.request("Notes"), folder: "Notes.sempere", in: parent).url
+        let renamed = parent.appendingPathComponent("v1.2.sempere-vault", isDirectory: true)
+        try FileManager.default.moveItem(at: plain, to: renamed)
+        let backup = parent.appendingPathComponent("Notes.sempere-backup", isDirectory: true)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: backup.appendingPathComponent("vault.json"))
+        try Data("{}".utf8).write(to: backup.appendingPathComponent("backup.json"))
+        let mine = parent.appendingPathComponent("Letters", isDirectory: true)
+        try FileManager.default.createDirectory(at: mine, withIntermediateDirectories: true)
+        #expect(try VaultLocator.resolve(renamed).path == renamed.path)
+        #expect(try VaultLocator.resolve(parent).lastPathComponent == "v1.2.sempere-vault", "the vault, not the backup")
+        _ = try VaultLibrary.createVault(Self.request("Other"), folder: "Other.sempere", in: parent)
+        #expect(throws: VaultLocator.LocatorError.severalVaults(["Other.sempere", "v1.2.sempere-vault"])) {
+            _ = try VaultLocator.resolve(parent)
+        }
+        // Any other name: by its `vault.json`.
+        let elsewhere = try Self.tempDir()
+        let made = try VaultLibrary.createVault(Self.request("Letters"), folder: "Letters.sempere", in: elsewhere).url
+        let anyName = elsewhere.appendingPathComponent("Letters Copy", isDirectory: true)
+        try FileManager.default.moveItem(at: made, to: anyName)
+        #expect(try VaultLocator.resolve(elsewhere).lastPathComponent == anyName.lastPathComponent)
+    }
+
     // MARK: - Folder access
 
     @Test func permissionErrorsAreRecognisedWhereverTheyAreNested() {

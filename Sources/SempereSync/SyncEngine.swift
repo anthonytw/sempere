@@ -69,6 +69,10 @@ public struct SyncOptions: Sendable {
     /// Where notes are summarized for that file through the summary cache
     /// (format.md §10); nil reads every changed note.
     public var summaryCacheDirectory: URL?
+    /// The titles Note Insights derived, for the `shown` titles of the server's `sempere-summaries.sealed` (format.md
+    /// §12.2, `InsightsNotes.derivedTitles`); nil publishes none. With it a change of the vault's insights or settings
+    /// files (`PublishedSummaries.derivedTitlesStamp`) counts as a change of the listing (§12.4).
+    public var derivedTitles: PublishedSummaries.DerivedTitles?
 
     /// Blob downloads are made of pieces of this size (`Range` requests on
     /// WebDAV), so memory stays bounded by one of them however fast the server is.
@@ -1880,8 +1884,9 @@ public final class SyncEngine {
     /// client cut uploads, and only a device that still holds the file can repair it) is checked once,
     /// by one read of the server's copy bounded by the local file's size (the same read `repairCutFile` makes), charged to the
     /// download budget. A strict prefix is replaced as `repairCutFile` does; a complete copy, or any other copy, is recorded
-    /// as verified in the sync state (the local size and a digest of the listing entry) and not read again until either
-    /// changes. A copy that is not a prefix is left alone and reported. Returns true when the server's copy was repaired.
+    /// as verified in the sync state (the local size and a digest of the listing entry) and not read again until the size changes
+    /// (a complete copy: a write-once revision stays complete however the listing's tag or date churns, D-10) or, for any other copy,
+    /// until the listing changes. A copy that is not a prefix is left alone and reported. Returns true when the server's copy was repaired.
     func verifySizeless(_ id: String, _ n: RevisionName, entry: RemoteEntry, have: Int, localDir: URL) throws -> Bool {
         let k = key(id, n)
         guard let me = options.deviceID, n.device == me, have > 0, let cutoff = locked({ state.sizelessCutoff }),
@@ -1889,7 +1894,7 @@ public final class SyncEngine {
         let listing = Self.listingDigest(entry)
         let (done, full, spent) = locked { (state.sizelessChecked?[k], (state.sizelessChecked?.count ?? 0) >= Self.sizelessCheckedMax,
                                             sizelessRead) }
-        if let done, done.size == have, done.listing == listing { return false }
+        if let done, done.size == have, done.complete == true || done.listing == listing { return false }
         // No room to record it: reading it every run would be worse than leaving it.
         guard !full || done != nil else {
             let first = locked { () -> Bool in
@@ -1908,10 +1913,10 @@ public final class SyncEngine {
         guard let local = try? BoundedRead.contents(of: localDir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes),
               local.count == have else { return false }
         let remotePath = [Vault.notesName, id, n.filename]
-        func record(_ listing: String) {
+        func record(_ listing: String, complete: Bool = false) {
             locked {
                 var all = state.sizelessChecked ?? [:]
-                all[k] = SyncState.SizelessCheck(size: have, listing: listing)
+                all[k] = SyncState.SizelessCheck(size: have, listing: listing, complete: complete)
                 state.sizelessChecked = all
             }
         }
@@ -1933,10 +1938,10 @@ public final class SyncEngine {
             guard try replaceCut(remotePath, local: local, got: got, entry: entry) else { return false }
             locked { placedShas[k] = FileDigest.sha256(local) }
             // The replacement has its own version tag: record the listing as it is now.
-            record((try? transport.stat(remotePath)).flatMap { $0 }.map(Self.listingDigest) ?? listing)
+            record((try? transport.stat(remotePath)).flatMap { $0 }.map(Self.listingDigest) ?? listing, complete: true)
             return true
         }
-        record(listing)
+        record(listing, complete: got == local)
         if got != local {
             locked { report.skipped.append(.init(path: "notes/\(k)", message: "the server's copy differs from the local file and is not a cut copy of it; left alone")) }
         }

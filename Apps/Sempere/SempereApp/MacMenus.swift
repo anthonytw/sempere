@@ -11,7 +11,7 @@ import UIKit
 /// refuses a SwiftUI group whose shortcut is taken ("Replacement elements
 /// conflict"), and with it the whole group, so ⌘O and ⌘F cost the app every
 /// File and Edit command and ⌘N opened UIKit's New Window: a second library
-/// window. So Open Vault… and Find Notes are not SwiftUI commands
+/// window. So Open Vault…, Find Notes and Ask Your Notes… (UIKit's ⌥⌘F is Find and Replace) are not SwiftUI commands
 /// (`MenuCommand.nativeOnMac`): UIKit's ⌘O and ⌘F items become them here,
 /// acting on the focused window's `CommandRouter` (`MenuRouting`), and UIKit's
 /// commands that act on documents or text find are dropped.
@@ -66,14 +66,14 @@ enum MacMenus {
             built.append("open → Open Vault…")
         }
         if builder.menu(for: .find) != nil {
-            // Find…, Find & Replace, Find Next/Previous (⌘G is the search bar's), Use Selection.
-            builder.replaceChildren(ofMenu: .find) { _ in [nativeItem(.find)] }
-            built.append("find → Find Notes")
+            // Find…, Find & Replace (⌥⌘F), Find Next/Previous (⌘G is the search bar's), Use Selection.
+            builder.replaceChildren(ofMenu: .find) { _ in [nativeItem(.find), nativeItem(.askYourNotes)] }
+            built.append("find → Find Notes, Ask Your Notes")
         } else if builder.menu(for: .edit) != nil, builder.menu(for: findMenu) == nil {
             // UIKit leaves Find out of some builds: the app's goes at the end of Edit.
-            let menu = UIMenu(title: "", identifier: findMenu, options: .displayInline, children: [nativeItem(.find)])
+            let menu = UIMenu(title: "", identifier: findMenu, options: .displayInline, children: [nativeItem(.find), nativeItem(.askYourNotes)])
             builder.insertChild(menu, atEndOfMenu: .edit)
-            built.append("Find Notes added")
+            built.append("Find Notes, Ask Your Notes added")
         }
         if builder.menu(for: .preferences) != nil {
             // UIKit's Settings… (⌘,) opens Catalyst's generated pane (touch alternatives): the app's instead.

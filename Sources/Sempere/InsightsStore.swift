@@ -18,10 +18,12 @@ extension Vault {
     public var insightsURL: URL { url.appendingPathComponent(Self.insightsName, isDirectory: true) }
 
     /// The bytes of `content` as the file `name`: format.md §4 framing with the label `insights` and the file name in
-    /// the tag, encrypted to the current `v_e` in one stanza.
+    /// the tag, encrypted to the current `v_e` in one stanza. The JSON first passes the reader's own decode and checks
+    /// (`InsightsCodec.decode`), so no writer emits a file that its readers, this device included, would reject.
     public func sealInsights(_ content: InsightsFileContent, name: InsightsFileName) throws -> Data {
         let json = try InsightsCodec.encode(content)
         guard json.count <= name.kind.maxBytes else { throw InsightsFileError.tooLarge }
+        _ = try InsightsCodec.decode(json, name: name)
         let body = try BodyFraming.frame(json: json, noteId: InsightsCodec.tagScope, filename: name.fileName, secret: try requireSecret())
         let sealed = try encrypt(body)
         guard sealed.count <= name.kind.maxBytes + 4096 else { throw InsightsFileError.tooLarge }
@@ -134,25 +136,112 @@ public struct InsightsSnapshot: Sendable {
     public init() {}
 
     /// The `gen` a reader shows for a note whose insight text hashes to `hash` (design §3.2): the best file holding a
-    /// `gen` with that hash, else (stale) the latest `gen` of any hash; each time the later `written` first, then the
-    /// device id. A `written` beyond the future window (`InsightsCodec.isOrdered`) is unordered, as in `isLater`: such a
-    /// file comes after every ordered one, then by device id. `current` says whether the hash matched.
-    public func bestGen(for note: UUID, hash: String?, now: Date = Date())
+    /// `gen` with that hash, else (stale) the latest `gen` of any hash. Among those, a `gen` written in the insight
+    /// language `language` (`outLang`, nil: the note's own, format.md §16.2) comes first, so a device that rewrites its
+    /// file in the old language (a new `written`) never hides one in the language now set; then the later `written`,
+    /// then the device id. A `written` beyond the future window (`InsightsCodec.isOrdered`) is unordered, as in `isLater`:
+    /// such a file comes after every ordered one, then by device id. `current` says whether the hash matched. Every
+    /// reader with the same files and `language` takes the same one.
+    public func bestGen(for note: UUID, hash: String?, language: String? = nil, now: Date = Date())
         -> (gen: InsightsNoteFile.Gen, device: DeviceID, written: Int64, current: Bool)? {
         func order(_ w: Int64) -> Int64 { InsightsCodec.isOrdered(w, now: now) ? w : -1 }
+        func rank(_ g: InsightsNoteFile.Gen) -> Int { g.outLang == language ? 1 : 0 }
         let files = (notes[note] ?? [:]).compactMap { d, f in f.gen.map { (d, f.written, $0) } }
-            .sorted { (order($0.1), $0.0.rawValue) > (order($1.1), $1.0.rawValue) }
+            .sorted { (rank($0.2), order($0.1), $0.0.rawValue) > (rank($1.2), order($1.1), $1.0.rawValue) }
         if let hash, let hit = files.first(where: { $0.2.hash == hash }) { return (hit.2, hit.0, hit.1, true) }
         return files.first.map { ($0.2, $0.0, $0.1, false) }
     }
 
-    /// The `emb` of `note` from the work device's file only (design §3.2).
+    /// The `emb` of `note` from `device`'s file only.
     public func emb(for note: UUID, from device: DeviceID) -> InsightsNoteFile.Emb? { notes[note]?[device]?.emb }
 
-    /// The work device's map, when it holds the role (not a tombstone).
+    /// The `emb` a reader uses for `note` (D21: any device may embed, and every device at one key makes the same bytes):
+    /// among the files holding one at `key` (any key when nil), the one for `hash` first, then the later `written`
+    /// (as `bestGen` orders it), then the device id, so every reader takes the same file.
+    public func emb(for note: UUID, key: EmbeddingKey?, hash: String?, now: Date = Date())
+        -> (emb: InsightsNoteFile.Emb, device: DeviceID, written: Int64)? {
+        func order(_ w: Int64) -> Int64 { InsightsCodec.isOrdered(w, now: now) ? w : -1 }
+        let skip = incompatibleDevices
+        let files = (notes[note] ?? [:]).compactMap { d, f in
+            f.emb.flatMap { e in !skip.contains(d) && (key.map { $0 == e.key } ?? true) ? (d, f.written, e) : nil }
+        }
+            .sorted { (order($0.1), $0.0.rawValue) > (order($1.1), $1.0.rawValue) }
+        let hit = hash.flatMap { h in files.first { $0.2.hash == h } } ?? files.first
+        return hit.map { ($0.2, $0.0, $0.1) }
+    }
+
+    /// The devices whose record says they fail the map's canaries (D21: their vectors are not the shared set's, so readers
+    /// and the policy ignore their `emb`; a device that wrote vectors before it was found incompatible is covered too).
+    public var incompatibleDevices: Set<DeviceID> {
+        Set(devices.filter { $0.value.compatibility == "incompatible" }.map(\.key))
+    }
+
+    /// Whether a device the canaries accept holds an `emb` of `note` for `hash` at `key`.
+    public func hasCurrentEmb(for note: UUID, hash: String, key: EmbeddingKey) -> Bool {
+        let skip = incompatibleDevices
+        return (notes[note] ?? [:]).contains { d, f in
+            !skip.contains(d) && (f.emb.map { $0.hash == hash && $0.key == key } ?? false)
+        }
+    }
+
+    /// `device`'s map, when it is one (not a tombstone).
     public func map(of device: DeviceID) -> InsightsMapFile? {
         guard let m = maps[device], !m.isTombstone else { return nil }
         return m
+    }
+
+    /// The map a reader shows (D21: any device may build it): of the maps at embedding revision `rev` (every map when
+    /// `rev` is nil or none is at it), the one with the later `written` (an unordered, far-future `written` after every
+    /// ordered one, as `bestGen`), then the device id. Concurrent builds from the same inputs are identical in content,
+    /// so which one wins changes nothing a reader sees.
+    /// Among the maps of one language the one at `language` is preferred (then `rev`), so a map of another language never
+    /// stands in for it while one at the right key exists.
+    public func bestMap(rev: Int? = nil, language: String? = nil, now: Date = Date()) -> (map: InsightsMapFile, device: DeviceID)? {
+        let all = maps.compactMap { d, m in m.isTombstone || m.key == nil ? nil : (d, m) }
+        let atLang = language.map { l in all.filter { $0.1.key?.lang == l } } ?? all
+        let langPool = atLang.isEmpty ? all : atLang
+        let atRev = rev.map { r in langPool.filter { $0.1.key?.rev == r } } ?? langPool
+        return Self.latest(atRev.isEmpty ? langPool : atRev, now: now)
+    }
+
+    /// The best map at exactly `key` (model, language, revision and input), nil when none is: what the policy compares
+    /// with, so a map of another key never makes this device see "no map" and rebuild on every pass.
+    public func bestMap(key: EmbeddingKey, now: Date = Date()) -> (map: InsightsMapFile, device: DeviceID)? {
+        Self.latest(maps.compactMap { d, m in m.isTombstone || m.key != key ? nil : (d, m) }, now: now)
+    }
+
+    private static func latest(_ pool: [(DeviceID, InsightsMapFile)], now: Date) -> (map: InsightsMapFile, device: DeviceID)? {
+        func order(_ w: Int64) -> Int64 { InsightsCodec.isOrdered(w, now: now) ? w : -1 }
+        return pool.sorted { (order($0.1.written), $0.0.rawValue) > (order($1.1.written), $1.0.rawValue) }.first.map { ($0.1, $0.0) }
+    }
+
+    /// The title a reader shows for a voice note whose insight text hashes to `hash` (format.md §16.2): among the files
+    /// holding a `title` for that hash, the later `at` (when it was derived, not when the file was last written), then the
+    /// larger device id, so every reader takes the same one and no device's rewrite of its file flips it; none when no file
+    /// has one for that hash (a title made for older text is not shown). A reader that has not hashed the note (a listing)
+    /// passes nil and takes the best title of any hash.
+    ///
+    /// The title in the insight language and title format now set (`language`, `format`) comes first, then one in that
+    /// language in another format, then any: one in another language or format is shown until the new one is derived.
+    public func bestTitle(for note: UUID, hash: String?, language: String? = nil,
+                          format: String = VoiceNoteTitleFormat.defaultFormat, now: Date = Date()) -> String? {
+        func order(_ at: Int64) -> Int64 { InsightsCodec.isOrdered(at, now: now) ? at : -1 }
+        let all = (notes[note] ?? [:]).compactMap { d, f in
+            f.title.flatMap { hash == nil || $0.hash == hash ? (d, $0.at, $0.text, $0.lang, $0.isRendered(from: format)) : nil }
+        }
+        let exact = all.filter { $0.3 == language && $0.4 }
+        let sameLanguage = all.filter { $0.3 == language }
+        let pool = !exact.isEmpty ? exact : !sameLanguage.isEmpty ? sameLanguage : all
+        return pool.sorted { (order($0.1), $0.0.rawValue) > (order($1.1), $1.0.rawValue) }.first?.2
+    }
+
+    /// Whether a file holds a title for `hash` in the insight language `language` (nil: the note's own) rendered from
+    /// `format`: the check that keeps a device from deriving a title that exists.
+    public func hasTitle(for note: UUID, hash: String, language: String?,
+                         format: String = VoiceNoteTitleFormat.defaultFormat) -> Bool {
+        (notes[note] ?? [:]).values.contains {
+            $0.title.map { $0.hash == hash && $0.lang == language && $0.isRendered(from: format) } ?? false
+        }
     }
 }
 
@@ -182,11 +271,18 @@ public struct InsightsStore: Sendable {
 
     /// Every file of the folder, read under the current key (`InsightsSnapshot`). Files of removed devices are left
     /// out (they are deleted by `removeRemovedDevices`).
-    public func snapshot() -> InsightsSnapshot {
+    public func snapshot() -> InsightsSnapshot { snapshot(only: nil) }
+
+    /// The note files of `notes` only (`insights/<id>.<device>.insights.age`), read under the current key: what a reader that
+    /// needs a few notes' titles reads (`InsightsNotes.derivedTitles`), without the maps, topics and device records.
+    public func snapshot(notes: Set<UUID>) -> InsightsSnapshot { snapshot(only: notes) }
+
+    private func snapshot(only notes: Set<UUID>?) -> InsightsSnapshot {
         var s = InsightsSnapshot()
         guard vault.canRead else { return s }
         let removed = vault.removedInsightsDevices()
         for name in Self.names(in: folder) {
+            if let notes, !(name.kind == .note && name.noteId.map(notes.contains) == true) { continue }
             if removed.contains(name.device) {
                 s.ignored[name.fileName] = .cannotWrite("written by a device removed from the vault")
                 continue
@@ -271,7 +367,11 @@ public struct InsightsStore: Sendable {
     /// one process (a background pass and "Regenerate") each change only their own scopes, so neither drops the other's.
     /// Refused (nothing written) when Note Insights is not on, checked under the lock (the switch's write takes it too,
     /// so a summary made before a turn-off is never written after its purge), and when this device's own file is there
-    /// but cannot be read (replacing it would drop the scopes it holds).
+    /// but cannot be read (replacing it would drop the scopes it holds). One exception: a file that opens under the
+    /// current key, with its tag, name and format verified, and fails only the checks of its content
+    /// (`InsightsFileError.invalid`) is this device's own recomputable output that every reader, this one included,
+    /// ignores whole: it holds no scope anyone can see, so it is replaced, starting from no topics (an earlier version
+    /// could write a topic summary past its limit). A file another key, damage or a newer format made stays refused.
     @discardableResult
     public func updateOwnTopics(now: Date = Date(), _ change: (inout [InsightsTopicsFile.Topic]) throws -> Bool) throws -> Bool {
         try vault.requireWritable()
@@ -281,10 +381,19 @@ public struct InsightsStore: Sendable {
             var topics: [InsightsTopicsFile.Topic] = []
             let name = InsightsFileName(.topics, device: me)
             if FileIO.exists(folder.appendingPathComponent(name.fileName)) {
-                guard case .topics(let f)? = try? read(name) else {
+                do {
+                    guard case .topics(let f)? = try read(name) else {
+                        throw InsightsFileError.cannotWrite("this device's topics file cannot be read, so it is not replaced")
+                    }
+                    topics = f.topics
+                } catch InsightsFileError.invalid {
+                    topics = []
+                } catch let e as InsightsFileError {
+                    if case .cannotWrite = e { throw e }
+                    throw InsightsFileError.cannotWrite("this device's topics file cannot be read, so it is not replaced")
+                } catch {
                     throw InsightsFileError.cannotWrite("this device's topics file cannot be read, so it is not replaced")
                 }
-                topics = f.topics
             }
             guard try change(&topics) else { return false }
             _ = try writeLocked(.topics(InsightsTopicsFile(device: me, written: 0, topics: topics)), me: me, now: now)
@@ -292,7 +401,7 @@ public struct InsightsStore: Sendable {
         }
     }
 
-    /// Replaces this device's sidecar of `note` with a tombstone (no `gen`, no `emb`; format.md §16.6), so a device
+    /// Replaces this device's sidecar of `note` with a tombstone (no `gen`, `emb` or `title`; format.md §16.6), so a device
     /// bridging two targets cannot bring the old one back. Nothing when this device has no file for it.
     @discardableResult
     public func tombstone(note: UUID, now: Date = Date()) throws -> Bool {

@@ -56,6 +56,7 @@ extension AppModelCore {
                 self?.enterForeground()
                 self?.nearbyEnteredForeground()
             case .didBecomeActive:
+                self?.spotlightBecameActive()
                 // The first activation of a launch (no `willEnterForeground` comes before it): the app is on screen
                 // now. After a return from the background the locks were taken back already (`willEnterForeground`).
                 guard let self, self.locksSuspended else { return }

@@ -118,6 +118,7 @@ public final class AppModelCore<Host: AppModelHost> {
             listVersion &+= 1
             updateSearch(changed: listChangeIDs)
             insightsNotesChanged()
+            spotlightNotesChanged()
         }
     }
     /// While `applyListChanges` assigns `notes`: the ids it may have changed, so
@@ -286,6 +287,35 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored let insightsRuntime = InsightsRuntime()
     /// The providers and power state of Note Insights (`services.insights`; tests set their own).
     @ObservationIgnored public var insightsServices: InsightsServices
+    /// Ask your notes (`AppModel+Ask`, docs/design/1.3-ask.md): what the search field does (Search or Ask), the
+    /// question typed for Ask (never `searchText`, so Search and the recent searches never see it, D9) and the answer
+    /// on screen. All of it is memory: nothing is stored, and closing or locking the vault drops it.
+    public var askTarget = AskTarget.search
+    public var askQuestion = ""
+    public internal(set) var ask = AskModelState()
+    @ObservationIgnored var askTask: Task<Void, Never>?
+    /// Counts Asks: a result or a retrieval hand-over is taken only from the latest one (the field's text may change meanwhile).
+    @ObservationIgnored var askSerial = 0
+    /// Opt-in Spotlight indexing (`AppModel+Spotlight`, docs/design/1.3-spotlight.md): the per-device records and the
+    /// index (`services.spotlightIndex`).
+    @ObservationIgnored public let spotlight: SpotlightManager
+    @ObservationIgnored let spotlightRuntime = SpotlightRuntime()
+    /// The open vault's Spotlight switches on this device.
+    public internal(set) var spotlightMode: SpotlightMode = .off
+    /// Why the app turned the open vault's Spotlight switch off (shown once; `dismissSpotlightNotice`).
+    public var spotlightNotice: SpotlightNotice?
+    /// Notes left out of Spotlight by the 50,000-note cap.
+    public internal(set) var spotlightOmitted = 0
+    /// "Untitled note" and the date style of Spotlight results: the app sets localized ones.
+    @ObservationIgnored public var spotlightUntitled = "Untitled note"
+    /// The words of a voice note's default title ("Voice note", "Watch voice note"): the app sets localized ones.
+    @ObservationIgnored public var displayTitleWords = NoteDisplayTitle.Words.builtIn()
+    @ObservationIgnored public var spotlightDateText: @Sendable (Date) -> String = SpotlightPlanner.isoDay
+    /// A note to open once its vault is open, unlocked and listed (`open(_:)`).
+    public internal(set) var pendingNoteLink: NoteLink?
+    @ObservationIgnored var pendingNoteLinkSince = Date.distantPast
+    /// A link that could not be followed (the app words it and shows it once).
+    public var noteLinkProblem: NoteLinkProblem?
     /// What is being dragged inside the app (set when a drag starts, `beginDrag`), so the
     /// sidebar can tell whether a row would accept it while the drag is still over it.
     public var draggedPayload: DragPayload?
@@ -349,6 +379,8 @@ public final class AppModelCore<Host: AppModelHost> {
     var automaticThinning = false
     /// Notes thinning works on at once (`thinVault`).
     var thinningConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+    /// Tests: awaited before thinning reads each note (`thinVault`), to hold a pass in the middle.
+    @ObservationIgnored var thinningWillRead: (@Sendable (UUID) async -> Void)?
     /// The last automatic run `thinIfDue` started (tests wait for it).
     @ObservationIgnored var automaticThinningRun: Task<Void, Never>?
     /// How far a thinning run (or its preview) has got, counted per note;
@@ -477,6 +509,9 @@ public final class AppModelCore<Host: AppModelHost> {
     public var settingsSyncProblem: SettingsSyncProblem?
     /// Turning sync on found settings that differ: the choice to ask for.
     public var settingsSyncPrompt: SettingsSyncPrompt?
+    /// The palette's saved tools (`AppModel+SavedTools`): the open vault's with Sync Settings with This Vault on, else
+    /// this device's own list.
+    public var savedTools = SavedToolList()
     /// Bumped whenever values from the vault were applied, so the Settings
     /// sections that hold copies of their values reload them.
     public var settingsAppliedRevision = 0
@@ -758,6 +793,7 @@ public final class AppModelCore<Host: AppModelHost> {
         backgroundTasks = services.backgroundTasks
         syncScheduler = services.syncScheduler
         insightsServices = services.insights
+        spotlight = SpotlightManager(index: services.spotlightIndex, defaults: services.settings)
         backupStore = BackupStore(defaults: services.settings)
         releasesLocksInBackground = !services.platform.isMac
         searchTranscripts = TranscriptSearchPreference.isOn(services.settings)
@@ -828,7 +864,8 @@ public final class AppModelCore<Host: AppModelHost> {
         // Recently Recognized depends on the time too (`activityNow`), which no key holds: never cached.
         if sidebarSelection == .recentlyRecognized { return computeVisibleNotes() }
         let key = DerivedLists.VisibleKey(version: listVersion, selection: sidebarSelection, search: searchText,
-                                          sort: sortOrder, favoritesFirst: favoritesFirst)
+                                          sort: sortOrder, favoritesFirst: favoritesFirst,
+                                          titles: sortOrder.key == .title ? insights.revision : 0)
         if let v = derived.visible, v.key == key { return v.value }
         let value = computeVisibleNotes()
         derived.visible = (key, value)
@@ -839,7 +876,12 @@ public final class AppModelCore<Host: AppModelHost> {
         let inSelection = notesInSelection
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let matching = query.isEmpty ? inSelection : inSelection.filter { $0.title.localizedCaseInsensitiveContains(query) }
-        return Self.sorted(matching, by: sortOrder, favoritesFirst: favoritesFirst)
+        // By title: the title each row shows (`displayTitle`), as `notes list --sort title` sorts.
+        var titles: [UUID: String]?
+        if sortOrder.key == .title {
+            titles = Dictionary(matching.map { ($0.id, displayTitle($0)) }, uniquingKeysWith: { a, _ in a })
+        }
+        return Self.sorted(matching, by: sortOrder, favoritesFirst: favoritesFirst, titles: titles)
     }
 
     /// The notes the sidebar selection shows, before any search.
@@ -855,8 +897,12 @@ public final class AppModelCore<Host: AppModelHost> {
         }
     }
 
-    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false) -> [NoteSummary] {
-        NoteOrder(order.key, favoritesFirst: favoritesFirst).sorted(list)
+    /// `list` in `order`; under the title order by `titles` (the shown titles) when given, else the stored ones.
+    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false,
+                       titles: [UUID: String]? = nil) -> [NoteSummary] {
+        var resolve: (@Sendable (NoteSummary) -> String)?
+        if let titles { resolve = { note in titles[note.id] ?? note.title } }
+        return NoteOrder(order.key, favoritesFirst: favoritesFirst, title: resolve).sorted(list)
     }
 
     public var selectedNote: NoteSummary? {
@@ -975,8 +1021,10 @@ public final class AppModelCore<Host: AppModelHost> {
     /// views open their notes again (`keyEpoch`).
     func adoptReopened(_ next: Vault) {
         guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
+        let before = vault.map(SpotlightKeys.init)
         vault = next
         listAlert = ListAlert(vault: next)
+        spotlightVaultReopened(before: before)
         // The quick-capture profile follows the list's capture keys; takeovers and the device state; settings sync.
         refreshQuickCaptureProfile()
         Task {
@@ -996,6 +1044,7 @@ public final class AppModelCore<Host: AppModelHost> {
         syncCoordinator.openVaultUnlocked()
         await webdavUnlocked()   // a partial copy's rows come from the server's summaries: before the listing
         loadActivity()
+        spotlightUnlocked()
         startLoadingNotes(reportErrors: !awaitNotes)
         if awaitNotes { try await notesLoaded() }
         // The quick-capture profile, the inbox, takeovers and the device state, the backup reminder, settings sync.
@@ -1237,6 +1286,7 @@ public final class AppModelCore<Host: AppModelHost> {
         // adoption or import still running is canceled below.
         stopSettingsSync()
         stopInsights()
+        spotlightClosed()
         draggedPayload = nil
         dropTarget = nil
         landedDrop = nil

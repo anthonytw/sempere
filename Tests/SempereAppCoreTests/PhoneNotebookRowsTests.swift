@@ -45,4 +45,15 @@ struct PhoneNotebookRowsTests {
         let rows = PhoneNotebookRows.rows(tree, unfolded: PhoneNotebookRows.revealing("School/Physics/Optics", in: []))
         #expect(rows.map(\.node.path).contains("School/Physics/Optics"))
     }
+
+    /// Review of build 113, S4: a Mac's → and ← unfold and fold a notebook with sub-notebooks, and leave other rows
+    /// to the list.
+    @Test func arrowKeysFoldOnlyNotebooksWithSubNotebooks() {
+        let tree = NotebookNode.tree(["Work/Plans", "Personal"])
+        #expect(PhoneNotebookRows.setting("Work", unfold: true, in: [], tree: tree) == ["Work"])
+        #expect(PhoneNotebookRows.setting("Work", unfold: false, in: ["Work", "X"], tree: tree) == ["X"])
+        #expect(PhoneNotebookRows.setting("Personal", unfold: true, in: [], tree: tree) == nil)
+        #expect(PhoneNotebookRows.setting("Work/Plans", unfold: true, in: [], tree: tree) == nil)
+        #expect(PhoneNotebookRows.setting("Gone", unfold: true, in: [], tree: tree) == nil)
+    }
 }

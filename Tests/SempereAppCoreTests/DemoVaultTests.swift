@@ -85,6 +85,20 @@ struct DemoVaultTests {
         #expect(Set(DemoVault.insightsTexts.keys) == Set(DemoVault.specs.map(\.key)))
     }
 
+    @Test func recordingGivesTheThoughtsNoteOneUntranscribedRecordingOnlyWhenAsked() async throws {
+        let (plain, plainDir) = try await Self.build()
+        defer { try? FileManager.default.removeItem(at: plainDir) }
+        #expect(try Self.open(plain).reconstruct(noteId: plain.notes["thoughts"]!).recordings.isEmpty)
+        let dir = TestTemp.root.appendingPathComponent("demo-recording-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let built = try await DemoVault.build(in: dir, recording: true, app: Self.app)
+        let vault = try Self.open(built)
+        let recordings = try vault.reconstruct(noteId: built.notes["thoughts"]!).recordings
+        #expect(recordings.map(\.id) == [DemoVault.recordingID])
+        #expect(recordings.first?.title == "Demo Recording" && recordings.first?.transcript == nil)
+        #expect(try vault.summaries().allSatisfy { $0.problem == nil })
+    }
+
     @Test func datesAreFixed() async throws {
         let (built, dir) = try await Self.build()
         defer { try? FileManager.default.removeItem(at: dir) }

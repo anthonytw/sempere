@@ -16,6 +16,7 @@ import { newerSummary } from "../format/newer.ts";
 import { clear, formatDate, h } from "./dom.ts";
 import { NoteView, hasUnknownPaper } from "./noteview.ts";
 import { NoteCache } from "./notecache.ts";
+import { shownTitle, voiceOrigin } from "../format/displaytitle.ts";
 import { RecordingsPanel } from "./recordings.ts";
 import { VideosPanel } from "./videos.ts";
 import { NoteBlobs } from "../vault/blobs.ts";
@@ -587,7 +588,7 @@ export class App {
       class: "note", attrs: { type: "button" },
       on: { click: () => void this.open(n.id, hit?.page?.number) },
     },
-    h("span", { class: "title", text: n.title || t("Untitled") }),
+    h("span", { class: "title", text: shownTitle(n) || t("Untitled") }),
     h("span", { class: "sub", text: [formatDate(n.modified), tn("{count} pages", n.pageCount)].filter(Boolean).join(" · ") }),
     meta ? h("span", { class: "sub", text: meta }) : null,
     hit?.snippet ? this.snippet(hit) : null,
@@ -667,8 +668,17 @@ export class App {
       }
       this.cache.set(id, note);
       // What the revisions say wins over a published summary (format.md §12.3).
-      if (gen === this.generation && this.notes.has(id)) {
-        this.notes.set(id, summarize(note));
+      const before = this.notes.get(id);
+      if (gen === this.generation && before) {
+        const row = summarize(note);
+        // A derived title comes only from the published summaries (format.md §12.2): kept only when the entry was made from
+        // exactly the revisions just decrypted (and so names the same stored title).
+        const from = before.shownFrom, read = note.files;
+        if (before.shown !== undefined && from && read && from.length === read.length && from.every((f, i) => f === read[i])) {
+          row.shown = before.shown;
+          row.shownFrom = from;
+        }
+        this.notes.set(id, row);
         this.renderSidebar();
       }
     }
@@ -707,7 +717,8 @@ export class App {
     this.view = new NoteView(state, blobs, (id) => void videos.play(id), (id) => recordings.play(id));
     this.detail.replaceChildren(
       h("div", { class: "note-header" },
-        h("h2", { text: m.title || t("Untitled") }), h("p", { class: "sub", text: meta }),
+        h("h2", { text: shownTitle({ title: m.title, voice: voiceOrigin(state.recordings), shown: this.notes.get(note.id)?.shown }) || t("Untitled") }),
+        h("p", { class: "sub", text: meta }),
         m.tags.length ? h("p", { class: "tags" }, ...m.tags.map((t) => h("span", { class: "tag", text: `#${t}` }))) : null,
         ...warnings, this.view.problemsEl, this.recordings.root, videos.root),
       this.view.root);

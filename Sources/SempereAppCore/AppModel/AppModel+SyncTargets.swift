@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 
 /// A folder target's folder, reachable for one run: its bookmark resolved (security scope held until
@@ -68,6 +69,9 @@ public enum SyncTargetProblem: Error, Equatable, Sendable {
     /// run would make an empty folder of that name over the other devices' (review of #115). The app asks iCloud for
     /// it (`requestDownload`).
     case notDownloaded(String)
+    /// The picked folder holds more than one copy of this vault (their names): the user picks the one to sync with
+    /// (`FolderPlacementProblem.severalCopies`).
+    case severalCopies([String])
     /// This account may not write to the folder (its name): another user's, or read-only.
     case notWritable(String)
     /// The server folder of a new WebDAV target holds another vault or other files.
@@ -167,6 +171,7 @@ extension AppModelCore {
                     }
                     var options = SyncOptions(deviceLabel: "app")
                     options.summaryCacheDirectory = cacheDirectory
+                    options.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
                     options.localWriteLock = lock
                     options.quarantineDirectory = quarantine
                     options.arrivalWait = wait
@@ -191,14 +196,24 @@ extension AppModelCore {
                     BundleBitRepair.clear(entry.url, .storeVault, log: perf)
                     BundleBitRepair.clear(access.folder, .syncTarget, log: perf)
                     defer { BundleBitRepair.clear(access.folder, .syncTarget, log: perf) }
+                    // Still a package with the flag cleared: the provider's own record (docs/io.md "A vault folder held as
+                    // a package"). Resource values only; the Sync Targets row warns (`folderTargetPackageRecord`).
+                    if let record = (folderProvider ?? FolderProviders.detect(access.folder)).itemRecord(of: access.folder),
+                       record.heldAsPackage {
+                        perf.log(.error, "bundleBit", "the sync target folder is held as a package by its provider "
+                                 + "(type \(record.contentType ?? "-"), conflicts \(record.hasUnresolvedConflicts == true))")
+                    }
                     if let join {
                         // A join run (design §6.2): the request goes out, home's approval comes in, keyless.
                         var joinOptions = options
                         joinOptions.firstPullIdentities = [join]
                         let rescan = ProviderUploads.begin(stateDirectory: stateDirectory)
+                        let writes = FolderRemote.WriteLog()
                         let report = try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
-                                                             vault: nil, stateURL: stateURL, twoWay: true, options: joinOptions)
-                        ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory, written: report.uploaded,
+                                                             vault: nil, stateURL: stateURL, twoWay: true, options: joinOptions,
+                                                             writeLog: writes)
+                        ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory,
+                                               written: report.uploaded + writes.paths,
                                                rescan: rescan, check: uploadCheck)
                         return report
                     }
@@ -208,12 +223,15 @@ extension AppModelCore {
                     let rescan = ProviderUploads.begin(stateDirectory: stateDirectory)
                     // The unlock places what locked runs staged (checked under the key), then the run goes on.
                     let placed = twoWay ? try vault.flatMap { try staging.place(vaultFolder: entry.url, vault: $0, options: options) } : nil
+                    let writes = FolderRemote.WriteLog()
                     var report = try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
-                                                         vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
+                                                         vault: vault, stateURL: stateURL, twoWay: twoWay, options: options,
+                                                         writeLog: writes)
                     if let placed { report.changed = Self.union(placed.changed, report.changed) }
                     // Written into a provider's folder is not uploaded yet (offline audit P15): what still waits.
-                    ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory, written: report.uploaded,
-                                           rescan: rescan, check: uploadCheck)
+                    // (every file the remote placed, not only those the report lists: settings, records, summaries)
+                    ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory,
+                                           written: report.uploaded + writes.paths, rescan: rescan, check: uploadCheck)
                     if !twoWay, request.stage, !PartialCopy.isPartial(entry.url) {
                         // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
                         _ = try? staging.stage(vaultFolder: entry.url, options: options) { shadow, state, pullOnly in
@@ -235,6 +253,15 @@ extension AppModelCore {
             do { try FolderTargetRun.check(access.folder, stateURL: stateURL) } catch { access.close(); throw error }
             let remote: any SyncRemote = FolderRemote(root: access.folder, provider: provider?(access.folder))
             return (remote, { access.close() }, FolderTargetRun.syncedBefore(stateURL: stateURL))
+        }
+        // Asks the provider again about the recorded files between runs (the bar leaves "waiting" when it has uploaded them).
+        session.providerRecheck = {
+            guard let target = store.targets.targets(of: vaultID).first(where: { $0.id == targetID }),
+                  let access = try? FolderTargetAccess.open(target, bookmarks: bookmarks) else { return nil }
+            defer { access.close() }
+            return await Task.detached(priority: .utility) {
+                ProviderUploads.recheck(folder: access.folder, stateDirectory: stateDirectory, check: uploadCheck)
+            }.value
         }
         session.providerSummary = { await Task.detached(priority: .utility) { ProviderUploads.summary(in: stateDirectory) }.value }
         if let path = ref.target.path {
@@ -363,8 +390,9 @@ extension AppModelCore {
         SyncTarget.comparablePath(a) == SyncTarget.comparablePath(b)
     }
 
-    /// "Add Folder…": the folder the user picked holds the vault's copy when it is a vault folder;
-    /// otherwise the copy goes into `<picked>/<vault name>.sempere` (made by the first run).
+    /// "Add Folder…": the folder the user picked holds the vault's copy when it is this vault's copy (any name) or a
+    /// `….sempere-vault` or `….sempere` folder; otherwise the copy goes into `<picked>/<vault name>.sempere-vault` (made by
+    /// the first run), or this vault's copy already there (`FolderTargetPlacement.location`).
     @discardableResult
     public func addPickedFolderTarget(_ picked: URL, to vaultID: UUID) throws -> SyncTarget {
         guard let entry = syncStore.entry(id: vaultID) else { throw SyncTargetProblem.notAStoreVault }
@@ -426,6 +454,7 @@ extension AppModelCore {
             case .otherVault(let name): throw SyncTargetProblem.otherVault(name)
             case .notAVault(let name): throw SyncTargetProblem.notAVault(name)
             case .notDownloaded(let name): throw SyncTargetProblem.notDownloaded(name)
+            case .severalCopies(let names): throw SyncTargetProblem.severalCopies(names)
             }
         }
     }
@@ -510,5 +539,38 @@ extension AppModelCore {
     /// "Sync Now" for every target of the open vault.
     public func syncAllTargetsNow() async {
         for s in syncSessions { await s.syncNow() }
+    }
+}
+
+// MARK: - A folder target held as a package (docs/io.md "A vault folder held as a package")
+
+/// Why a folder target's row warns (`folderTargetPackageRecord`): what the provider records, and whether the provider is
+/// iCloud Drive (the app names it; any other provider is named generically).
+public struct FolderTargetPackageWarning: Equatable, Sendable {
+    public var record: ProviderItemRecord
+    public var isICloudDrive: Bool
+
+    public init(record: ProviderItemRecord, isICloudDrive: Bool) {
+        self.record = record; self.isICloudDrive = isICloudDrive
+    }
+}
+
+extension AppModelCore {
+    /// What the provider records about a folder target's folder when it is a problem: it syncs the folder as one item
+    /// (a package), or the folder itself has unresolved conflict versions (whole-vault versions: `sempere vault
+    /// conflicts` merges them back). Nil otherwise, for a WebDAV target, or when the folder cannot be reached.
+    /// Resource values only (no walk), off the main actor: cheap enough for each time the row shows and after each run.
+    public func folderTargetPackageRecord(_ target: SyncTarget) async -> FolderTargetPackageWarning? {
+        guard target.kind == .folder else { return nil }
+        let bookmarks = services.bookmarks, provider = folderProvider
+        return await Task.detached(priority: .utility) { () -> FolderTargetPackageWarning? in
+            guard let access = try? FolderTargetAccess.open(target, bookmarks: bookmarks) else { return nil }
+            defer { access.close() }
+            let hooks = provider?(access.folder) ?? FolderProviders.detect(access.folder)
+            guard let record = hooks.itemRecord(of: access.folder),
+                  record.heldAsPackage || record.hasUnresolvedConflicts == true else { return nil }
+            return FolderTargetPackageWarning(record: record,
+                                              isICloudDrive: FolderLocation.classify(access.folder) == .iCloudDrive)
+        }.value
     }
 }

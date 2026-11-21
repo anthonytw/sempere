@@ -18,8 +18,12 @@ public enum InsightsGenerator {
     /// typo merge applied to both sides), with `label` (the note's title, notebook and tags) and the model's own terms
     /// as context (D16). Keywords and concepts keep the model's spelling: on real notes the typo merge turned more
     /// correct words into other words (`patent` into `parent`) than it repaired misreadings (D16). A voice note (`transcript` given) also gets a fact-checked slug for its title.
+    /// With `outputLanguage` (the vault's `insights.language`) the summary and the slug are first made and fact-checked in
+    /// the note's own language, then put into that language (`ModelProvider.translate`: a failure fails the generation, so
+    /// a note is never left half in one language); the keywords and concepts stay as the note has them, which is what
+    /// search matches.
     public static func generate(text: String, hash: String, language: String?, model: any ModelProvider,
-                                merger: TypoMerger?, transcript: String? = nil,
+                                merger: TypoMerger?, transcript: String? = nil, outputLanguage: String? = nil,
                                 label: FactCheck.Context = FactCheck.Context()) async throws -> InsightsNoteFile.Gen {
         let extraction = try await extract(text, language: language, model: model)
         let keywords = TermNormalizer.keywords(extraction.keywords)
@@ -32,8 +36,19 @@ public enum InsightsGenerator {
            let raw = try? await model.title(transcript: String(transcript.prefix(4000)), language: language) {
             slug = Self.slug(raw, transcript: transcript, merger: merger)
         }
-        return InsightsNoteFile.Gen(hash: hash, identity: model.identity, summary: check.summary, keywords: keywords,
-                                    concepts: concepts, dropped: check.dropped, slug: slug)
+        var summary = check.summary
+        if let outputLanguage {
+            // A translation is held to the summary's own length rule (4 sentences, 600 characters), so it never exceeds
+            // what a file may hold (`InsightsLimits.maxSummary`), however much longer the model made it.
+            if let s = summary, !s.isEmpty { summary = FactCheck.cut(text: try await model.translate(s, to: outputLanguage)) }
+            if let g = slug {
+                // A title must stay short: a translation that grows past a title is not used (the title then has no slug).
+                let t = VoiceNoteTitleFormat.cleaned(try await model.translate(g, to: outputLanguage))
+                slug = (1...8).contains(InsightsWords.count(t)) ? t : nil
+            }
+        }
+        return InsightsNoteFile.Gen(hash: hash, identity: model.identity, summary: summary, keywords: keywords,
+                                    concepts: concepts, dropped: check.dropped, slug: slug, outLang: outputLanguage)
     }
 
     /// One extraction of `text`: a single call up to the chunk size, else per chunk plus a merge.
@@ -116,6 +131,8 @@ public enum TopicSummaries {
     public static let minMembers = 3
     public static let singleShot = 25
     public static let maxSentences = 6
+    /// The most characters a topic summary keeps, translated or not (`InsightsLimits.maxTopicSummary` is 4,000).
+    public static let maxCharacters = 1200
     /// A scope is regenerated at most once a day.
     public static let minInterval: TimeInterval = 24 * 3600
 
@@ -138,11 +155,11 @@ public enum TopicSummaries {
     /// device with the model may make topics (D13); `own`, this device's, also counts as current for it, so two devices
     /// on different OS majors do not take turns remaking the same scope every day.
     public static func isDue(members: [Member], stored: InsightsTopicsFile.Topic?, own: InsightsTopicsFile.Topic? = nil,
-                             reader: GenerationIdentity, now: Date) -> Bool {
+                             reader: GenerationIdentity, language: String? = nil, now: Date) -> Bool {
         guard members.count >= minMembers else { return false }
         guard let stored else { return true }
         let digest = membersHash(members)
-        for t in [stored, own].compactMap({ $0 }) where t.membersHash == digest && t.gen.identity.isCurrent(for: reader) {
+        for t in [stored, own].compactMap({ $0 }) where t.membersHash == digest && t.gen.outLang == language && t.gen.identity.isCurrent(for: reader) {
             return false
         }
         return now.timeIntervalSince1970 - Double(stored.gen.at) / 1000 >= minInterval
@@ -178,14 +195,14 @@ public enum TopicSummaries {
     }
 
     /// Every scope with enough summarized members, as shown.
-    public static func shownAll(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot) -> [Shown] {
-        TopicScopes.members(inputs: inputs, snapshot: snapshot).filter { $0.1.count >= minMembers }
+    public static func shownAll(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot, language: String? = nil) -> [Shown] {
+        TopicScopes.members(inputs: inputs, snapshot: snapshot, language: language).filter { $0.1.count >= minMembers }
             .map { shown($0.0, members: $0.1, snapshot: snapshot) }
     }
 
     /// The topic's paragraph from `members` with `model`, fact-checked; nil when nothing survives.
     public static func generate(name: String, members: [Member], language: String?, model: any ModelProvider,
-                                merger: TypoMerger?) async throws -> String? {
+                                merger: TypoMerger?, outputLanguage: String? = nil) async throws -> String? {
         let sorted = members.sorted { $0.note.uuidString < $1.note.uuidString }
         let summaries: [String]
         if sorted.count <= singleShot {
@@ -202,7 +219,13 @@ public enum TopicSummaries {
         }
         let paragraph = try await model.summarize(topic: name, summaries: summaries, language: language)
         let source = sorted.map { $0.summary + " " + $0.keywords.joined(separator: " ") }.joined(separator: "\n")
-        return FactCheck(source: source, merger: merger).check(paragraph, maxSentences: maxSentences, maxCharacters: 1200).summary
+        let checked = FactCheck(source: source, merger: merger).check(paragraph, maxSentences: maxSentences,
+                                                                      maxCharacters: maxCharacters).summary
+        // The insight language (`insights.language`): put into it after the fact check, as a note's summary is, and held
+        // to the same length rule, so it never exceeds what a topics file may hold (`InsightsLimits.maxTopicSummary`).
+        guard let outputLanguage, let checked, !checked.isEmpty else { return checked }
+        return FactCheck.cut(text: try await model.translate(checked, to: outputLanguage), maxSentences: maxSentences,
+                             maxCharacters: maxCharacters)
     }
 }
 
@@ -237,7 +260,6 @@ public struct PolicyCapabilities: Hashable, Sendable {
 
 /// One unit of work, and why.
 public enum WorkItem: Hashable, Sendable {
-    case claimWorkDevice
     case generate(UUID)
     case embed(UUID)
     /// Replace this device's sidecar with a tombstone: the note was deleted.
@@ -273,25 +295,19 @@ public enum InsightsPolicy {
 
     /// The work for this device, in order. `force` ignores the settle time and regenerates stale and current alike;
     /// `ignoreSettle` only skips the settle time ("Process Now": open notes still wait, current ones are not redone).
-    /// Every device with the model generates (D13: summaries are per device files, and a note current on another device
-    /// is skipped); embedding, the map (and the updater's voice-note titles) stay with the work device, which a device
-    /// that embeds at the pin claims when none is set or when it is `workDeviceMissing` (not seen for 14 days, or no longer
-    /// listed: `WorkDeviceStatus`).
+    /// Any capable device does the work (D21): a note is generated when this device has the model and no device (this one
+    /// included) holds a current `gen` for it, embedded when this device supports the pin and no device holds a current
+    /// vector, and the map is rebuilt when it is due against the best map of any device. Readers settle a race between
+    /// devices by a fixed order (`InsightsSnapshot.bestGen`, `bestMap`). Power only decides when, never who.
     public static func plan(notes: [PolicyNote], snapshot: InsightsSnapshot, me: DeviceID, settings: InsightsSettings,
                             capabilities c: PolicyCapabilities, pinKey: EmbeddingKey?, now: Date, force: Bool = false,
-                            ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], workDeviceMissing: Bool = false,
-                            deviceRecordChanged: Bool) -> [WorkItem] {
+                            ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], deviceRecordChanged: Bool,
+                            standing: MapCompatibility = .compatible) -> [WorkItem] {
         guard settings.enabled else { return [] }
         var out: [WorkItem] = []
-        let isWork = settings.workDevice == me
-        // Holding the role means embedding at the pin (the map and titles device): a device that only generates never
-        // claims it, as `WorkDeviceStatus.capable` lists only devices that support the pin.
-        let capable = c.embedRevision != nil
-        let vacant = settings.workDevice == nil || (workDeviceMissing && !isWork)
-        if vacant, capable { out.append(.claimWorkDevice) }
-        let willHold = isWork || (vacant && capable)
         let generates = c.powerWindow && c.model != nil
-        let embeds = willHold && c.embedRevision != nil && pinKey != nil
+        // An incompatible device keeps its vectors local (D21): it neither writes shared vectors nor the map.
+        let embeds = c.embedRevision != nil && pinKey != nil && standing.mayWriteShared
         let record = snapshot.devices[me]
         if record == nil || deviceRecordChanged
             || record.map({ now.timeIntervalSince1970 - Double($0.written) / 1000 >= recordEvery }) == true {
@@ -310,29 +326,32 @@ public enum InsightsPolicy {
             let backedOff = backoff[n.id].map { $0 > now && !force } ?? false
             let others = (snapshot.notes[n.id] ?? [:]).filter { $0.key != me }
             let currentElsewhere = others.values.contains { f in
-                f.gen.map { $0.hash == n.hash && (c.model.map($0.identity.isCurrent(for:)) ?? true) } ?? false
+                f.gen.map { $0.hash == n.hash && $0.outLang == settings.language && (c.model.map($0.identity.isCurrent(for:)) ?? true) } ?? false
             }
             if generates, !backedOff, let model = c.model {
-                let ownCurrent = mine?.gen.map { $0.hash == n.hash && $0.identity.isCurrent(for: model) } ?? false
+                let ownCurrent = mine?.gen.map { $0.hash == n.hash && $0.outLang == settings.language && $0.identity.isCurrent(for: model) } ?? false
                 if force ? true : (!ownCurrent && !currentElsewhere) { out.append(.generate(n.id)) }
             }
-            if let g = mine?.gen, g.hash != n.hash, currentElsewhere {
+            // This device's `gen` is for older text, or for this text in another insight language than the one set, while
+            // another device holds a current one: it goes, so a rewrite of this file never brings the old one back.
+            if let g = mine?.gen, g.hash != n.hash || g.outLang != settings.language, currentElsewhere {
                 out.append(.dropStaleGen(n.id))
             }
             if embeds, let key = pinKey {
-                let current = mine?.emb.map { $0.hash == n.hash && $0.key == key } ?? false
-                if !current || force { out.append(.embed(n.id)) }
+                // Skipped when any device holds the vector (its bytes are the same on every device at one key).
+                if force || !snapshot.hasCurrentEmb(for: n.id, hash: n.hash, key: key) { out.append(.embed(n.id)) }
             }
         }
         if embeds, let key = pinKey {
-            let map = snapshot.maps[me]
-            let embedded = notes.filter { !$0.deleted && snapshot.notes[$0.id]?[me]?.emb.map { $0.key == key } == true }
+            let map = snapshot.bestMap(key: key)?.map
+            let embedded = notes.filter { !$0.deleted && snapshot.emb(for: $0.id, key: key, hash: nil) != nil }
             let changed = embedded.filter { e in
-                guard let map, !map.isTombstone else { return true }
-                return (snapshot.notes[e.id]?[me]?.written ?? 0) > map.written || map.positions[e.id] == nil
+                guard let map else { return true }
+                let written = snapshot.emb(for: e.id, key: key, hash: nil)?.written ?? 0
+                return written > map.written || map.positions[e.id] == nil
             }.count + (map.map { m in m.positions.keys.filter { id in !embedded.contains { $0.id == id } }.count } ?? 0)
             let due: Bool
-            if let map, !map.isTombstone, map.key == key {
+            if let map {
                 let base = max(1, map.built?.notes ?? 1)
                 due = Double(changed) > rebuildFraction * Double(base)
                     || (changed > 0 && now.timeIntervalSince1970 - Double(map.written) / 1000 >= rebuildEvery)

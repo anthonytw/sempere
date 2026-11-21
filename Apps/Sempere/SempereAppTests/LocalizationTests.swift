@@ -64,7 +64,12 @@ struct LocalizationTests {
         let es = try #require(Self.spanish)
         let missing = "\u{1}missing"
         // The import entry's title is built from the importer's name: its catalog key has a placeholder.
-        let keys = MenuCommand.allCases.map { $0 == .importFromApp && BuiltInImporters.primary != nil ? "Import from %@…" : $0.title }
+        let keys = MenuCommand.allCases.map { command -> String in
+            if command == .importFromApp, BuiltInImporters.primary != nil { return "Import from %@…" }
+            // The saved tools' placeholder titles are one catalog key with the number.
+            if command.savedToolNumber != nil { return "Saved Tool %lld" }
+            return command.title
+        }
             // The switches' other wordings (`MenuCommand.titleKind(in:)`, worded in `MenuCommand+Titles.swift`).
             + Self.switchedOn.flatMap { c in MenuCommand.allCases.filter { $0.titleKind(in: c) != .own }.map { $0.title(in: c) } }
         let untranslated = keys.filter { key in

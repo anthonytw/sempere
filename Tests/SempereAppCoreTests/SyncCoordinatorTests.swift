@@ -485,34 +485,135 @@ struct SyncCoordinatorTests {
 /// unlocked here, upload-only otherwise; the loop's pace; what a run's outcome makes of the status. Runs are fakes.
 @MainActor
 struct SyncSessionTests {
-    /// Only an upload error of the provider is a problem; a summary's other states are not.
-    @Test func onlyAProvidersUploadErrorIsAProblem() async throws {
+    /// Only an upload error of the provider is a problem, and only once it lasted (`ProviderUploads.Persistence`):
+    /// TestFlight 1.3.0 (112) showed "its storage may be full" when iCloud merely lagged. A summary's other states, and an
+    /// error that clears, are only waiting.
+    @Test func onlyAProvidersLastingUploadErrorIsAProblem() async throws {
         let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
                                   run: { _ in SyncReport() }, countUnconfirmed: { 0 })
         session.kind = .folder
-        let failed = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "full")
-        session.providerSummary = { ProviderUploads.Summary(count: 1, error: failed) }
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        session.now = { clock }
+        let lag = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "server not available")
+        session.providerSummary = { ProviderUploads.Summary(count: 1, error: lag) }
         session.vaultUnlocked()
         _ = await session.syncNow()
-        #expect(session.status.kind == .providerFailed(failed) && session.needsAttention)
+        #expect(session.status.kind == .waitingForProvider(1) && !session.needsAttention, "one look proves nothing")
+        clock += 60
+        _ = await session.syncNow()
+        #expect(!session.needsAttention, "seen twice in a minute: still only waiting")
+        clock += ProviderUploads.problemAfter
+        _ = await session.syncNow()
+        #expect(session.status.kind == .providerFailed(lag) && session.needsAttention, "lasted: a problem")
+        #expect(!session.status.lastSuccessIsSync)
+        // While the next run goes, the problem stays (the bar does not come and go with runs).
+        #expect(SyncStatus(syncing: true, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: nil,
+                           folder: true, providerPending: 1, providerError: lag).needsAttention)
+        // A look that sees no error: only waiting again, and the time starts over.
         session.providerSummary = { ProviderUploads.Summary(count: 1, error: .waiting) }
         _ = await session.syncNow()
         #expect(session.providerError == nil)
         #expect(session.status.kind == .waitingForProvider(1) && !session.needsAttention)
+        session.providerSummary = { ProviderUploads.Summary(count: 1, error: lag) }
+        clock += 60
+        _ = await session.syncNow()
+        #expect(!session.needsAttention, "the error came back: its time starts over")
+        // No network path: the looks start over as well.
+        clock += ProviderUploads.problemAfter
+        session.networkChanged(reachable: false)
+        _ = await session.syncNow()
+        _ = await session.syncNow()
+        #expect(!session.needsAttention)
         session.stop()
     }
 
     @Test func statusKinds() {
         var s = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: nil)
-        #expect(s.kind == .synced)
+        #expect(s.kind == .synced && !s.needsAttention)
         s.unconfirmed = 3
-        #expect(s.kind == .pending(3))
+        #expect(s.kind == .pending(3) && !s.needsAttention)
         s.problems = [.offline]
         #expect(s.kind == .offline && !s.needsAttention)
         s.problems = [.unauthorized]
         #expect(s.needsAttention)
         s = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: false, lastSuccess: nil)
         #expect(s.kind == .waitingForUnlock && !s.needsAttention)
+    }
+
+    /// The note list's bar shows only what is definitely wrong (owner 2026-11-20): syncing, synced, changes not synced
+    /// yet, a run cut short, files waiting for the provider, waiting for the unlock and offline show none; a problem stays
+    /// one while the next run goes (`settledKind`).
+    @Test func onlyDefiniteProblemsNeedAttention() {
+        func status(_ edit: (inout SyncStatus) -> Void) -> SyncStatus {
+            var s = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: Date(),
+                               folder: true, viaICloud: true)
+            edit(&s)
+            return s
+        }
+        let quiet: [SyncStatus] = [
+            status { _ in },                                   // synced
+            status { $0.syncing = true },                      // syncing
+            status { $0.unconfirmed = 4 },                     // not synced yet
+            status { $0.continuing = true },                   // cut short
+            status { $0.providerPending = 3 },                 // waiting for iCloud
+            status { $0.arriving = 2 },                        // files on their way
+            status { $0.twoWay = false; $0.staged = 5 },       // waiting for the unlock
+            status { $0.deviceLocked = true },
+            status { $0.problems = [.offline] },               // offline: kept here, syncs when back
+            status { $0.networkDown = true; $0.problems = [.unauthorized] },
+        ]
+        for s in quiet { #expect(!s.needsAttention, "\(s.kind)") }
+        let loud: [WebDAVSyncProblem] = [.unauthorized, .certificate("x"), .certificateDate, .otherVault, .notFound,
+                                         .redirect("https://x"), .serverChangedManifest, .notWritable(["a"]),
+                                         .writeGrantLapsed, .failures(["a: b"]), .failed("x")]
+        for p in loud {
+            #expect(status { $0.problems = [p] }.needsAttention, "\(p)")
+            let running = status { $0.problems = [p]; $0.syncing = true }
+            #expect(running.kind == .syncing && running.settledKind == .problem(p) && running.needsAttention,
+                    "a problem stays while the next run goes: \(p)")
+        }
+        let full = ProviderUploads.State.failed(code: 4354, domain: NSCocoaErrorDomain, message: "full")
+        #expect(status { $0.providerPending = 1; $0.providerError = full }.needsAttention)
+
+        // Review of build 113, S3: a target the runs could not reach for `staleAfter` is a problem (injected clock).
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        func unreachable(lastSuccess: Date?, added: Date? = nil, networkDown: Bool = false) -> SyncStatus {
+            SyncStatus(syncing: false, problems: [.offline], unconfirmed: 0, arriving: 0, twoWay: true,
+                       lastSuccess: lastSuccess, networkDown: networkDown, targetName: "nas", added: added, now: now)
+        }
+        let sixDays = unreachable(lastSuccess: now - 6 * day)
+        #expect(!sixDays.needsAttention && sixDays.unreachableDays == nil, "under a week: still only offline")
+        let eightDays = unreachable(lastSuccess: now - 8.5 * day)
+        #expect(eightDays.needsAttention && eightDays.unreachableDays == 8)
+        let running = { var s = eightDays; s.syncing = true; return s }()
+        #expect(running.needsAttention, "stays while the next run goes")
+        #expect(!unreachable(lastSuccess: now - 30 * day, networkDown: true).needsAttention,
+                "the device has no network: not the target's fault")
+        #expect(unreachable(lastSuccess: nil, added: now - 10 * day).unreachableDays == 10,
+                "never synced: counted from when the target was added")
+        #expect(!unreachable(lastSuccess: nil, added: now - 2 * day).needsAttention)
+        #expect(!unreachable(lastSuccess: nil).needsAttention, "no date to count from")
+        #expect(!unreachable(lastSuccess: now - 1 * day, added: now - 30 * day).needsAttention,
+                "the last sync counts, not the date added")
+        var staleSynced = eightDays
+        staleSynced.problems = []
+        #expect(!staleSynced.needsAttention, "only an unreachable target")
+    }
+
+    /// Review of build 113, S3: the session hands its clock, the target's name and its date added to the status.
+    @Test func aSessionCountsUnreachableDaysOnItsClock() async {
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        var time = start
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
+                                  run: { _ in throw WebDAVError.offline("no host") }, countUnconfirmed: { 0 })
+        session.now = { time }
+        session.targetName = "nas"
+        session.added = start
+        _ = await session.syncNow()
+        #expect(session.status.kind == .offline && !session.needsAttention, "just added: offline only")
+        time = start + 7 * 24 * 60 * 60
+        #expect(session.needsAttention && session.status.unreachableDays == 7 && session.status.targetName == "nas")
     }
 
     /// Review of #91, S1: a write made while a Sync Now runs is synced after its write delay once that run ends,
@@ -609,6 +710,92 @@ struct SyncSessionTests {
         _ = await session.syncNow()
         #expect(seen.all.first == .some(nil), "never away: nothing to leave out")
         #expect(seen.all.last == .some(back))
+        session.stop()
+    }
+
+    /// Between runs the loop asks the provider again about the waiting files, with growing delays; the bar goes back to
+    /// synced once they are uploaded, and an upload error shows as a problem meanwhile.
+    @Test func waitingUploadsAreRecheckedBetweenRunsUntilDone() async throws {
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
+                                  run: { _ in SyncReport() }, countUnconfirmed: { 0 })
+        session.kind = .folder
+        session.uploadsViaICloud = true
+        session.tick = .milliseconds(5)
+        session.providerRecheckDelays = [0.01, 0.02]
+        let looks = Sync.Counter()
+        session.providerSummary = { ProviderUploads.Summary(count: 2) }
+        session.providerRecheck = {
+            switch looks.add(1) {
+            case 1: return ProviderUploads.Summary(count: 1, error: .failed(code: 4355, domain: NSCocoaErrorDomain, message: "full"))
+            case 2: return ProviderUploads.Summary(count: 1)
+            default: return ProviderUploads.Summary()
+            }
+        }
+        session.vaultUnlocked()
+        _ = await session.syncNow()
+        #expect(session.status.kind == .waitingForProvider(2))
+        session.start()
+        for _ in 0..<400 where session.status.kind != .synced { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(session.status.kind == .synced)
+        #expect(looks.add(0) == 3, "no more looks once nothing waits")
+        session.stop()
+    }
+
+    /// Review of build 111, N1: while the provider stays offline (no fewer files waiting look after look), the looks
+    /// stop after `providerRecheckLimit` in a row, until the next run counts again.
+    @Test func providerLooksStopWhileNothingUploads() async throws {
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
+                                  run: { _ in SyncReport() }, countUnconfirmed: { 0 })
+        session.kind = .folder
+        session.uploadsViaICloud = true
+        session.tick = .milliseconds(5)
+        session.providerRecheckDelays = [0.005]
+        session.providerRecheckLimit = 3
+        let looks = Sync.Counter()
+        session.providerSummary = { ProviderUploads.Summary(count: 2) }
+        session.providerRecheck = {
+            _ = looks.add(1)
+            return ProviderUploads.Summary(count: 2)
+        }
+        session.schedule.idleInterval = 3600   // no scheduled run (its count would start the looks over)
+        session.schedule.maxIdleInterval = 3600
+        session.vaultUnlocked()
+        _ = await session.syncNow()
+        session.start()
+        // Judged on the plan, not on sleeps (the gate under load, build 113: a count `start` made late started the
+        // looks over after they had been sampled as stopped): once `start`'s count is in, the looks go on until
+        // `providerRecheckLimit` in a row saw no fewer files, and then none is planned.
+        await session.startCount?.value
+        // Stopped = nothing planned, no run, and the count unchanged for 100 ms in a row: `providerRecheckDue` is also
+        // nil for the moment a look is running (it is cleared before the look and set again after), so it alone is
+        // not "stopped" (the gate, build 113, sampled in that moment).
+        func waitUntilStopped() async throws {
+            var last = looks.add(0), stableSince = ContinuousClock.now
+            for _ in 0..<4000 {
+                let now = looks.add(0)
+                if now != last || session.providerRecheckDue != nil || session.isSyncing {
+                    last = now; stableSince = .now
+                } else if ContinuousClock.now - stableSince >= .milliseconds(100) {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(session.providerRecheckDue == nil, "the looks stopped")
+        }
+        try await waitUntilStopped()
+        // (`start`'s count may start the looks over once, after some of the first.)
+        let stopped = looks.add(0)
+        #expect((3...6).contains(stopped))
+        try await Task.sleep(for: .milliseconds(150))   // kept: a negative check, nothing to wait on
+        #expect(looks.add(0) == stopped, "no more looks while nothing uploads")
+        #expect(session.status.kind == .waitingForProvider(2))
+        // The next run counts again and the looks start over, exactly as many again.
+        _ = await session.syncNow()
+        try await waitUntilStopped()
+        let again = looks.add(0)
+        #expect(again == stopped + 3)
+        try await Task.sleep(for: .milliseconds(150))   // kept: a negative check, nothing to wait on
+        #expect(looks.add(0) == again, "the looks stop again while nothing uploads")
         session.stop()
     }
 

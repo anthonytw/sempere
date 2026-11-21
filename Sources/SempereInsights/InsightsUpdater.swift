@@ -4,9 +4,8 @@ import Sempere
 // MARK: - The updater (docs/design/1.2-note-insights.md §3.7, §3.8, §4, D13-D15; `sempere insights update`)
 //
 // One pass over a vault for this device: delete its own files under an earlier key (written again below) and what
-// removed devices left, claim the work device when none is set (or it was not seen for 14 days), then per note (in the
-// policy's order) generate (every device with the model), embed and title (the work device), tombstone, then rebuild the
-// map, write this device's record and the topic summaries due. Every write goes through
+// removed devices left, then per note (in the policy's order) generate and embed what no device has a current result for
+// (any capable device, D21), title voice notes, tombstone, then rebuild the map when it is due, write this device's record and the topic summaries due. Every write goes through
 // `InsightsStore` (and voice-note titles through `Vault.apply`), so a read-only vault refuses them all. The app (PR 2)
 // and the CLI call it alike.
 
@@ -47,6 +46,28 @@ public enum InsightsNotes {
                                      language: InsightsLanguage.of(s.lang), modified: s.modified, deleted: s.deleted,
                                      transcript: transcripts.joined(separator: "\n\n"), notebook: s.notebook, tags: s.tags)
         }
+    }
+
+    /// The title Note Insights derived for each of `notes` that has one for its current text, in the insight language and
+    /// title format now set (`InsightsSnapshot.bestTitle`, format.md §16.2, §16.8): what a list shows for a voice note whose
+    /// stored title is blank or a default (`NoteDisplayTitle.resolve`). Reads the store only when some note needs it (not
+    /// deleted, a voice note, such a title), and then only those notes' own files (`InsightsStore.snapshot(notes:)`); a
+    /// note's transcripts are read (for its text hash) only when some file holds a title for it.
+    /// `PublishedSummaries.DerivedTitles` for the published summaries' `shown`.
+    public static func derivedTitles(_ vault: Vault, for notes: [NoteSummary]) -> [UUID: String] {
+        let wanted = notes.filter { !$0.deleted && $0.voice != nil && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) }
+        guard !wanted.isEmpty, FileManager.default.fileExists(atPath: vault.insightsURL.path) else { return [:] }
+        let snapshot = InsightsStore(vault: vault).snapshot(notes: Set(wanted.map(\.id)))
+        let titled = wanted.filter { snapshot.notes[$0.id]?.values.contains { $0.title != nil } == true }
+        guard !titled.isEmpty else { return [:] }
+        let settings = InsightsSettings.read(vault)
+        var out: [UUID: String] = [:]
+        for n in inputs(vault, summaries: titled) {
+            if let t = snapshot.bestTitle(for: n.id, hash: n.hash, language: settings.language, format: settings.voiceNoteTitle) {
+                out[n.id] = t
+            }
+        }
+        return out
     }
 
     /// The vault's recognized-word frequencies (the typo merge's corpus, step 4).
@@ -108,13 +129,11 @@ public struct InsightsUpdateOptions: Sendable {
 /// What a pass did (or would do, `dryRun`).
 public struct InsightsUpdateReport: Hashable, Sendable, Codable {
     public var device: String = ""
-    public var claimedWorkDevice = false
     public var generated: [String] = []
     public var embedded: [String] = []
     public var tombstoned: [String] = []
     public var dropped: [String] = []
     public var titled: [String] = []
-    public var restoredTitles: [String] = []
     public var removed: [String] = []
     public var mapBuilt = false
     public var deviceRecord = false
@@ -188,13 +207,6 @@ public enum InsightsUpdateError: Error, Hashable, Sendable, CustomStringConverti
     }
 }
 
-/// Writes one delta to `note` (a voice note's rename, D14) whose ops `build` decides from the note as it is on disk at
-/// the moment of writing (nil: nothing to write, a rename in between won), and returns the revision written, or nil.
-/// The app's: through its model's `DeviceClock` and edit gate (CLAUDE.md: never open a second clock on a state file a
-/// `DeviceClock` holds); without one the updater writes with `Vault.apply` and the machine's `DeviceState` (the CLI).
-public typealias InsightsTitleWriter = @Sendable (_ note: UUID, _ build: @escaping @Sendable () throws -> [Op]?, _ now: Date)
-    async throws -> RevisionName?
-
 public struct InsightsUpdater: Sendable {
     public var vault: Vault
     public var model: (any ModelProvider)?
@@ -202,22 +214,9 @@ public struct InsightsUpdater: Sendable {
     /// The device state file voice-note titles are written with (`Vault.apply`).
     public var deviceState: URL
     public var app: String
-    /// Where voice-note titles are written (nil: `Vault.apply` with `deviceState`).
-    public var titleWriter: InsightsTitleWriter?
-    /// The device id this device's revisions carry, when the caller knows it (the app's clock); nil: read from
-    /// `deviceState`.
-    public var writerDevice: DeviceID?
 
     public init(vault: Vault, model: (any ModelProvider)?, embedder: (any EmbeddingProvider)?, deviceState: URL, app: String) {
         self.vault = vault; self.model = model; self.embedder = embedder; self.deviceState = deviceState; self.app = app
-    }
-
-    /// The device id this device's revisions carry (its state file's), which a `titleOp` of its own names; nil before
-    /// the state file exists (then no `titleOp` is this device's).
-    var revisionWriter: DeviceID? {
-        if let writerDevice { return writerDevice }
-        guard FileManager.default.fileExists(atPath: deviceState.path) else { return nil }
-        return (try? DeviceState.loadOrCreate(at: deviceState))?.device
     }
 
     public func run(_ o: InsightsUpdateOptions, notes inputs: [InsightsNoteInput]) async throws -> InsightsUpdateReport {
@@ -245,16 +244,16 @@ public struct InsightsUpdater: Sendable {
         var supported = embedder?.supported(languages.isEmpty ? [main] : languages) ?? [:]
         if supported.isEmpty, let embedder { supported = embedder.supported([main]) }
         let ownRecord = makeRecord(me: me, supported: supported, settings: settings, snapshot: snapshot, o: o)
-        // The work device not seen for 14 days: a capable device claims the role (self-healing, D13).
-        let workDeviceMissing = settings.workDevice != nil && settings.workDevice != me
-            && WorkDeviceStatus(settings: settings, snapshot: snapshot, listed: listed, language: main, now: o.now).notSeen
         var records = EmbeddingPin.recent(snapshot.devices, listed: listed, now: o.now)
         records[me] = ownRecord
         func pinRevision(_ lang: String) -> Int? { settings.pins[lang] ?? EmbeddingPin.lowestCommon(records, language: lang) }
         let pin = pinRevision(main)
         let canEmbed = pin.flatMap { p in supported[main]?.contains(p) == true ? p : nil }
         let pinKey = canEmbed.flatMap { r in embedder?.key(language: main, revision: r) }
-        let changedRecord = snapshot.devices[me].map { !Self.sameRecord($0, ownRecord) } ?? true
+        let standing = canEmbed == nil ? MapCompatibility.vectorReader
+            : mapStanding(snapshot: snapshot, me: me, records: records, settings: settings, language: main, key: pinKey)
+        // A change of standing is a change of record at once (D21): readers exclude an incompatible device's vectors by its record.
+        let changedRecord = snapshot.devices[me].map { !Self.sameRecord($0, ownRecord) || $0.compatibility != standing.rawValue } ?? true
         let caps = PolicyCapabilities(model: o.embeddingsOnly ? nil : usable?.identity, embedRevision: canEmbed, powerWindow: o.powerWindow)
         let selected = o.note.map { id in inputs.filter { $0.id == id } } ?? inputs
         let policyNotes = selected.map {
@@ -265,42 +264,17 @@ public struct InsightsUpdater: Sendable {
         let backoff = usable.map { m in
             memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity, ignoringBefore: o.ignoreBackoffBefore)
         } ?? [:]
-        func makePlan(missing: Bool) -> [WorkItem] {
-            InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps, pinKey: pinKey,
-                                now: o.now, force: o.force, ignoreSettle: o.ignoreSettle, backoff: backoff, workDeviceMissing: missing,
-                                deviceRecordChanged: changedRecord)
-        }
-        var plan = makePlan(missing: workDeviceMissing)
-        if o.rebuildMap, pinKey != nil, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
-        // Claim the role (D13: the first capable device to turn insights on, or any capable one once the work device has
-        // not been seen for 14 days), through the settings merge.
-        if plan.contains(.claimWorkDevice) {
-            report.claimedWorkDevice = true
-            let replaces = workDeviceMissing ? settings.workDevice?.rawValue : nil
-            if !o.dryRun {
-                try vault.updateSharedSettingsUnderWriteLock { s in
-                    guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.workDevice) else { return }
-                    // Claimed (or designated) meanwhile: only an empty role, or the missing device's, is taken.
-                    if case .string(let current) = s.resolve(spec, for: nil).value, current != replaces { return }
-                    try s.write(spec, .string(me.rawValue), block: nil, type: nil, now: o.now)
-                }
-                settings = InsightsSettings.read(vault, type: o.deviceType)
-            } else {
-                settings.workDevice = me
-            }
-            if settings.workDevice != me {
-                // Another device's claim won the merge: plan again as a device that is not the work device.
-                report.claimedWorkDevice = false
-                plan = makePlan(missing: false)
-            }
-        }
+        var plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
+                                       pinKey: pinKey, now: o.now, force: o.force, ignoreSettle: o.ignoreSettle, backoff: backoff,
+                                       deviceRecordChanged: changedRecord, standing: standing)
+        if o.rebuildMap, pinKey != nil, standing.mayWriteShared, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
         // What waits, and why ("Process Now"'s outcome): the notes a plan with no settle time, no open notes and no
         // back-off would summarize that this one does not.
         if usable != nil, !o.force {
             var free = policyNotes
             for i in free.indices { free[i].open = false }
             let unheld = InsightsPolicy.plan(notes: free, snapshot: snapshot, me: me, settings: settings, capabilities: caps, pinKey: pinKey,
-                                             now: o.now, ignoreSettle: true, deviceRecordChanged: false)
+                                             now: o.now, ignoreSettle: true, deviceRecordChanged: false, standing: standing)
             let planned = Set(plan.compactMap { if case .generate(let id) = $0 { return id } else { return nil } })
             let open = Set(policyNotes.filter(\.open).map(\.id))
             for case .generate(let id) in unheld where !planned.contains(id) {
@@ -314,12 +288,6 @@ public struct InsightsUpdater: Sendable {
                 }
             }
             if report.backedOff > 0 { report.notes.append("\(report.backedOff) notes backed off (failed earlier; --force to retry)") }
-        }
-        // A device that no longer holds the role says so with a tombstone map (no key): readers take the map and
-        // vectors only from the work device anyway, and a tombstone keeps a bridging device from bringing it back.
-        if settings.workDevice != me, let old = snapshot.maps[me], !old.isTombstone, !o.dryRun {
-            try store.write(.map(InsightsMapFile(device: me, written: 0, key: nil, dim: nil, canaries: nil, mean: nil, clusters: [],
-                                                 layout: [:], built: nil)), now: o.now)
         }
         let byId = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
         let merger = InsightsNotes.merger(inputs)
@@ -342,6 +310,7 @@ public struct InsightsUpdater: Sendable {
                     let gen = try await InsightsGenerator.generate(text: note.text, hash: note.hash, language: note.language,
                                                                    model: model, merger: merger,
                                                                    transcript: isVoice ? note.transcript : nil,
+                                                                   outputLanguage: settings.language,
                                                                    label: FactCheck.Context(title: note.title, notebook: note.notebook,
                                                                                             tags: note.tags))
                     var f = own(id); f.gen = gen; f.lang = note.language
@@ -367,7 +336,7 @@ public struct InsightsUpdater: Sendable {
                 var f = own(id); f.gen = nil
                 pending[id] = f
                 report.dropped.append(id.uuidString.lowercased())
-            case .claimWorkDevice, .rebuildMap, .writeDeviceRecord:
+            case .rebuildMap, .writeDeviceRecord:
                 continue
             }
         }
@@ -386,17 +355,15 @@ public struct InsightsUpdater: Sendable {
             report.cancelled = true
             return report
         }
-        // Voice-note titles (D14): from any device's current `gen` slug, while the title is the capture default.
-        // Only the work device sets titles (format.md §16.8, D14; review of #50, M1); `insights title` stays manual anywhere.
-        if o.titles, !o.embeddingsOnly, settings.workDevice == me {
+        // Voice-note titles (D14, 1.3): derived from any device's current `gen` slug into this device's own note file, never
+        // into the note, and only while the note's own title is blank or a default (`NoteDisplayTitle`), so a user's title
+        // is never touched. Devices that race write the same text (format.md §16.8); `insights title` is the manual form.
+        if o.titles, !o.embeddingsOnly {
             for note in selected where !note.deleted && !note.transcript.isEmpty && !o.openNotes.contains(note.id) {
                 if Task.isCancelled { report.cancelled = true; return report }
-                guard let outcome = try await applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle,
-                                                   dryRun: o.dryRun, now: o.now) else { continue }
-                switch outcome {
-                case .apply: report.titled.append(note.id.uuidString.lowercased())
-                case .restore: report.restoredTitles.append(note.id.uuidString.lowercased())
-                case .keep: break
+                if try applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle, language: settings.language,
+                                  dryRun: o.dryRun, now: o.now) {
+                    report.titled.append(note.id.uuidString.lowercased())
                 }
             }
             if !o.dryRun { snapshot = store.snapshot() }
@@ -419,7 +386,7 @@ public struct InsightsUpdater: Sendable {
         if plan.contains(.rebuildMap), let key = pinKey {
             report.mapBuilt = true
             if !o.dryRun {
-                let map = Self.buildMap(snapshot: snapshot, me: me, key: key, inputs: inputs, previous: snapshot.maps[me],
+                let map = Self.buildMap(snapshot: snapshot, me: me, key: key, inputs: inputs, previous: snapshot.bestMap(key: key)?.map,
                                         canaries: try? embedder.flatMap { try Canaries.vectors($0, language: main, revision: key.rev) })
                 if let map { try store.write(.map(map), now: o.now) }
                 snapshot = store.snapshot()
@@ -430,10 +397,14 @@ public struct InsightsUpdater: Sendable {
             if !o.dryRun {
                 var record = ownRecord
                 record.canaries = canaryVectors(supported: supported, pin: pin, language: main)
-                let comp = InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
-                    .compatibility(me: me, embedder: embedder, language: main)
+                // A map built in this pass makes this device its builder (compatible); otherwise the standing the pass acted on,
+                // which can say `incompatible` where the reader's own answer is `noMap` (no map yet).
+                let comp = report.mapBuilt
+                    ? InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
+                        .compatibility(me: me, embedder: embedder, language: main)
+                    : standing
                 record.compatibility = comp.rawValue
-                record.against = settings.workDevice.flatMap { snapshot.map(of: $0)?.written }
+                record.against = snapshot.bestMap(rev: pin, language: main)?.map.written
                 try store.write(.device(record), now: o.now)
             }
         }
@@ -447,108 +418,69 @@ public struct InsightsUpdater: Sendable {
 
     // MARK: Titles
 
-    enum TitleOutcome { case apply, restore, keep }
-
-    /// Applies (or restores) a voice note's title; nil when there is nothing to do.
-    func applyTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, me: DeviceID, format: String, dryRun: Bool,
-                    now: Date) async throws -> TitleOutcome? {
+    /// The title Note Insights would derive for a voice note now (nil: it keeps none): the rendered `format` for the current
+    /// `gen`'s slug and the capture's date and time, only while the note's own title is blank or a default. `slug` overrides
+    /// the best current `gen`'s (the manual command).
+    func derivedTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, format: String, slug override: String? = nil,
+                      language: String?, now: Date) throws -> (title: String, hash: String)? {
         let loaded = try vault.loadNote(note.id)
         let state = try vault.reconstruct(loaded)
-        let titles = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-        guard titles.isVoiceNote else { return nil }
-        let ownFile = snapshot.notes[note.id]?[me]
-        let best = snapshot.bestGen(for: note.id, hash: note.hash)
-        let slug = best.flatMap { $0.current ? $0.gen.slug : nil }
-        let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
-                                                            started: titles.started ?? note.modified ?? now)
-        let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        let writer = revisionWriter
-        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: writer)
-        switch decision {
-        case .keep: return nil
-        case .apply(let title):
-            guard !dryRun else { return .apply }
-            guard let stamp = try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed,
-                                               writer: writer, now: now) else { return nil }
-            var f = ownFile ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
-            f.titleOp = .init(stamp: stamp.description, title: title)
-            try InsightsStore(vault: vault).write(.note(f), now: now)
-            return .apply
-        case .restore:
-            guard !dryRun else { return .restore }
-            guard try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed, writer: writer,
-                                   now: now) != nil else { return nil }
-            return .restore
+        guard let origin = VoiceOrigin(state: state), NoteDisplayTitle.isStoredDefault(state.meta.title, origin: origin) else {
+            return nil
         }
+        // The slug of the best current `gen` (one written in the insight language now set, else it waits for the new one).
+        let slug = override ?? snapshot.bestGen(for: note.id, hash: note.hash, language: language)
+            .flatMap { $0.current && $0.gen.outLang == language ? $0.gen.slug : nil }
+        let local = VoiceNoteTitleFormat.captureDateAndTime(origin: origin, storedTitle: state.meta.title, started: origin.started)
+        guard let title = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug) else { return nil }
+        return (title, note.hash)
     }
 
-    /// One rename delta through `titleWriter`, else `Vault.apply` with `deviceState`; the stamp of the revision written,
-    /// nil when the note as it is on disk at the moment of writing no longer gives `decision` (a rename in between wins).
-    func rename(_ id: UUID, decision: VoiceNoteTitleState.Decision, applied: InsightsNoteFile.TitleOp?, proposed: String?,
-                writer: DeviceID?, now: Date) async throws -> Stamp? {
-        let vault = self.vault
-        let build: @Sendable () throws -> [Op]? = {
-            let loaded = try vault.loadNote(id)
-            let state = try vault.reconstruct(loaded)
-            let again = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-                .decide(applied: applied, proposed: proposed, writer: writer)
-            switch (again, decision) {
-            case (.apply(let a), .apply(let b)) where a == b: return NoteOps.rename(to: a, state: state)
-            case (.restore(let a), .restore(let b)) where a == b: return NoteOps.rename(to: a, state: state)
-            default: return nil
-            }
-        }
-        if let titleWriter {
-            guard let r = try await titleWriter(id, build, now) else { return nil }
-            return Stamp(hlc: r.hlc, device: r.device)
-        }
-        guard let ops = try build() else { return nil }
-        let rev = try vault.apply(ops, to: id, deviceState: deviceState, app: app, wall: now)
-        return Stamp(hlc: rev.hlc, device: rev.device)
+    /// Records this device's derived title of a voice note in its own note file; false when there is nothing to do.
+    func applyTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, me: DeviceID, format: String, language: String?,
+                    dryRun: Bool, now: Date) throws -> Bool {
+        // Once per text and insight language: a title any device derived for this text stands, so devices that race (their
+        // slugs differ) leave one winner by `at` and device id, and none rewrites its own to flip it.
+        guard !snapshot.hasTitle(for: note.id, hash: note.hash, language: language, format: format),
+              let derived = try derivedTitle(note, snapshot: snapshot, format: format, language: language, now: now) else { return false }
+        guard !dryRun else { return true }
+        try writeTitle(note, derived, language: language, format: format, snapshot: snapshot, me: me, now: now)
+        return true
     }
 
-    /// The title `insights title` would give `note` (no write), nil when it keeps its title.
-    public func proposedTitle(_ note: InsightsNoteInput, format: String, slug: String?) throws -> (decision: VoiceNoteTitleState.Decision, isVoice: Bool) {
-        let loaded = try vault.loadNote(note.id)
-        let state = try vault.reconstruct(loaded)
-        let titles = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-        let me = vault.writerDevice
-        let snapshot = InsightsStore(vault: vault).snapshot()
-        let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
-                                                            started: titles.started ?? note.modified ?? Date())
-        let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        return (titles.decide(applied: me.flatMap { snapshot.notes[note.id]?[$0]?.titleOp }, proposed: proposed, writer: revisionWriter),
-                titles.isVoiceNote)
+    func writeTitle(_ note: InsightsNoteInput, _ derived: (title: String, hash: String), language: String?,
+                    format: String, snapshot: InsightsSnapshot, me: DeviceID, now: Date) throws {
+        var f = snapshot.notes[note.id]?[me] ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
+        f.title = .init(hash: derived.hash, text: derived.title, at: Int64(now.timeIntervalSince1970 * 1000), lang: language,
+                         fmt: format == VoiceNoteTitleFormat.defaultFormat ? nil : format)
+        try InsightsStore(vault: vault).write(.note(f), now: now)
     }
 
-    /// Writes the title of `insights title` (D14) with `format` and `slug`; returns the decision applied.
-    public func writeTitle(_ note: InsightsNoteInput, format: String, slug: String?, now: Date = Date()) throws -> VoiceNoteTitleState.Decision {
-        let me = try InsightsStore(vault: vault).writer()
-        let snapshot = InsightsStore(vault: vault).snapshot()
-        let loaded = try vault.loadNote(note.id)
-        let state = try vault.reconstruct(loaded)
-        let titles = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-        let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
-                                                            started: titles.started ?? note.modified ?? now)
-        let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        let ownFile = snapshot.notes[note.id]?[me]
-        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: revisionWriter)
-        switch decision {
-        case .keep: break
-        case .apply(let title):
-            let rev = try vault.apply(NoteOps.rename(to: title, state: state), to: note.id, deviceState: deviceState, app: app, wall: now)
-            var f = ownFile ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
-            f.titleOp = .init(stamp: Stamp(hlc: rev.hlc, device: rev.device).description, title: title)
-            try InsightsStore(vault: vault).write(.note(f), now: now)
-        case .restore(let title):
-            _ = try vault.apply(NoteOps.rename(to: title, state: state), to: note.id, deviceState: deviceState, app: app, wall: now)
-        }
-        return decision
+    /// The title `insights title` would derive for `note` (no write); nil when it keeps its title or has no voice recording.
+    public func proposedTitle(_ note: InsightsNoteInput, format: String, slug: String?, language: String? = nil) throws -> String? {
+        try derivedTitle(note, snapshot: InsightsStore(vault: vault).snapshot(), format: format, slug: slug, language: language,
+                         now: Date())?.title
+    }
+
+    /// Records the title of `insights title` (D14) with `format` and `slug` in this device's note file; returns it, nil
+    /// when the note keeps its title.
+    public func writeTitle(_ note: InsightsNoteInput, format: String, slug: String?, language: String? = nil,
+                           now: Date = Date()) throws -> String? {
+        let store = InsightsStore(vault: vault)
+        let me = try store.writer()
+        let snapshot = store.snapshot()
+        guard let derived = try derivedTitle(note, snapshot: snapshot, format: format, slug: slug, language: language, now: now)
+        else { return nil }
+        try writeTitle(note, derived, language: language, format: format, snapshot: snapshot, me: me, now: now)
+        return derived.title
     }
 
     // MARK: Map, records, topics
 
-    /// The map of the work device's vectors at `key` (design §3.8): mean-centered clusters and layout, warm-started.
+    /// The map of the vault's vectors at `key` (design §3.8; any device's, D21): mean-centered clusters and layout,
+    /// warm-started from `previous`. Deterministic: the same vectors, summaries and `previous` give the same clusters,
+    /// labels and positions on every device, so devices that rebuild at once write the same map (only `device`,
+    /// `written` and the builder's canaries differ).
     public static func buildMap(snapshot: InsightsSnapshot, me: DeviceID, key: EmbeddingKey, inputs: [InsightsNoteInput],
                                 previous: InsightsMapFile?, canaries: [[Float]]?) -> InsightsMapFile? {
         let live = inputs.filter { !$0.deleted }
@@ -556,7 +488,7 @@ public struct InsightsUpdater: Sendable {
         var pairs: [(UUID, String)] = []
         var dim: Int?
         for n in live {
-            guard let e = snapshot.notes[n.id]?[me]?.emb, e.key == key, let v = e.vector else { continue }
+            guard let e = snapshot.emb(for: n.id, key: key, hash: n.hash)?.emb, let v = e.vector else { continue }
             dim = dim ?? v.count
             guard v.count == dim else { continue }
             let gen = snapshot.bestGen(for: n.id, hash: n.hash)?.gen
@@ -592,6 +524,25 @@ public struct InsightsUpdater: Sendable {
                                     supported: supported, canaries: [], compatibility: nil, against: nil)
     }
 
+    /// This device's standing toward the shared map before it writes anything (D21): `compatible`, `noMap` or
+    /// `incompatible`/`vectorReader` (the last two write nothing shared). With no map yet, the canaries in the device
+    /// records decide: the capable device with the lowest id that has canaries at `key` is the reference (a device that is
+    /// not it writes only when its canaries agree with the reference's), so devices that disagree do not both start a set.
+    func mapStanding(snapshot: InsightsSnapshot, me: DeviceID, records: [DeviceID: InsightsDeviceRecord],
+                     settings: InsightsSettings, language: String, key: EmbeddingKey?) -> MapCompatibility {
+        let reader = InsightsReader(vault: vault, snapshot: snapshot, settings: settings)
+        let comp = reader.compatibility(me: me, embedder: embedder, language: language)
+        guard comp == .noMap, let key, let embedder else { return comp }
+        guard let mine = try? Canaries.vectors(embedder, language: key.lang, revision: key.rev) else { return .incompatible }
+        let others = records.filter { $0.key != me }.compactMap { d, r -> (DeviceID, [[Float]], EmbeddingKey)? in
+            guard let c = r.canaries.first(where: { $0.key == key && $0.canaries.set == Canaries.set }),
+                  let v = c.canaries.vectors(dimension: c.dim) else { return nil }
+            return (d, v, c.key)
+        }.sorted { $0.0.rawValue < $1.0.rawValue }
+        guard let reference = others.first, reference.0.rawValue < me.rawValue else { return .noMap }
+        return Canaries.compatible(mine: mine, myKey: key, theirs: reference.1, theirKey: reference.2) ? .noMap : .incompatible
+    }
+
     func canaryVectors(supported: [String: [Int]], pin: Int?, language: String) -> [InsightsDeviceRecord.CanaryVectors] {
         guard let embedder, let revs = supported[language], !revs.isEmpty else { return [] }
         let r = pin.flatMap { revs.contains($0) ? $0 : nil } ?? revs.min() ?? 1
@@ -611,7 +562,8 @@ public struct InsightsUpdater: Sendable {
     func updateTopics(store: InsightsStore, snapshot: InsightsSnapshot, inputs: [InsightsNoteInput], model: any ModelProvider,
                       merger: TypoMerger, me: DeviceID, o: InsightsUpdateOptions, limit: Int?,
                       report: inout InsightsUpdateReport) async throws -> [String] {
-        let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot)
+        let language = InsightsSettings.read(vault, type: o.deviceType).language
+        let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot, language: language)
         let own = snapshot.topics[me]?.topics ?? []
         var memo = o.failureMemo.map { InsightsFailureMemo.load(from: $0, vault: vault) } ?? InsightsFailureMemo()
         var memoChanged = false
@@ -624,7 +576,7 @@ public struct InsightsUpdater: Sendable {
             let name = TopicScopes.name(scope)
             let latest = TopicSummaries.latest(scope, snapshot: snapshot)?.topic
             guard TopicSummaries.isDue(members: members, stored: latest, own: own.first { $0.scope == scope }, reader: model.identity,
-                                       now: o.now) else { continue }
+                                       language: language, now: o.now) else { continue }
             let digest = TopicSummaries.membersHash(members)
             if !o.force, let until = memo.topicBackoff(name, membersHash: digest, identity: model.identity,
                                                        ignoringBefore: o.ignoreBackoffBefore), until > o.now { continue }
@@ -632,7 +584,7 @@ public struct InsightsUpdater: Sendable {
             if o.dryRun { made.append(name); continue }
             do {
                 guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: merger, store: store,
-                                           now: o.now) else {
+                                           language: language, now: o.now) else {
                     report.failures[name] = "nothing survived the fact check"
                     memo.recordTopic(name, membersHash: digest, identity: model.identity, error: nil, now: o.now)
                     memoChanged = true
@@ -653,13 +605,14 @@ public struct InsightsUpdater: Sendable {
     /// Makes `scope`'s summary from `members` and writes it into this device's topics file; false when nothing survived
     /// the fact check (nothing written).
     func writeTopic(_ scope: InsightsTopicsFile.Scope, members: [TopicSummaries.Member], inputs: [InsightsNoteInput],
-                    model: any ModelProvider, merger: TypoMerger, store: InsightsStore, now: Date) async throws -> Bool {
+                    model: any ModelProvider, merger: TypoMerger, store: InsightsStore, language: String?, now: Date) async throws -> Bool {
         let name = TopicScopes.name(scope)
         guard let text = try await TopicSummaries.generate(name: name, members: members, language: InsightsNotes.languageOf(members, inputs),
-                                                           model: model, merger: merger) else { return false }
+                                                           model: model, merger: merger, outputLanguage: language) else { return false }
         try Task.checkCancellation()
         let topic = InsightsTopicsFile.Topic(scope: scope, members: members.count, membersHash: TopicSummaries.membersHash(members),
-                                             gen: .init(identity: model.identity, at: InsightsCodec.nextWritten(after: nil, now: now), summary: text))
+                                             gen: .init(identity: model.identity, at: InsightsCodec.nextWritten(after: nil, now: now), summary: text,
+                                                       outLang: language))
         try store.updateOwnTopics(now: now) { topics in
             topics.removeAll { $0.scope == scope }
             topics.append(topic)
@@ -697,10 +650,11 @@ public struct InsightsUpdater: Sendable {
         }
         let store = InsightsStore(vault: vault)
         _ = try store.writer()
-        let members = TopicScopes.members(inputs: inputs, snapshot: store.snapshot()).first { $0.0 == scope }?.1 ?? []
+        let language = InsightsSettings.read(vault).language
+        let members = TopicScopes.members(inputs: inputs, snapshot: store.snapshot(), language: language).first { $0.0 == scope }?.1 ?? []
         guard members.count >= TopicSummaries.minMembers else { throw TopicError.tooFewMembers(members.count) }
         guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: InsightsNotes.merger(inputs),
-                                   store: store, now: now) else { throw TopicError.factCheck }
+                                   store: store, language: language, now: now) else { throw TopicError.factCheck }
         if let failureMemo {
             var memo = InsightsFailureMemo.load(from: failureMemo, vault: vault)
             let name = TopicScopes.name(scope)
@@ -712,11 +666,13 @@ public struct InsightsUpdater: Sendable {
 
 /// Notebook and tag scopes of topic summaries (D8).
 public enum TopicScopes {
-    /// Per scope, its summarized members (a current `gen` with a summary), sorted by scope name.
-    public static func members(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot) -> [(InsightsTopicsFile.Scope, [TopicSummaries.Member])] {
+    /// Per scope, its summarized members (a current `gen` with a summary, the one in the insight language `language` first:
+    /// `InsightsSnapshot.bestGen`), sorted by scope name.
+    public static func members(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot,
+                               language: String? = nil) -> [(InsightsTopicsFile.Scope, [TopicSummaries.Member])] {
         var byScope: [InsightsTopicsFile.Scope: [TopicSummaries.Member]] = [:]
         for n in inputs where !n.deleted {
-            guard let best = snapshot.bestGen(for: n.id, hash: n.hash), best.current, let summary = best.gen.summary else { continue }
+            guard let best = snapshot.bestGen(for: n.id, hash: n.hash, language: language), best.current, let summary = best.gen.summary else { continue }
             let m = TopicSummaries.Member(note: n.id, hash: n.hash, summary: summary, keywords: best.gen.keywords.map(\.t))
             if let nb = n.notebook.flatMap(NotebookPath.canonical) { byScope[.init(notebook: nb), default: []].append(m) }
             for t in Set(n.tags.map(NoteOps.tagKey)) { byScope[.init(tag: t), default: []].append(m) }

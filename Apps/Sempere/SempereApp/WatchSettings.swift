@@ -46,8 +46,8 @@ struct WatchSettingsSection: View {
                     let addable = link.addableIds.count
                     Text("\(held.count) Watch notes held (sent while Use on Apple Watch was off or after the key changed)")
                         .font(.footnote).foregroundStyle(.orange)
-                    // The watch dropped its copy once the phone acknowledged it (docs/design/1.1-watch.md §3.6).
-                    Text("Held Watch notes are kept only on this iPhone, not on the watch or in the vault: deleting Sempere deletes them.")
+                    // The watch keeps its sealed copy until the phone adds or deletes the note (docs/design/1.1-watch.md §3.6).
+                    Text("Held Watch notes stay on this iPhone, and sealed on the watch until you add or delete them here. They are never in the vault.")
                         .font(.footnote).foregroundStyle(.secondary)
                     if WatchHeldStore.isFull(held) {
                         Text("The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some")

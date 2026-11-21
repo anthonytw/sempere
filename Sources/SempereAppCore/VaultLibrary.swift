@@ -25,7 +25,8 @@ public enum VaultLocator {
 
     /// The vault folder for `picked`:
     /// - a folder with a `vault.json`: itself (a `.sempere-backup` too: a backup is a vault folder);
-    /// - a folder holding exactly one `.sempere` folder: that folder (the
+    /// - a folder holding exactly one vault folder (`.sempere`, `.sempere-vault`, the sync folders 1.3 and later make:
+    ///   `SyncFolderName`, or a folder of any other name holding a `vault.json`): that folder (the
     ///   picked folder's access covers it); with none, exactly one `.sempere-backup` folder (the sync folder
     ///   wins over a backup next to it: Open Vault… there is how a device joins);
     /// - anything else: `picked` unchanged (opening it reports the problem).
@@ -51,7 +52,17 @@ public enum VaultLocator {
             candidate = parent
         }
         guard isDir.boolValue else { return picked }
-        for found in [VaultLibrary.vaults(in: picked), VaultLibrary.vaults(in: picked, extension: BackupDestination.folderExtension)] {
+        // A `….sempere` or `….sempere-vault` folder is a vault by its name (`SyncFolderName`), a folder of any other name
+        // holding a vault counts as one too; never a backup (`backup.json`), which comes second.
+        let named = BackupDestination.vaultExtensions.flatMap { VaultLibrary.vaults(in: picked, extension: $0) }
+        let other = ((try? fm.contentsOfDirectory(at: picked, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
+            .filter { url in
+                !BackupDestination.vaultExtensions.contains(url.pathExtension) && !BackupDestination.isBackupFolder(url)
+                    && !url.lastPathComponent.hasPrefix(".") && isVault(url) && !BackupDestination.isBackup(url, fileManager: fm)
+            }
+        let vaults = (named + other)
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        for found in [vaults, VaultLibrary.vaults(in: picked, extension: BackupDestination.folderExtension)] {
             if found.count == 1 { return found[0] }
             if found.count > 1 { throw LocatorError.severalVaults(found.map(\.lastPathComponent)) }
         }
@@ -208,6 +219,9 @@ public final class VaultLibrary {
     }
 
     static let maxRecents = 10
+
+    /// Called after a vault was removed from this device (`removeStored`): the app removes its Spotlight items.
+    @ObservationIgnored public var vaultRemoved: (@MainActor (UUID) async -> Void)?
 
     public var recents: [RecentVault] = []
     let storeURL: URL
@@ -421,6 +435,8 @@ extension VaultLibrary {
             recents.removeAll { gone.contains($0.id) }
             save()
         }
+        // Spotlight: the vault's items and its switch go with it (docs/design/1.3-spotlight.md §3.4).
+        await vaultRemoved?(entry.vaultId)
     }
 
     /// The store's vaults, the most recently opened first, then the others by name.

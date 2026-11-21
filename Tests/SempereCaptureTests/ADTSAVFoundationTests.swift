@@ -84,8 +84,9 @@ final class ADTSAVFoundationTests: XCTestCase {
             frames += Int(buffer.frameLength)
         }
         XCTAssertEqual(frames, Int(file.length))
-        // And the player opens it.
-        XCTAssertNoThrow(try AVAudioPlayer(contentsOf: url))
+        if #available(macOS 15, iOS 18, *) { file.close() }
+        // And the player opens it (stopped at once: an unreleased player holds a coreaudiod client).
+        XCTAssertNoThrow(try { let player = try AVAudioPlayer(contentsOf: url); player.stop() }())
         // Segments cut in two join to the same duration.
         let half = source.data.count / 2
         // Cut at a frame boundary by walking the headers.

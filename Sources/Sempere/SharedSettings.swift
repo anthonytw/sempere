@@ -187,7 +187,7 @@ public struct SharedSettings: Hashable, Sendable {
     }
 
     /// `date` as Unix milliseconds within 0 ... `maxModified`.
-    static func millis(_ date: Date) -> Int64 {
+    public static func millis(_ date: Date) -> Int64 {
         let ms = date.timeIntervalSince1970 * 1000
         guard ms.isFinite, ms > 0 else { return 0 }
         return ms >= Double(maxModified) ? maxModified : Int64(ms)

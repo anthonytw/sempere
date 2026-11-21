@@ -301,7 +301,7 @@ struct ExportCommand: ParsableCommand {
         if bulk { return try runBulk(vault) }
         // Each note is decrypted once: loaded, summarized and reconstructed from the same read.
         if note == nil { try vault.requireCompleteCopy() }
-        let ids = try note.map { [try vault.resolveNote($0)] } ?? vault.noteIDs()
+        let ids = try note.map { [try vault.resolveShownNote($0)] } ?? vault.noteIDs()
         var states: [(NoteSummary, NoteState)] = []
         var treeNotes: [TreeNote] = []
         var failures = 0
@@ -346,6 +346,16 @@ struct ExportCommand: ParsableCommand {
             }
         }
         if states.isEmpty && treeNotes.isEmpty { throw CLIError.failure("no notes to export") }
+        // A voice note with no title of its own is named and headed by the title `notes list` shows for it.
+        let shownTitles = NoteTitles.display(states.map(\.0) + treeNotes.map(\.summary), in: vault)
+        states = states.map { s, state in
+            let t = shownTitles[s.id]
+            return (s.showing(title: t), state.showing(title: t))
+        }
+        treeNotes = treeNotes.map { n in
+            let t = shownTitles[n.summary.id], load = n.load
+            return TreeNote(summary: n.summary.showing(title: t), version: n.version, load: { try load().showing(title: t) })
+        }
 
         // Text: the bundled Noto fonts plus font packs (docs/cli.md "Text in exports").
         let fonts = FontLibrary(bundled: SempereFonts.directory, packs: FontLibrary.defaultPackDirectories())

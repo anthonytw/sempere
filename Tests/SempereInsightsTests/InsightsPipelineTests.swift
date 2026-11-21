@@ -7,6 +7,41 @@ import XCTest
 /// IDF, typo merge, chunking and the overflow retry, the fact check, CSLS and mean-centering, the unrelated note,
 /// Louvain and layout determinism, placement, cluster ids across a rebuild, canaries, the pin and the policy.
 final class InsightsPipelineTests: XCTestCase {
+    // MARK: Determinism (D21)
+
+    /// The same graph, its edges added in different orders (so its dictionaries iterate differently), gives the same
+    /// communities and the same layout bytes: every float accumulation runs in a fixed order.
+    func testLouvainAndLayoutDoNotDependOnAdjacencyOrder() {
+        var state: UInt64 = 0x9E3779B97F4A7C15
+        func next() -> UInt64 { state = state &* 6364136223846793005 &+ 1442695040888963407; return state >> 11 }
+        let n = 60
+        var edges: [(Int, Int, Double)] = []
+        for i in 0..<n {
+            for _ in 0..<5 {
+                let j = Int(next() % UInt64(n))
+                if j != i { edges.append((min(i, j), max(i, j), Double(next() % 100_000) / 99_991 + 0.01)) }
+            }
+        }
+        var unique: [Int: [Int: Double]] = [:]
+        for (a, b, w) in edges { unique[a, default: [:]][b] = w }
+        let flat = unique.keys.sorted().flatMap { a in unique[a]!.keys.sorted().map { (a, $0, unique[a]![$0]!) } }
+        let ids = (0..<n).map { UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", $0))! }
+        var reference: (comm: [Int], agg: [Int], pos: [String])?
+        for round in 0..<12 {
+            var order = flat
+            var rng = SystemRandomNumberGenerator()
+            if round > 0 { order.shuffle(using: &rng) }
+            var g = WeightedGraph(n: n)
+            for (a, b, w) in order { g.add(a, b, w) }
+            let comm = Louvain.communities(g)
+            let agg = Louvain.communities(Louvain.aggregate(g, comm))
+            let layout = MapBuilder.layout(ids: ids, graph: g, clusterOf: comm, previous: [:])
+            let pos = ids.map { "\(layout[$0]!.x),\(layout[$0]!.y)" }
+            if let r = reference { XCTAssertEqual(r.comm, comm); XCTAssertEqual(r.agg, agg); XCTAssertEqual(r.pos, pos, "round \(round)") }
+            else { reference = (comm, agg, pos) }
+        }
+    }
+
     // MARK: Normalization
 
     func testNormalizationTable() {
@@ -551,7 +586,7 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertEqual(EmbeddingPin.upgradeOffer(recent, language: "en", pin: 2), 3)
         XCTAssertEqual(EmbeddingPin.leftOut(recent, language: "en", revision: 3), [DeviceID("11111111")!])
         // A later-joining device without the pin does not move it: the setting holds; it is a vector reader.
-        let settings = InsightsSettings(enabled: true, workDevice: DeviceID("11111111")!, pins: ["en": 2])
+        let settings = InsightsSettings(enabled: true, pins: ["en": 2])
         XCTAssertEqual(settings.pins["en"], 2)
     }
 
@@ -572,7 +607,7 @@ final class InsightsPipelineTests: XCTestCase {
         let model = GenerationIdentity(model: "m", os: "27.2", prompt: 1)
         let key = EmbeddingKey(model: "nl-sentence", lang: "en", rev: 1, input: 1)
         let notes = notesFor(now)
-        var settings = InsightsSettings(enabled: true, workDevice: me)
+        var settings = InsightsSettings(enabled: true)
         let caps = PolicyCapabilities(model: model, embedRevision: 1, powerWindow: true)
         let plan = InsightsPolicy.plan(notes: notes, snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
                                        pinKey: key, now: now, deviceRecordChanged: false)
@@ -595,15 +630,24 @@ final class InsightsPipelineTests: XCTestCase {
                                          pinKey: key, now: now, backoff: [notes[0].id: now.addingTimeInterval(60)], deviceRecordChanged: false)
         XCTAssertFalse(backed.contains(.generate(notes[0].id)))
         XCTAssertTrue(backed.contains(.embed(notes[0].id)), "a back-off holds the model back, never the embedding")
-        // Another device is the work device: it generates (every device with the model does), never embeds or maps.
-        settings.workDevice = DeviceID("22222222")!
-        let other = InsightsPolicy.plan(notes: notes, snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
+        // Another device already embedded the notes and built the map (D21): this one embeds and maps nothing.
+        let theirs = DeviceID("22222222")!
+        var elsewhere = InsightsSnapshot()
+        var theirMap = InsightsMapFile(device: theirs, written: Int64(now.timeIntervalSince1970 * 1000), key: key, dim: 2, canaries: nil,
+                                       mean: [0, 0], clusters: [], layout: [:], built: .init(notes: 3, hashes: "x"))
+        for (i, n) in notes.enumerated() {
+            elsewhere.notes[n.id] = [theirs: InsightsNoteFile(noteId: n.id, device: theirs, written: 1,
+                                                              emb: .init(hash: n.hash, key: key, vector: [0.5, Float(i)]))]
+            theirMap.layout[n.id.uuidString.lowercased()] = [0, 0]
+        }
+        elsewhere.maps[theirs] = theirMap
+        let other = InsightsPolicy.plan(notes: notes, snapshot: elsewhere, me: me, settings: settings, capabilities: caps,
                                         pinKey: key, now: now, deviceRecordChanged: false)
         XCTAssertTrue(other.contains(.generate(notes[0].id)))
         XCTAssertFalse(other.contains { if case .embed = $0 { return true } else { return false } })
         XCTAssertFalse(other.contains(.rebuildMap))
         // Stale after a prompt bump: a current gen of prompt 1 is redone by a reader at prompt 2.
-        settings = InsightsSettings(enabled: true, workDevice: me)
+        settings = InsightsSettings(enabled: true)
         var snap = InsightsSnapshot()
         let old = InsightsNoteFile.Gen(hash: notes[0].hash, identity: model, summary: "s", keywords: [], concepts: [], dropped: 0)
         snap.notes[notes[0].id] = [me: InsightsNoteFile(noteId: notes[0].id, device: me, written: 1, gen: old)]
@@ -617,47 +661,6 @@ final class InsightsPipelineTests: XCTestCase {
         // Off: nothing at all.
         XCTAssertEqual(InsightsPolicy.plan(notes: notes, snapshot: snap, me: me, settings: InsightsSettings(), capabilities: caps,
                                            pinKey: key, now: now, deviceRecordChanged: true), [])
-        // Unset work device: a capable device claims it.
-        XCTAssertEqual(InsightsPolicy.plan(notes: [], snapshot: snap, me: me, settings: InsightsSettings(enabled: true), capabilities: caps,
-                                           pinKey: key, now: now, deviceRecordChanged: false).first, .claimWorkDevice)
-    }
-
-    func testAWorkDeviceNotSeenFor14DaysIsTakenOver() {
-        let now = Date(timeIntervalSince1970: 1_790_000_000)
-        let w = DeviceID("22222222")!
-        var snap = InsightsSnapshot()
-        let (_, r) = record("22222222", [1], written: Int64(now.timeIntervalSince1970 * 1000) - 15 * 86_400_000)
-        snap.devices[w] = r
-        let status = WorkDeviceStatus(settings: InsightsSettings(enabled: true, workDevice: w), snapshot: snap, listed: [w],
-                                      language: "en", now: now)
-        XCTAssertTrue(status.notSeen)
-        XCTAssertEqual(status.workDevice, w, "the status itself moves nothing; the next capable pass claims it")
-        // Just designated, nothing written yet: not missing (D16: a fresh claim read "not seen for 14 days").
-        let fresh = WorkDeviceStatus(settings: InsightsSettings(enabled: true, workDevice: w), snapshot: InsightsSnapshot(),
-                                     listed: [w], language: "en", now: now)
-        XCTAssertNil(fresh.lastSeen)
-        XCTAssertFalse(fresh.notSeen)
-        // Designated but never running: missing 14 days after the designation, so the claim hint shows.
-        let setAt = Int64(now.timeIntervalSince1970 * 1000)
-        let designated = InsightsSettings(enabled: true, workDevice: w, workDeviceSetAt: setAt)
-        XCTAssertFalse(WorkDeviceStatus(settings: designated, snapshot: InsightsSnapshot(), listed: [w], language: "en",
-                                        now: now.addingTimeInterval(13 * 86_400)).notSeen)
-        let later = WorkDeviceStatus(settings: designated, snapshot: InsightsSnapshot(), listed: [w], language: "en",
-                                     now: now.addingTimeInterval(15 * 86_400))
-        XCTAssertTrue(later.notSeen)
-        XCTAssertNil(later.lastSeen, "still nothing written")
-        // A designation newer than its files restarts the clock.
-        XCTAssertFalse(WorkDeviceStatus(settings: designated, snapshot: snap, listed: [w], language: "en", now: now).notSeen)
-        func plan(missing: Bool) -> [WorkItem] {
-            InsightsPolicy.plan(notes: notesFor(now), snapshot: snap, me: DeviceID("11111111")!,
-                                settings: InsightsSettings(enabled: true, workDevice: w),
-                                capabilities: .init(model: .init(model: "m", os: "1", prompt: 1), embedRevision: 1, powerWindow: true),
-                                pinKey: .init(model: "nl-sentence", lang: "en", rev: 1, input: 1), now: now, workDeviceMissing: missing,
-                                deviceRecordChanged: false)
-        }
-        XCTAssertFalse(plan(missing: false).contains(.claimWorkDevice), "only a work device not seen for 14 days is taken over")
-        XCTAssertTrue(plan(missing: true).contains(.claimWorkDevice))
-        XCTAssertTrue(plan(missing: true).contains(.rebuildMap), "the claimer maps in the same pass")
     }
 
     func testVoiceNoteTitleFormat() {
@@ -670,10 +673,17 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertNil(VoiceNoteTitleFormat.render("{date} {slug}", date: "2026-10-07", time: "14.32", slug: nil), "no slug: the default stays")
         XCTAssertEqual(VoiceNoteTitleFormat.render("{date} {time}", date: "2026-10-07", time: "14.32", slug: nil), "2026-10-07 14.32")
         XCTAssertEqual(VoiceNoteTitleFormat.cleaned(String(repeating: "word ", count: 30)).count <= 60, true)
-        let t = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: "Voice note 2026-10-07 14:32", started: Date(timeIntervalSince1970: 0))
+        // A note of 1.0 through 1.2: the local time is in its stored default title.
+        let t = VoiceNoteTitleFormat.captureDateAndTime(origin: nil, storedTitle: "Voice note 2026-10-07 14:32", started: Date(timeIntervalSince1970: 0))
         XCTAssertEqual(t.date, "2026-10-07"); XCTAssertEqual(t.time, "14.32")
-        let u = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: "Untitled", started: Date(timeIntervalSince1970: 1_790_000_000))
+        let u = VoiceNoteTitleFormat.captureDateAndTime(origin: nil, storedTitle: "Untitled", started: Date(timeIntervalSince1970: 1_790_000_000))
         XCTAssertEqual(u.date, "2026-09-21"); XCTAssertEqual(u.time, "14.13")
+        // 1.3: the capture's own time zone, with no title at all.
+        let ny = VoiceOrigin(started: Date(timeIntervalSince1970: 1_790_000_000), tz: "America/New_York", source: "phone")
+        let n = VoiceNoteTitleFormat.captureDateAndTime(origin: ny, storedTitle: "", started: ny.started)
+        XCTAssertEqual(n.date, "2026-09-21"); XCTAssertEqual(n.time, "10.13")
+        let tokyo = VoiceOrigin(started: Date(timeIntervalSince1970: 1_790_000_000), tz: "Asia/Tokyo", source: "watch")
+        XCTAssertEqual(VoiceNoteTitleFormat.captureDateAndTime(origin: tokyo, storedTitle: nil, started: tokyo.started).time, "23.13")
     }
 
     /// 1.1's app titled quick voice notes with the start in the device's language ("Nota de voz 16 nov 2026, 14:32"), which
@@ -684,15 +694,15 @@ final class InsightsPipelineTests: XCTestCase {
         let started = Date(timeIntervalSince1970: 1_794_857_520)
         for title in ["Nota de voz 16 nov 2026, 14:32", "Voice note Nov 16, 2026 at 2:32 PM", "Nota de voz 16 nov 2026, 20:32",
                       "Voice note 17 Nov 2026 at 01:02", "Voice note 16.11.2026, 20.32"] {
-            XCTAssertTrue(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
+            XCTAssertTrue(NoteDisplayTitle.isLocalizedCaptureDefault(title, started: started), title)
         }
         for title in ["Nota de voz 16 nov 2026, 14:35", "Lab results 2025 at 2:32", "Groceries", "Call w/ Ana, Nov 16 2026 9:32"] {
-            XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
+            XCTAssertFalse(NoteDisplayTitle.isLocalizedCaptureDefault(title, started: started), title)
         }
-        XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault("Voice note Nov 16, 2026 at 2:32 PM",
+        XCTAssertFalse(NoteDisplayTitle.isLocalizedCaptureDefault("Voice note Nov 16, 2026 at 2:32 PM",
                                                                      started: started.addingTimeInterval(400 * 86_400)), "another year")
-        XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault("Nota de voz 16 nov 2026, 14:32", started: nil))
-        XCTAssertTrue(VoiceNoteTitleState.isCaptureDefault("Nota de voz 2026-11-16 14:32"), "1.2's app title, in Spanish")
+        XCTAssertFalse(NoteDisplayTitle.isLocalizedCaptureDefault("Nota de voz 16 nov 2026, 14:32", started: nil))
+        XCTAssertTrue(NoteDisplayTitle.isCaptureDefault("Nota de voz 2026-11-16 14:32"), "1.2's app title, in Spanish")
     }
 
     func testEmbeddingInputCleaning() {

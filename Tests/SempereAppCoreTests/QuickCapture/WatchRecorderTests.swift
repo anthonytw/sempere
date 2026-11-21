@@ -104,7 +104,7 @@ struct WatchRecorderTests {
         let pending = try rig.read(note.id)
         let manifest = try #require(pending.manifest)
         #expect(manifest.audio.type == "audio/mp4")
-        #expect(manifest.title == "Watch voice note 2027-01-15 08:00")
+        #expect(manifest.title == "" && manifest.source == "watch", "no title: the note shows a Watch default")
         #expect(manifest.codec == "aac" && manifest.sampleRate == 24000 && manifest.channels == 1)
         #expect(manifest.device == rig.payload?.profile.device)
         let audio = try #require(pending.audio)
@@ -179,7 +179,9 @@ struct WatchRecorderTests {
         #expect(abs((notes.first?.duration ?? 0) - 41 * 1024 / 24000.0) < 1e-9, "the cut-off last frame is dropped")
         #expect(rig.folders == [bad.lastPathComponent], "only the unreadable one waits; the empty one went")
         #expect(rig.outbox.entry(id)?.state == .sealed)
-        #expect(try rig.read(id).manifest?.title == WatchRecorder.title(rig.clock.now, timeZone: TimeZone(identifier: "UTC") ?? .current))
+        let recovered = try #require(try rig.read(id).manifest)
+        #expect(recovered.title == "", "no title: the note shows a Watch default at display time")
+        #expect(recovered.source == "watch")
         // A second sweep seals nothing more.
         #expect(await rig.recorder.sweep().isEmpty)
     }

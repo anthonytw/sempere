@@ -190,11 +190,12 @@ public struct VaultStore: Sendable {
         return trimmed + ".sempere"
     }
 
-    /// A vault folder's name without `.sempere`, or a backup folder's without `.sempere-backup` (a backup copied
-    /// in becomes `<name>.sempere`, never `<name>.sempere-backup.sempere`).
+    /// A vault folder's name without `.sempere` or `.sempere-vault` (a sync folder, `SyncFolderName`: copied in from
+    /// "Notes.sempere-vault", the vault is "Notes.sempere" again), or a backup folder's without `.sempere-backup` (a
+    /// backup copied in becomes `<name>.sempere`, never `<name>.sempere-backup.sempere`).
     public static func displayName(of url: URL) -> String {
         let last = url.lastPathComponent
-        for ext in [".sempere-backup", ".sempere"] where last.hasSuffix(ext) && last.count > ext.count {
+        for ext in [".sempere-backup", ".sempere-vault", ".sempere"] where last.hasSuffix(ext) && last.count > ext.count {
             return String(last.dropLast(ext.count))
         }
         return last

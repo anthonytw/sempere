@@ -5,7 +5,9 @@ or a documented compatible extension.
 
 ## 1. Vault layout
 
-A vault is a directory whose name ends in `.sempere`.
+A vault is a directory. The store's own folder ends in `.sempere`; folder targets made by 1.3 or later end in
+`.sempere-vault` (older ones in `.sempere`); a sync copy of a vault (a folder target, a WebDAV collection) may have any
+name, and readers decide by `vault.json`, never by the name alone (docs/io.md "A vault folder held as a package").
 
 ```
 Notes.sempere/
@@ -33,7 +35,7 @@ Notes.sempere/
     <recordId>.notebook.age               optional notebook record: keeps empty notebooks (§14)
   insights/
     <noteId>.<device>.insights.age        optional note insights: summary, keywords, vector, written by <device> (§16)
-    map|device|topics.<device>.insights.age   the work device's map, each device's record and topic summaries (§16)
+    map|device|topics.<device>.insights.age   a map, each device's record and topic summaries (§16)
 ```
 
 Everything under `notes/` (revisions and `att/` blobs alike), `notebooks/` and `epochs/` is
@@ -116,7 +118,7 @@ except these, which are replaced whole (atomically):
 | --- | --- | --- |
 | `vault.json` | the home device (§15.3); for `label` alone, any listed device | creation, a device approved or renamed (§2), a label change (§2) |
 | `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
-| `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
+| `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note, or the title it is shown under, changed (§12.4) |
 | `summaries/<device>.sealed` | that device only (signed by it) | when its listing changed (§12.5) |
 | `insights/*.<device>.insights.age` | that device only | when its insights change, or it tombstones them or writes them again under a new key (§16) |
 
@@ -1115,7 +1117,13 @@ a `setPageRecognition` the snapshot does not cover. `addPage` ignores any
 Writing recognition is not editing the note: a delta whose ops are all
 `setPageRecognition` or `setMeta` of `recognized` (§5.4) leaves the note's
 modified date where it was (§12.2), whichever device, app pass, vault-wide run
-or import wrote it.
+or import wrote it. From 1.3 the same holds for a recording's transcript (§8.3.2): a
+delta whose ops are all derived, that is, those two and `setRecording` of `transcript`
+(a transcript written when a voice note is adopted, after a recording, or by a
+re-transcription), leaves the date where it was, and so does a snapshot's own reading of
+the date (§12.2: the recording's `transcript` stamp is left out like recognition's). Other
+automatic writes to a note's own fields do not exist in this version: a voice note's generated title is
+kept outside the note (§16.8). A reader of 1.2 or earlier counts a transcript as an edit.
 
 Readers that index text for search use `text`; `words` lets a viewer
 highlight hits on the page. A recognizer reads a note whose `meta.lang` is
@@ -2452,6 +2460,13 @@ A recording belongs to the note, not to a page (`recordings`, §5.4):
   another shape treats it as absent; it never rejects the revision for it.
   Readers show that device's `name` (§2) while it is listed, and that the
   device is no longer in the vault otherwise.
+- `captureInfo` (optional, immutable, 1.3): for a voice note adopted from the inbox, where and how it was captured:
+  `{ "tz": "America/New_York", "source": "phone" }`. `tz` is an IANA time zone identifier of the capturing device (at
+  most 64 characters), so a title made from the capture's date and time reads as the clock did there; `source` is
+  `phone` (a quick voice note on an iPhone or iPad) or `watch`. Both optional; a member of another shape or an unknown
+  value reads as absent, and the revision is never rejected for it. A reader of 1.2 or earlier knows no such field: it
+  keeps the object (§7.5) and treats it as a register `setRecording` could change, which nothing does. Readers use it
+  only to word and time a default title (§16.8); a note without it (adopted before 1.3) has none.
 - Registers: `title` (string; absent means `""`) and `transcript` (a blob
   reference or `null`), changed with `setRecording` and merged LWW per
   (recording, field) like item registers (§8.2.2), with `clocks` in
@@ -2506,6 +2521,9 @@ and word confidences let a viewer mark doubtful words (for example underline
 words under 0.5) or let search skip them. A transcript is derived data,
 replaced as a whole by `setRecording` of `transcript`, never merged. Readers
 that index text for search include it.
+
+A transcript the user supplies (a re-transcription, `sempere transcribe`, an import) is derived data too: like one the
+app makes, it leaves the note's modified date unchanged (§5.5, §12.2).
 
 #### 8.3.3 Ink and audio
 
@@ -2877,7 +2895,7 @@ where the table says how they degrade.
 | PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; the object parser reads at most 4 bytes per byte of the file and of its decoded streams, plus 64 MiB; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
 | PDF page drawn as pixels (SVG, PNG) | 16 M pixels per page (drawn at a lower resolution beyond), 256 M per export (placeholders beyond) | `RenderLimits.maxBackgroundPixels…` |
 | summary cache file (§10) | 64 MiB on disk, 256 MiB after gunzip; any failure discards it | `SummaryCache.maxFileBytes` |
-| published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry | `PublishedSummaries.maxFileBytes` |
+| published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry; `shown` at most 1 000 characters and `voice.tz` 64 (a longer one reads as absent) | `PublishedSummaries.maxFileBytes`, `.maxShownLength`, `.maxZoneLength` |
 | notebook records (§14) | 64 KiB on disk and after gunzip per record; 256 `add` paths and 4 096 `remove` ids per record, a path at most 1 200 Unicode scalars (else the record is refused); 10 000 records per vault (the rest ignored and reported) | `NotebookRecords.maxFileBytes`, `.maxAdds`, `.maxRemoves`, `.maxRecords` |
 | shared settings (§13) | 1 MiB on disk, 1 MiB after gunzip; 4 096 slots, 32 type blocks (else the file is refused); a malformed `$meta` entry or version, or an invalid value, is ignored alone | `SharedSettings.maxFileBytes`, `.maxSlots`, `.maxBlocks` |
 | note insights (§16) | a note file or device record 64 KiB, a topics file 1 MiB, a map 8 MiB, on disk and after gunzip; the counts and lengths of §16.7; any failure ignores the file | `InsightsFileKind.maxBytes`, `InsightsLimits` |
@@ -3164,10 +3182,11 @@ iCloud) are not recorded.
   ```json
   { "format": "sempere-capture/1", "id": "<captureId>", "device": "a1b2c3d4",
     "vault": "<vaultId>", "created": "2026-10-07T14:33:05.120Z",
-    "started": "2026-10-07T14:32:41.000Z", "title": "Voice note 2026-10-07 14:32",
+    "started": "2026-10-07T14:32:41.000Z", "title": "",
     "notebook": "Inbox", "recipient": "…(64 hex digits)…",
     "audio": { "sha256": "…", "size": 196608, "type": "audio/mp4" },
-    "duration": 24.1, "codec": "aac", "sampleRate": 48000, "channels": 1, "bitRate": 64000 }
+    "duration": 24.1, "codec": "aac", "sampleRate": 48000, "channels": 1, "bitRate": 64000,
+    "tz": "America/New_York", "source": "phone" }
   ```
 
   `id` must equal `<captureId>` and `vault` the vault's `vaultId`. `audio` is
@@ -3176,7 +3195,10 @@ iCloud) are not recorded.
   lowercase hex digits) is `fingerprint(r)` of the profile's device key; a
   reader rejects a manifest without it, or whose `recipient` is not that of
   the key that verified the file. `title`, `notebook` (absent:
-  `Inbox`) and the informational fields become the note's; the title and
+  `Inbox`) and the informational fields become the note's (from 1.3 a capture's `title` is `""` unless the person typed
+  one: the note stores no title, and readers show a default, §16.8; captures of 1.0 through 1.2 hold
+  `Voice note YYYY-MM-DD HH:mm`). `tz` and `source` (optional, 1.3: values as in §8.3.1 `captureInfo`) become the
+  recording's `captureInfo`; another shape reads as absent; the title and
   the notebook as at most 300 characters (and 1200 Unicode scalars: one
   character may hold any number of combining marks), control characters replaced by
   spaces (any holder of the capture key writes them, §11.3).
@@ -3345,8 +3367,23 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
       "modified": "2026-10-06T09:12:44.512Z",
       "pages": 2,
       "pageTexts": [{ "page": 1, "text": "milk eggs" }]
+    },
+    "0b9d4c1e-7f2a-4e38-9c65-3a1f8e2d6b07": {
+      "revisions": ["17598432000000000-a1b2c3d4-1.delta.age"],
+      "title": "",
+      "tags": [],
+      "notebook": "Voice",
+      "favorite": false,
+      "deleted": false,
+      "created": "2026-10-07T14:32:05.120Z",
+      "modified": "2026-10-07T14:32:05.120Z",
+      "pages": 1,
+      "pageTexts": [],
+      "voice": { "started": "2026-10-07T14:32:00.000Z", "tz": "America/New_York", "source": "phone" },
+      "shown": "2026-10-07 10.32 Standup budget review"
     }
-  }
+  },
+  "titles": 1
 }
 ```
 
@@ -3363,13 +3400,13 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
   revisions: `title`; `tags` (the current tags, §5.4.1); `notebook`, absent
   when the note has none; `favorite`; `deleted`; `created`; `modified`, the
   date of the note's last edit: the greatest of what each revision gives, where a delta
-  whose ops are all derived recognition (`setPageRecognition`, `setMeta` of `recognized`,
-  §5.5) gives nothing, a checkpoint (§5.8.1), an empty delta, a delta of newer
+  whose ops are all derived (`setPageRecognition`, `setMeta` of `recognized`, §5.5, and, from 1.3,
+  `setRecording` of `transcript`, §8.3.2) gives nothing, a checkpoint (§5.8.1), an empty delta, a delta of newer
   content (§7.4) or any other delta gives its `wall` (§5.1), a snapshot of newer
   content gives its `wall` (it may hold edits in fields the reader skipped), and any
   other snapshot gives the time of the newest edit it holds, which is the `hlc`
-  milliseconds of the greatest stamp or origin in its state other than recognition's
-  (each page's `recognitionClock` and the `recognized` clock) or the note's `created`
+  milliseconds of the greatest stamp or origin in its state other than recognition's and
+  transcripts' (each page's `recognitionClock`, the `recognized` clock and each recording's `transcript` clock) or the note's `created`
   if later, but never after the snapshot's own `wall` (compaction and thinning, §5.3,
   §5.8.4, write snapshots long after the edits they fold in); when no revision gives a
   date, the greatest `wall` of all of them. Once compaction has folded the deltas in,
@@ -3385,13 +3422,42 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
   source of each math item (§8.2.8) in drawing order (§8.2.3), the non-empty
   ones joined by `\n`, in page order. Pages
   without such text are left out. Dates are as in §6.
+- `voice` and `shown` (both optional, 1.3) let a reader show a quick voice note (§11.3) under the title the apps show
+  (§16.8) without reading its revisions or the insights files:
+  - `voice`: present when the note is a voice note (it has a recording with `captured`, §8.3.1; the first such one
+    counts) whose stored `title` is no one's choice: blank, or a default stored by 1.0 through 1.2 (§16.8). `started`
+    is that recording's `started` (§6), `tz` and `source` its `captureInfo` members (§8.3.1), each absent when the
+    recording has none. Absent for every other note. It carries no device id: `captured` (who captured it) is never
+    published.
+  - `shown`: present only with `voice`, when the writer shows a title Note Insights derived for the note (§16.8): the
+    `title` of the best insights file for the note's current text hash in the insight language and title format now
+    set (§16.2), the title `sempere notes list` shows. Absent when the writer shows no derived title (none yet, or a
+    writer that does not read `insights/`).
+
+  A reader shows, in this order: `shown`; else, when `voice` is present and `title` is blank, the default title made
+  from `voice` in the reader's own language and in the capture's zone (`tz`, else the reader's) ("Voice note <date
+  and time>", "Watch voice note …" for `source` `watch`, §16.8); else `title` (blank: "Untitled"). The default is made by
+  the reader, not stored, so each reader words it in its own language. A reader that does not know the members ignores
+  them (below) and shows `title`, as before 1.3: a blank title then reads "Untitled", which is what such a reader shows
+  for the note's revisions too. A malformed `voice` (a `started` that is not a date of §6, a member of another type) is
+  ignored alone, and so is a `shown` that is not a string, is blank after trimming, is longer than 1 000 characters or
+  comes without `voice`; neither ever makes the entry malformed. A `tz` longer than 64 characters reads as absent.
+  Like the rest of the file, both are inside the ciphertext (§12.1): the storage server sees no title, derived or not.
 
 A per-device file (§12.5) also has `"device"`, its writer's device id, and `"version"`, an integer
 from 1 to 2^53 − 1 that its writer raises with every write (§12.5); both are covered by its signature. The root file has neither; a reader
 ignores a malformed value of either.
 
+`titles` (optional, 1.3, root and per-device files): `1` when the writer gave every entry `voice` where it applies
+(above). A writer that reuses the entries of a file with it takes an entry without `voice` as final; without it (a file
+of a writer before 1.3) an entry without `voice` whose `title` is blank or has the shape of a stored default (§16.8) may
+be such a writer's entry of a voice note, and is made again (§12.4). Writers of 1.3 always write it, except when they
+seal again the same entries of a file that had none (a per-device file resealed, §12.5). Readers that only show
+entries ignore it; a value other than a positive integer reads as absent.
+
 Unknown fields are ignored. Writers emit no others under `format`
-`sempere-summaries/1`; a change readers must not misread changes `format`.
+`sempere-summaries/1` (`voice`, `shown` and `titles` were added in 1.3 as optional members that older readers ignore,
+above); a change readers must not misread changes `format`.
 
 ### 12.3 Reading
 
@@ -3421,8 +3487,34 @@ say once it opens a note, and prefers that summary from then on.
 `sempere vault summaries` writes the file (docs/cli.md); `sempere sync
 webdav` keeps the server's copy current, computed from what the server holds
 after the sync. The file is never copied between the two sides of a sync:
-each writer computes it from its own listing. The apps do not write it: they
-write per-device files (§12.5).
+each writer computes it from its own listing. The apps write it only through a sync, on its other side (a server or a
+sync folder): they keep an existing copy current, and create one for devices joining the vault; in their own vault
+folder they write per-device files (§12.5).
+
+The file is rewritten when a listed note changed, and when the title a note is shown under changed though its
+revisions did not: a title Note Insights derived later (§16.8) arrives in `insights/`, not in a revision. A writer
+that reads `insights/` therefore never reuses an entry that has `voice` from the file it replaces: it looks up the
+note's `shown` again whenever it writes. The note's summary comes from its summary cache (§10); of `insights/` it reads
+only those notes' own files (`<note>.<device>.insights.age`, never the maps, topics or device records), and a note's
+transcripts (for the text hash, §16.2) only when one of its files holds a title. A file without `titles` (above) is
+from a writer before 1.3: its entries with no `voice` whose `title` is blank or has the shape of a stored default
+(§16.8), which may be such a writer's entries of voice notes, are made again, and the file is rewritten with the marker
+(once; from then on such entries are final).
+
+Writers skip that work while nothing it depends on changed: what they compare, besides the listing of the side they
+write for and the epoch, is the names, sizes and modification times of the vault's insights note files and of
+`settings.age` (the insight language and the title format). A sync keeps that with the listing it last wrote for; the
+CLI's refresh after a command (any command that unlocks the vault) keeps it, with the bytes of `vault.json`, the
+version of its summary computation and the root file's size and modification time, beside its summary cache, so a
+command that changes none of them reads no note and no insights file. Like the sync, it keeps it only after a complete
+refresh (every listed note got an entry): a note that could not be summarized yet is tried again by the next command.
+A derived title that arrives, or a change of those settings, is published by the next sync or command. A writer that
+reads `insights/` and finds no such folder shows no derived title: it drops `shown` from the entries it reuses. A writer
+that does not read `insights/` publishes `voice` and keeps the `shown` of entries it reuses.
+
+A writer of 1.2 or earlier that rewrites the file (any change of the listing) knows neither member nor the marker, so
+its file has none of them: the viewer then lists such voice notes as "Untitled" until a writer of 1.3 rewrites it,
+which it does at its next sync or command (the file has no marker, so its voice notes are made again).
 
 ### 12.5 Per-device files
 
@@ -4264,7 +4356,7 @@ A file's tag (or a blob's name) is checked under the key it decrypted with befor
 
 **The write ledger** (design §5.4): device-local, never in the vault, per vault. One entry per file the
 device writes (`path`, `sha256`, `epoch`, `epochId`, `time`), appended durably **before** the file is
-placed; it also keeps the key of every epoch the device wrote under, and the epoch it last caught up to.
+placed; it also keeps the key of every epoch the device wrote under, the epoch it last caught up to, and the device keys it held (the fingerprint of each key and the device id it was listed under, remembered while the device is listed; an optional `deviceKeys` member of `state`).
 An entry lives until the record whose parent is its epoch seals its path with its digest and that seal
 is final (§15.9: a kit replacement pinned at or above the sealer), or until its file is re-encrypted
 under a later epoch (the new file gets an entry), or until it is superseded or stale. Per path, the
@@ -4294,7 +4386,8 @@ is written under its new name and the old name stays), the copy is decrypted and
 the old bytes are set aside, the new entry is recorded, and only then the copy replaces the file. An
 inbox file (§11) is re-sealed the same way: its plaintext's tag is checked under the device's own
 capture key of the epoch it was written under, re-tagged under the device's capture key of the current
-epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A capturing
+epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A file sealed under an earlier
+device key of this device (it was removed and joined again) is re-sealed too, but only under a key the device's own record holds (at most 32, newest first; never a removed other device's key on the chain), and only when the line's `device` (if it has one) is an id the device held: the line names the sealing key (`recipient`), so one HMAC is checked, and the recipient is renamed to the current key's. A file no held key opens is reported `unreadable` once and left in the inbox (and set aside), never deleted; a device whose record is lost (a reinstall) or was never made leaves such files unreadable. A capturing
 device records each inbox file in the ledger before placing it, under the epoch of the profile that
 sealed it (a profile records `epoch` and `epochId`; a capture queued outside the vault keeps its own, never
 the profile current when it is moved in, review M4; the CLI's `inbox capture` records when the device key
@@ -4490,7 +4583,7 @@ never makes a vault unhealthy. Insights describe only a note's current text; no 
 
 ```
 insights/<noteId>.<device>.insights.age    one note's summary, keywords and concepts (gen) and/or vector (emb)
-insights/map.<device>.insights.age         the work device's map: key, canaries, clusters, layout (§16.3)
+insights/map.<device>.insights.age         a device's map: key, canaries, clusters, layout (§16.3)
 insights/device.<device>.insights.age      a device's record: OS, model, embedding revisions, canaries (§16.4)
 insights/topics.<device>.insights.age      a device's notebook and tag summaries (§16.5)
 ```
@@ -4526,7 +4619,7 @@ one a reader shows.
   "lang": "en",
   "gen": {
     "hash": "9f2c4e1d7a0b3c58e6d1f4a2b7c90e13",
-    "model": "afm-ondevice", "os": "27.2", "prompt": 1,
+    "model": "afm-ondevice", "os": "27.2", "prompt": 1, "outLang": "es",
     "summary": "Free vibration of a damped spring-mass system ...",
     "keywords": [ { "t": "damping ratio", "w": 0.82 } ],
     "concepts": [ "critical damping", "logarithmic decrement" ],
@@ -4538,7 +4631,7 @@ one a reader shows.
     "key": { "model": "nl-sentence", "lang": "en", "rev": 1, "input": 1 },
     "dim": 512, "enc": "f16le-base64", "v": "..."
   },
-  "titleOp": { "stamp": "17647279000000000-0000beef", "title": "2026-10-07 14.32 Spring lab results" }
+  "title": { "hash": "9f2c4e1d7a0b3c58e6d1f4a2b7c90e13", "text": "2026-10-07 14.32 Spring lab results", "at": 1764727900000 }
 }
 ```
 
@@ -4558,16 +4651,36 @@ one a reader shows.
   `prompt` equals its own and the `os` major matches, else stale and recomputed). `summary` at most 2 000 characters
   (writers keep it to 4 sentences and 600 characters), `keywords` at most 32 (`t` at most 120 characters, `w` finite,
   0 … 1 000), `concepts` at most 16, `dropped` the summary sentences the writer's fact check dropped, `slug` a voice
-  note's suggested title (§16.8).
-- `emb`: the work device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
+  note's suggested title (§16.8). `outLang` (optional, 1.3): the language `summary` and `slug` are written in when the vault's
+  shared setting `insights.language` (docs/settings-sync.md §5.1) names one: the writer made them in the note's own language
+  (the fact check needs the note's words), then put them into that language; keywords and concepts stay as the note has them.
+  A `gen` is current for a reader only when its `outLang` equals the reader's `insights.language` (absent equals null), so a
+  change of the setting makes summaries and titles be made again; the old ones stay shown until the new are there. Among the
+  files holding a `gen` for the note's hash, a reader takes one whose `outLang` equals its `insights.language` first, then
+  the later `written`, then the larger device id, so a device that rewrites its file in another language never hides it.
+- `emb`: this device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
   `dim` values (1 … 4 096). `key`: model, language, pinned revision, and `input`, the writer's text-cleaning revision.
-- `titleOp`: the stamp (`<hlc>-<device>`, §5.1) of the revision in which this device set the note's title
-  automatically, and that title (§16.8).
-- `gen` and `emb` both absent: a **tombstone** (§16.6).
+- `title` (1.3): the title this device derived for a voice note (§16.8), rendered from `insights.voiceNoteTitle`, for the
+  insight text whose hash is `hash`; `text` at most 300 characters; `at` Unix milliseconds, 1 … 2^53 − 1, when it was
+  derived (it does not change when the file is rewritten for another reason); `lang` (optional) the `outLang` of the slug it
+  was made from (absent: the note's own);
+  `fmt` (optional) the `insights.voiceNoteTitle` format `text` was rendered from (absent: the default format
+  `{date} {time} {slug}`; a string of at most 200 characters with no control characters, else the file is invalid; a
+  format the reader cannot use, such as one with a token of a later version, does not invalidate the file: the title counts
+  as rendered from another format, never current, and is shown only as a fallback), and a reader prefers the title whose
+  `lang` equals its `insights.language` and whose `fmt` equals the format now set, then one whose `lang` equals it, then any;
+  a device derives again when no file holds a title for the hash in the
+  language and format now set, so changing the format re-derives (the older titles stay shown until then). It is never written into the note. A reader
+  takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the
+  larger device id, where an `at` more than 7 days ahead of the reader's clock is not ordered and comes after every `at`
+  that is (as for `written` above); a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
+  note's own title); readers of 1.3 ignore it, and 1.2 readers ignore `title`.
+- `gen`, `emb` and `title` all absent: a **tombstone** (§16.6). A file holding only a `title` is not one.
 
 A reader takes a note's `gen` from the best file: one whose `gen.hash` equals the note's current hash, then the later
-`written`, then the larger device id; without one, the latest `gen` of any hash, shown as stale. It takes `emb` only
-from the work device's file.
+`written`, then the larger device id; without one, the latest `gen` of any hash, shown as stale. It takes `emb` from the
+file holding one at the map's `key` (any device's: the bytes are the same at one key), the one for the note's current
+`emb.hash` first, then by the same order of `written` and device id.
 
 ### 16.3 The map file
 
@@ -4582,10 +4695,14 @@ from the work device's file.
   "built": { "notes": 698, "hashes": "<SHA-256 hex over the sorted noteId:emb.hash lines>" } }
 ```
 
-Written by the work device last, after the vectors it was built from. Readers use only vectors whose `key` equals the
+Written by a device that has just embedded what was missing, after the vectors it was built from. Any device that supports
+the pinned revision may build it, and the build is deterministic: the same vectors, summaries and previous map give the
+same `mean`, `clusters`, `layout` and `built` on every device, so maps built at once differ only in `device`, `written`
+and the builder's `canaries`. A reader takes the map at the pinned revision with the later `written` (a copy more than 7
+days ahead is not ordered, as in §16.2), then the larger device id. Readers use only vectors whose `key` equals the
 map's. `mean` and `centroid`s are binary16 base64 of `dim` values; clusters form two levels (`level` 0 note clusters,
 `parent` naming their level-1 cluster), cluster `0` is "Other" (clusters under 3 notes); `layout` positions are finite
-and within ±10⁶. A map without `key` is a tombstone: the device no longer holds the role.
+and within ±10⁶. A map without `key` is a tombstone (1.2.0 wrote one when a device lost the work device role); readers ignore it.
 
 ### 16.4 Device records
 
@@ -4602,29 +4719,27 @@ and within ±10⁶. A map without `key` is a tombstone: the device no longer hol
 Every device with Note Insights on writes its record (at most daily, and when its OS, model or supported revisions
 change): whether the generation model is available (`reason` when not: `disabled`, `notReady`, `deviceNotEligible`,
 `unsupported`) and its identity, the sentence-embedding revisions it supports per language, its canary vectors, and its
-result against the map whose `written` is `against` (`compatible`, `incompatible`, `vectorReader`, `workDevice`,
-`noMap`). A record is **recently seen** when written within 30 days by a device the current list has.
+result against the map whose `written` is `against` (`compatible`, `incompatible`, `vectorReader`,
+`noMap`; 1.2.0 also wrote `workDevice`, which readers take as `compatible`). A record is **recently seen** when written within 30 days by a device the current list has.
 
-### 16.5 The work device, the pin and canaries
+### 16.5 Who does the work, the pin and canaries
 
 - **Who generates.** Every device where the generation model is available writes `gen` (summaries and keywords, §16.2)
   and topic summaries into its own files, for notes no device has a current `gen` of (readers take the best one,
   §16.2), and makes a topic summary only when the latest one from any device is not current for its members. Two
   devices may summarize the same note within a sync's delay; both files stay and are read as one.
-- **Work device.** The shared setting `insights.workDevice` (§13; `docs/settings-sync.md`) names the one device that
-  embeds every note, builds the map and sets voice-note titles (vectors are comparable only under one embedding key,
-  and a title is a delta to the note). Any device that supports the pinned embedding revision may hold it (a device
-  with only the generation model never does). Unset, the first capable device to run insights claims it by writing its
-  own id (§13.3's merge settles a race the same way everywhere). A work device that wrote nothing in `insights/` for 14
-  days (counted from its designation when that is later), or that is no longer in the device list, is taken over the
-  same way by the next capable device to run insights, which writes its own id
-  only while the setting still names the missing device. Other devices never embed into the vault.
+- **No designated device (1.3; 1.2.0 had a work device).** Any device that supports the pinned embedding revision
+  embeds the notes no device has a vector of at the map's `key`, and rebuilds the map when it is due (more than 10% of
+  the notes changed since the best map, or weekly, or there is none). Embeddings are bit-identical across devices at one
+  key and the map build is deterministic (§16.3), so devices that do the same work at once write the same content and
+  converge, where the devices' canaries agree: a device whose canaries disagree with the map's keeps its vectors local and writes
+  no shared vector or map, and readers ignore the vectors of a device whose record says `incompatible` (design D21). Any device may set a voice-note title (§16.8). A 1.2.0 settings file may still hold `insights.workDevice`:
+  it is deprecated (not read, not shown), readers keep and ignore it.
 - **The pin.** `insights.embeddingRevision` (per language, `{"en": 1}`) names the sentence-embedding revision. Unset,
   the first map build sets it to the lowest revision every recently seen device supports. It never moves by itself;
   moving it (up or down) is a confirmed choice that lists the devices that do not support the new revision (they become
-  **vector readers**: they read the shared vectors and map, make none and place nothing). If the work device lacks the
-  new revision the role moves to one that has it. The work device then re-embeds every note and rebuilds; readers
-  never mix keys.
+  **vector readers**: they read the shared vectors and map, make none and place nothing). A device that supports the new
+  revision then re-embeds every note and rebuilds; readers never mix keys.
 - **Canaries.** Set 1 is these 8 sentences, embedded after the `input` cleaning:
 
   1. The damping ratio decides whether a spring and mass system oscillates or settles slowly.
@@ -4637,15 +4752,16 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   8. Vectors in a basis span the space and are linearly independent.
 
   A device that supports the pin is **compatible** with the map when model, language, revision and `input` match and
-  every canary's cosine with the map's is at least 0.999: it uses the shared vectors and places notes the work device
-  has not embedded yet locally (never in the vault). An **incompatible** one builds a local vector set and map, never
+  every canary's cosine with the map's is at least 0.999: it uses the shared vectors and places notes no device
+  has embedded yet locally (never in the vault). An **incompatible** one builds a local vector set and map, never
   mixed with the shared one.
 
 ### 16.6 Deletion, new epochs and turning it off
 
-- **Tombstones.** A device "removes" its note file by replacing it with one without `gen` and `emb` at a later
+- **Tombstones.** A device "removes" its note file by replacing it with one without `gen`, `emb` and `title` at a later
   `written`, so a device bridging two targets cannot bring the old one back: when the note is deleted (§5.2), and when
-  its `gen` is stale while another device's is current.
+  its `gen` is stale (older text, or the current text in another insight language than `insights.language`) while another
+  device's is current.
 - **A new epoch.** A device deletes its own files that open only under an earlier key and writes them again under the
   current key by its ordinary pass; until then other devices ignore them. The content of such a file is never carried
   over: any holder of that key, a device removed since included, could have written bytes under a device's name.
@@ -4689,15 +4805,30 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
 
 - **Topics file** (`sempere-insights-topics/1`): `format`, `device`, `written`, and `topics`, a list of `{ "scope":
   {"notebook": path} | {"tag": key}, "members": n, "membersHash": <SHA-256 hex over the sorted noteId:hash lines>,
-  "gen": {model, os, prompt, at, summary} }`. A scope has at least 3 summarized notes; `at` is Unix milliseconds. Scope
-  names stay inside the ciphertext. A summary is stale when the members' digest changed.
-- **Voice-note titles.** The work device sets a quick voice note's title (§11.3) from the shared format
-  `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and `{time}` `HH.mm`, 24 hour, in the capture's time zone,
-  read from the capture's default title, which a capture writes in its device's zone, and in UTC when the default
-  title holds no `YYYY-MM-DD HH:mm`; and `{slug}`, the model's 2-6 word title checked against the transcript and cut at 60 characters), in one delta, only
-  while the title is still the capture default, decided by value: the current title equals the first title the note's
-  history holds and ends with the capture's `YYYY-MM-DD HH:mm` (a history thinned past the adoption, whose first title
-  is a rename, is never retitled). It records the stamp of its revision in its note file's `titleOp`, and trusts a
-  `titleOp` only when that stamp names the device's own revisions and the history holds it with that title. A title
-  set by another device after the adoption and before that stamp (so not causally after it), other than a default
-  title or that same automatic title, lost only because the check was local: the work device writes that title again. Ordinary notes are never retitled; without a usable slug the title stays.
+  "gen": {model, os, prompt, at, summary, outLang?} }`. A scope has at least 3 summarized notes; `at` is Unix milliseconds;
+  `summary` at most 4 000 characters (writers keep it to 6 sentences and 1 200 characters, translated or not). `outLang`
+  (optional, 1.3): the language `summary` is written in when the vault's `insights.language` names one, a string of 1 to 64
+  UTF-8 bytes (else the file is invalid), with the same rule as a note file's `gen.outLang` (§16.2): a summary is current
+  for a reader only when its `outLang` equals the reader's `insights.language` (absent equals null). Scope
+  names stay inside the ciphertext. A summary is stale when the members' digest changed. A writer checks every insights
+  file as a reader would before writing it, so it never writes one its readers reject. A device's own topics file that
+  opens under the current key (tag, name and format verified) but fails only these content checks, which a pre-release
+  build could write, holds nothing any reader shows, so the device replaces it; one that does not open (damage, another
+  key, a later format) is left, and the device writes no topics until it opens or is deleted.
+- **Voice-note titles (1.3).** A quick voice note (§11.3) stores no title unless the person typed one. Any device with
+  a current `gen` slug derives a title from the shared format `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and
+  `{time}` `HH.mm`, 24 hour, in the capture's time zone, from the recording's `captureInfo.tz` (§8.3.1), else from a
+  `YYYY-MM-DD HH:mm` ending of a default title that a note of 1.0 through 1.2 stored, else UTC; and `{slug}`, the model's
+  2-6 word title checked against the transcript and cut at 60 characters) and records it in its own note file's `title`
+  (§16.2): once per text, only while the note's own title is blank or a default stored before 1.3 (a title ending in the
+  capture's `YYYY-MM-DD HH:mm`: the recording's start exactly in `captureInfo.tz` when there is one, else in some zone
+  within 14 hours of UTC whose offset is a multiple of 15 minutes; or, ending in no such stamp, "Voice note"/"Nota de voz"
+  and the start in the capturing device's language; a title of anyone's choosing, "Lab 2026-10-01 09:00" for a note
+  captured at another time, is never judged a default), and only when no file already holds a `title` for the note's current
+  hash in the insight language and title format now set (§16.2), so devices that derive at once settle on the later `at` (then the larger device id) and none rewrites to flip it.
+  Nothing is written to the note: readers show, in this order, the title the person typed; else (a voice note with a
+  blank or default stored title) the derived title; else a default made at display time from the recording's
+  `captureInfo.source` and the reader's language ("Voice note <date and time in the capture's zone>", "Watch voice note
+  …"); else "Untitled". Ordinary notes get no derived title, and without a usable slug none is derived. 1.2 devices that
+  share the vault still rename a note whose stored title is a default (their `titleOp`), and show a blank title as
+  "Untitled".

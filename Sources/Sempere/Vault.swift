@@ -526,7 +526,7 @@ public struct Vault: Sendable {
     }
 
     /// Parses and validates manifest bytes (format.md §15.3; a later major: §7.2).
-    static func readManifest(_ data: Data) throws -> EpochManifest {
+    package static func readManifest(_ data: Data) throws -> EpochManifest {
         let manifest: EpochManifest
         do { manifest = try EpochManifest.parse(data) } catch {
             // A later major that does not decode cannot be opened even read-only (format.md §7.2).

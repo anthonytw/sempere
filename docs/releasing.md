@@ -51,7 +51,7 @@ site are each their own recipe; an upload asks `[y/N]` and a tag push asks you t
 Merge these two PRs once; B.4 and B.7 depend on them:
 
 - **sempere-site PR #6** (`chore/justfile`): the site's justfile (`just install`, `sync-docs`, `viewer`, `build`,
-  `preview`, `deploy`) and the pnpm 12 build-script allowlist. Until it is merged, the `first-version` branch has
+  `preview`, `deploy`) and the pnpm 12 build-script allowlist. Until it is merged, the `main` branch has
   no justfile; the commands behind each recipe are in the site's README (`pnpm install`,
   `node scripts/sync-sempere-docs.mjs`, `pnpm build`, `./deploy.sh`).
 - **astro-site PR #15** (`fix/pnpm-build`): `katex` as a direct dependency. Without it `pnpm build`, which the
@@ -87,7 +87,7 @@ Merge these two PRs once; B.4 and B.7 depend on them:
    mkdir -p ~/dev/website && cd ~/dev
    git clone git@github.com:anthonytw/sempere.git               # development and releases: GitHub is origin
    git -C sempere remote add gitea git@git-ssh.lab.gulwertz.net:awertz/sempere.git   # the mirror (statuses, fallback); never push by hand
-   git clone git@git-ssh.lab.gulwertz.net:awertz/sempere-site.git website/sempere-site   # private, branch first-version
+   git clone git@git-ssh.lab.gulwertz.net:awertz/sempere-site.git website/sempere-site   # private, branch main
    git clone git@git-ssh.lab.gulwertz.net:awertz/astro-site.git website/astro-site       # the blog
    ```
    The sites' `deploy.sh` scripts clone their public GitHub Pages repos next to them on first use.
@@ -343,7 +343,7 @@ B.5. The site shows the CHANGELOG and the privacy policy from this repo, and its
 
 ```bash
 cd ~/dev/website/sempere-site
-git switch first-version && git pull --ff-only
+git switch main && git pull --ff-only
 git switch -c release/1.0.0
 just install
 just sync-docs        # or, from the sempere repo: just site-sync
@@ -357,12 +357,12 @@ Expected: `privacy: last updated YYYY-MM-DD` and a line for the changelog. Then:
   changed; see the site's README).
 - `just build` (expected: `check-no-third-party: ok …`), then `just preview` and look at `/privacy`, `/support`,
   `/changelog` and `/demo`.
-- Commit, push, open a PR to `first-version` (`tea pr create` or the Gitea UI); **[you]** merge it.
+- Commit, push, open a PR to `main` (`tea pr create` or the Gitea UI); **[you]** merge it.
 
 **[you] Deploy** (replaces the live site with `dist/`, so only after the PR is approved and merged):
 
 ```bash
-git switch first-version && git pull --ff-only
+git switch main && git pull --ff-only
 just deploy
 ```
 

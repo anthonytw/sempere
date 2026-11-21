@@ -40,23 +40,40 @@ struct NoteListView: View {
         var id: String { "\(kind)-\(note)" }
     }
 
+    /// The search field's focus (Search | Ask keeps it there).
+    @FocusState private var searchFocused: Bool
+
     var body: some View {
         @Bindable var model = model
         @Bindable var ui = ui
         Group {
-            if model.isSearchActive {
+            if model.askTarget == .ask {
+                AskResultsView()
+            } else if model.isSearchActive {
                 SearchResultsList()
             } else {
                 notesList
             }
         }
+        // The field's text, put back if the field starts editing without it (a Mac's search dismissal empties it behind
+        // SwiftUI's back when Search | Ask is clicked with an empty search; `SearchFieldTextSync`).
+        .background(SearchFieldTextSync(text: { model.askTarget == .ask ? model.askQuestion : model.searchText }))
+        // Search | Ask under the field while it is in use (Ask your notes, docs/design/1.3-ask.md §3.6).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if ui.searchPresented || model.askTarget == .ask { AskTargetPicker(refocus: { searchFocused = true }).background(.bar) }
+        }
         .environment(\.editMode, Binding<EditMode>(get: { model.isSelectingNotes ? .active : .inactive },
                                          set: { setSelecting($0.isEditing) }))
         .navigationTitle(title)
-        .searchable(text: $model.searchText, isPresented: $ui.searchPresented, prompt: "Search notes and handwriting")
+        // In Ask mode the field holds the question, never the search text: Search and the recent searches never see it (D9).
+        .searchable(text: Binding(get: { model.askTarget == .ask ? model.askQuestion : model.searchText },
+                                  set: { if model.askTarget == .ask { model.askQuestion = $0 } else { model.searchText = $0 } }),
+                    isPresented: $ui.searchPresented,
+                    prompt: model.askTarget == .ask ? Text("Ask a question about your notes") : Text("Search notes and handwriting"))
+        .searchFocused($searchFocused)
         .searchSuggestions {
-            // Recent searches while the field is empty: tap one to search it again.
-            if model.searchText.isEmpty, !model.recentSearches.isEmpty {
+            // Recent searches while the field is empty: tap one to search it again (never in Ask mode).
+            if model.askTarget == .search, model.searchText.isEmpty, !model.recentSearches.isEmpty {
                 Section {
                     ForEach(model.recentSearches, id: \.self) { query in
                         Label(query, systemImage: "clock.arrow.circlepath").searchCompletion(query)
@@ -69,13 +86,35 @@ struct NoteListView: View {
                 }
             }
         }
-        .onSubmit(of: .search) { model.recordSearch() }
+        .onSubmit(of: .search) { if model.askTarget == .ask { model.submitAsk() } else { model.recordSearch() } }
         .searchScopes($model.searchScope) {
-            ForEach(SearchScope.allCases) { Text($0.title(for: model.sidebarSelection)).tag($0) }
+            if model.askTarget == .search {
+                ForEach(SearchScope.allCases) { Text($0.title(for: model.sidebarSelection)).tag($0) }
+            }
         }
         .toolbar {
             if model.isSelectingNotes {
                 ToolbarItem(placement: secondary) { ExportMenu(ids: model.exportTargetIDs) }
+                // Bulk actions on the ticked notes (`BulkNoteSheets`); a read-only vault allows none.
+                ToolbarItem(placement: secondary) {
+                    Button("Move To…", systemImage: "folder") { ui.bulkNoteAction = .move(model.bulkTargetIDs(for: .move)) }
+                        .disabled(!model.bulkActions.contains(.move))
+                        .help("Move the selected notes to a notebook")
+                        .accessibilityIdentifier("bulk.move")
+                }
+                ToolbarItem(placement: secondary) {
+                    Button("Delete", systemImage: "trash") { ui.bulkNoteAction = .delete(model.bulkTargetIDs(for: .delete)) }
+                        .disabled(!model.bulkActions.contains(.delete))
+                        .help("Move the selected notes to Recently Deleted")
+                        .accessibilityIdentifier("bulk.delete")
+                }
+                if model.bulkActions.contains(.restore) {
+                    ToolbarItem(placement: secondary) {
+                        Button("Restore", systemImage: "arrow.uturn.backward") { ui.bulkNoteAction = .restore(model.bulkTargetIDs(for: .restore)) }
+                            .help("Bring the selected notes back from Recently Deleted")
+                            .accessibilityIdentifier("bulk.restore")
+                    }
+                }
             }
             ToolbarItem(placement: secondary) {
                 Button(model.isSelectingNotes ? "Done" : "Select") { setSelecting(!model.isSelectingNotes) }
@@ -137,8 +176,9 @@ struct NoteListView: View {
                     RecognitionBar(progress: progress) { model.cancelRecognizingNotes() }
                 }
                 VaultStatusBar(loading: model.loading, join: model.joinProgress)
-                // One bar per sync target (folder or server) of the open vault.
-                ForEach(model.syncSessions, id: \.locationID) { WebDAVStatusBar(session: $0) }
+                // A bar per sync target (folder or server) of the open vault where something is definitely wrong; none
+                // while all is well or only in progress (owner 2026-11-20). Sync Targets… keeps every target's status.
+                ForEach(model.syncSessions.filter(\.needsAttention), id: \.locationID) { WebDAVStatusBar(session: $0) }
             }
         }
         .refreshable {
@@ -264,6 +304,11 @@ struct NoteListView: View {
         model.multiSelection = on ? Set(model.selectedNoteID.map { [$0] } ?? []) : []
     }
 
+    /// The row is one of several ticked notes: its context menu's Move, Delete and Restore act on all of them.
+    private func inTickedGroup(_ note: NoteSummary) -> Bool {
+        model.isSelectingNotes && model.multiSelection.contains(note.id) && model.multiSelection.count > 1
+    }
+
     /// The notes a context-menu export acts on: the ticked ones when `note` is among them.
     private func exportIDs(for note: NoteSummary) -> [UUID] {
         model.isSelectingNotes && model.multiSelection.contains(note.id) ? model.exportTargetIDs : [note.id]
@@ -303,7 +348,11 @@ struct NoteListView: View {
     // help-lint: titled
     private func actions(for note: NoteSummary) -> some View {
         if note.deleted {
-            Button("Restore", systemImage: "arrow.uturn.backward") { run { try await model.restoreNote(note.id) } }
+            Button("Restore", systemImage: "arrow.uturn.backward") {
+                if inTickedGroup(note) { ui.bulkNoteAction = .restore(model.bulkTargetIDs(for: .restore)) }
+                else { run { try await model.restoreNote(note.id) } }
+            }
+            .disabled(inTickedGroup(note) && !model.bulkActions.contains(.restore))
             ExportMenu(ids: exportIDs(for: note))
         } else {
             if Platform.isMac, let value = model.noteWindowValue(for: note.id) {
@@ -326,14 +375,20 @@ struct NoteListView: View {
                     }
                 }
             }
-            Button("Move to Notebook…", systemImage: "book.closed") { movingNote = MovingNote(note: note) }
+            Button("Move to Notebook…", systemImage: "book.closed") {
+                if inTickedGroup(note) { ui.bulkNoteAction = .move(model.bulkTargetIDs(for: .move)) }
+                else { movingNote = MovingNote(note: note) }
+            }
+            .disabled(inTickedGroup(note) && !model.bulkActions.contains(.move))
             if model.insights.mode == .on {
                 Button("Note Insights…", systemImage: "sparkles") { ui.insightsNoteID = note.id }
             }
             ExportMenu(ids: exportIDs(for: note))
             Button("Move to Recently Deleted", systemImage: "trash", role: .destructive) {
-                run { try await model.deleteNote(note.id) }
+                if inTickedGroup(note) { ui.bulkNoteAction = .delete(model.bulkTargetIDs(for: .delete)) }
+                else { run { try await model.deleteNote(note.id) } }
             }
+            .disabled(inTickedGroup(note) && !model.bulkActions.contains(.delete))
         }
     }
 }
@@ -386,6 +441,7 @@ private struct OpenOnDoubleClick: ViewModifier {
 
 private struct NoteRow: View {
     let note: NoteSummary
+    @AppModelEnvironment private var model
     /// Not downloaded from iCloud yet: nothing is known about it but its id.
     var placeholder = false
     /// The WebDAV server a partial copy downloads from (named in the placeholder); nil for iCloud.
@@ -420,7 +476,7 @@ private struct NoteRow: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text(note.title.isEmpty ? String(localized: "Untitled", comment: "Shown for a note without a title") : note.title)
+                Text(NoteTitle.display(model.displayTitle(note)))
                     .font(.headline)
                 if note.favorite {
                     FavoriteMark()
@@ -721,12 +777,13 @@ private struct InsightsHitRow: View {
 private struct TranscriptHitRow: View {
     let hit: TranscriptSearchHit
     let note: NoteSummary
+    @AppModelEnvironment private var model
     let query: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text(NoteTitle.display(note.title)).font(.headline)
+                Text(NoteTitle.display(model.displayTitle(note))).font(.headline)
                 Label(hit.timeText, systemImage: "waveform")
                     .font(.caption.weight(.semibold)).monospacedDigit()
                     .padding(.horizontal, 6).padding(.vertical, 1)
@@ -772,11 +829,12 @@ extension SearchSnippetText {
 private struct SearchRow: View {
     let hit: NoteSearchHit
     let note: NoteSummary
+    @AppModelEnvironment private var model
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text(NoteTitle.display(note.title)).font(.headline)
+                Text(NoteTitle.display(model.displayTitle(note))).font(.headline)
                 if let page = hit.page, note.pages > 1 {
                     Text("Page \(page.number)").font(.caption.weight(.semibold))
                         .padding(.horizontal, 6).padding(.vertical, 1)

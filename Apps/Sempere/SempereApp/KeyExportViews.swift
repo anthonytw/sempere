@@ -38,6 +38,7 @@ struct KeyFileActions: View {
     @State private var kit: PDFFile?
     @State private var savingKit = false
     @State private var failure: String?
+    @State private var anchor = PresentationAnchor.Box()
 
     var body: some View {
         // Each presentation on the button that owns it, not on a section: a section's modifier
@@ -58,6 +59,7 @@ struct KeyFileActions: View {
                     }
                 }
             Button("Share…", systemImage: "square.and.arrow.up") { share() }
+                .background(PresentationAnchor(box: anchor))
                 .sheet(isPresented: Binding(get: { shared != nil }, set: { if !$0 { unshare() } })) {
                     if let shared { ShareSheet(items: [shared], secret: true) { unshare() } }
                 }
@@ -93,7 +95,15 @@ struct KeyFileActions: View {
     }
 
     private func share() {
-        do { shared = try KeyShareFile.stage(key) } catch { failure = String(localized: "The key could not be prepared for sharing: \(AppModel.describe(error))") }
+        // A second tap while the first share sheet is on its way: ignored, nothing staged (staging would remove the file
+        // the first sheet shares).
+        if let view = anchor.view, SecretSharing.isBusy(view) { return }
+        do {
+            let file = try KeyShareFile.stage(key)
+            // UIKit presents it over the receipt's sheet: finishing it never closes the screen under it.
+            if let view = anchor.view, SecretSharing.present([file], from: view, done: { unshare() }) { return }
+            shared = file
+        } catch { failure = String(localized: "The key could not be prepared for sharing: \(AppModel.describe(error))") }
     }
 
     private func unshare() {
@@ -158,13 +168,16 @@ enum SecretPasteboard {
     /// Marker types of nspasteboard.org: the item is a secret and short-lived, so clipboard history tools leave it out.
     static let markers = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
 
-    @MainActor static func copy(_ text: String) {
-        var item: [String: Any] = [UTType.plainText.identifier: text]
+    /// - Parameter lifetime: how long the item stays; a share's passphrase passes two minutes.
+    @MainActor static func copy(_ text: String, lifetime: TimeInterval = SecretPasteboard.lifetime) {
+        // The text under the concrete type other apps read (`public.utf8-plain-text`, `UIPasteboard.string`'s and
+        // `NSPasteboardTypeString`'s): under the abstract `public.plain-text` alone, a paste elsewhere found nothing.
+        var item: [String: Any] = [UTType.utf8PlainText.identifier: text]
         for marker in markers + [ownMarker] { item[marker] = Data([0]) }
         UIPasteboard.general.setItems([item], options: [.localOnly: true,
                                                         .expirationDate: Date().addingTimeInterval(lifetime)])
         #if targetEnvironment(macCatalyst)
-        expireItself(afterChangeCount: UIPasteboard.general.changeCount)
+        expireItself(afterChangeCount: UIPasteboard.general.changeCount, after: lifetime)
         #endif
     }
 
@@ -182,7 +195,7 @@ enum SecretPasteboard {
     @MainActor private static var pending: (changeCount: Int, quit: NSObjectProtocol)?
 
     /// Clears the pasteboard after `lifetime`, and at quit, if nothing else was copied since this item.
-    @MainActor private static func expireItself(afterChangeCount count: Int) {
+    @MainActor private static func expireItself(afterChangeCount count: Int, after lifetime: TimeInterval) {
         if let old = pending { NotificationCenter.default.removeObserver(old.quit) }
         let quit = NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil,
                                                           queue: .main) { _ in

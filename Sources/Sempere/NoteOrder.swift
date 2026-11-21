@@ -3,7 +3,8 @@ import Foundation
 /// How a note listing is ordered: the app's note list and `sempere notes list --sort`.
 ///
 /// One rule for both (CLI first): dates newest first, titles in Finder order
-/// (`localizedStandardCompare`), ties broken by id so the order is stable.
+/// (`localizedStandardCompare`) of the title each shows (`title`: the app's and the CLI's display title,
+/// `NoteDisplayTitle`), ties broken by id so the order is stable.
 /// With `favoritesFirst` the favorites come before the other notes, each group
 /// in the chosen order.
 public struct NoteOrder: Hashable, Sendable {
@@ -20,11 +21,18 @@ public struct NoteOrder: Hashable, Sendable {
     public var key: Key
     /// Favorites (`meta.favorite`) before the other notes, whatever the key.
     public var favoritesFirst: Bool
+    /// The title a note is sorted by under `.title`: what the listing shows (nil: the stored title). Not part of equality.
+    public var title: (@Sendable (NoteSummary) -> String)?
 
-    public init(_ key: Key = .modified, favoritesFirst: Bool = false) {
+    public init(_ key: Key = .modified, favoritesFirst: Bool = false, title: (@Sendable (NoteSummary) -> String)? = nil) {
         self.key = key
         self.favoritesFirst = favoritesFirst
+        self.title = title
     }
+
+    public static func == (a: NoteOrder, b: NoteOrder) -> Bool { a.key == b.key && a.favoritesFirst == b.favoritesFirst }
+
+    public func hash(into h: inout Hasher) { h.combine(key); h.combine(favoritesFirst) }
 
     /// `notes` in this order.
     public func sorted(_ notes: [NoteSummary]) -> [NoteSummary] {
@@ -36,7 +44,7 @@ public struct NoteOrder: Hashable, Sendable {
         if favoritesFirst, a.favorite != b.favorite { return a.favorite }
         switch key {
         case .title:
-            let c = a.title.localizedStandardCompare(b.title)
+            let c = (title?(a) ?? a.title).localizedStandardCompare(title?(b) ?? b.title)
             if c != .orderedSame { return c == .orderedAscending }
         case .modified:
             if let r = Self.newerFirst(a.modified, b.modified) { return r }

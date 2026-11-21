@@ -144,6 +144,21 @@ public enum SpeechTranscription {
         #endif
     }
 
+    /// Every language the engines here can transcribe, as sorted BCP 47 tags (SpeechTranscriber's supported locales and
+    /// SFSpeechRecognizer's; an on-device model may still have to be downloaded). Empty where there is no Speech framework.
+    /// What "Transcribe Again" offers, and `sempere transcribe --languages` prints.
+    public static func supportedLanguages() async -> [String] {
+        #if canImport(Speech)
+        var tags = Set(SFSpeechRecognizer.supportedLocales().compactMap { TranscriptionLanguage.tag($0.identifier) })
+        if #available(macOS 26.0, iOS 26.0, *) {
+            for l in await SpeechTranscriber.supportedLocales { if let t = TranscriptionLanguage.tag(l.identifier(.bcp47)) { tags.insert(t) } }
+        }
+        return tags.sorted()
+        #else
+        return []
+        #endif
+    }
+
     /// Which engines can transcribe `options`' language here (nothing is downloaded).
     public static func availability(options: Options = Options()) async -> [EngineStatus] {
         #if canImport(Speech)
@@ -349,6 +364,16 @@ enum Recognizer {
         }
     }
 
+    /// The one request every transcription makes: on device only, never a server (DESIGN.md "Network").
+    static func request(for file: URL) -> SFSpeechURLRecognitionRequest {
+        let request = SFSpeechURLRecognitionRequest(url: file)
+        request.requiresOnDeviceRecognition = true
+        request.shouldReportPartialResults = false
+        request.addsPunctuation = true
+        request.taskHint = .dictation
+        return request
+    }
+
     static func transcribe(file: URL, recording: UUID, options: SpeechTranscription.Options) async throws -> Transcript {
         guard let locale = locale(options), let recognizer = SFSpeechRecognizer(locale: locale) else {
             throw SpeechTranscriptionError.unsupportedLanguage(options.language ?? options.noteLanguage ?? SpeechTranscription.deviceLanguage)
@@ -360,11 +385,7 @@ enum Recognizer {
             throw SpeechTranscriptionError.needsUsageDescription
         }
         try await authorize()
-        let request = SFSpeechURLRecognitionRequest(url: file)
-        request.requiresOnDeviceRecognition = true   // never a server (DESIGN.md)
-        request.shouldReportPartialResults = false
-        request.addsPunctuation = true
-        request.taskHint = .dictation
+        let request = request(for: file)
         let collector = Collector()
         let words: [RecognizedSpan] = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { c in

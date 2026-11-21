@@ -10,7 +10,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Hashable, Sendable {
     case writing
     /// Recording, Transcription, Quick Voice Notes, transcript search.
     case audio
-    /// Note Insights: the switch, voice-note titles, the work device, status and clusters.
+    /// Note Insights: the switch, voice-note titles, devices, status and clusters.
     case insights
     /// Sync Settings, Device Keys.
     case sync

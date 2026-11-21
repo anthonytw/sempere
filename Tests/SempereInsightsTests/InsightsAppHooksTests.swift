@@ -6,75 +6,83 @@ import VaultTestSupport
 import XCTest
 @testable import SempereInsights
 
-/// What the app (Insights PR 2) needs from the core: titles written through the caller's clock (`titleWriter`, never a
-/// second clock on the app's state file), open notes left alone, the settings writes Settings ▸ Note Insights and the
+/// What the app (Insights PR 2) needs from the core: titles derived into the device's own insights file (never into the note), open notes left alone, the settings writes Settings ▸ Note Insights and the
 /// CLI share (under the vault's write lock), and the whole related graph at once, bounded (review of #50, L7).
 extension InsightsUpdaterTests {
-    func testTitlesGoThroughTheCallersWriter() async throws {
+    func testTitlesAreDerivedIntoTheSidecarNeverTheNote() async throws {
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         try enable()
-        let calls = Calls()
         var o = InsightsUpdateOptions()
         o.now = now; o.force = true
         o.platform = .init(platform: "ios", os: "iOS 27.2")
-        var updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
+        let updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
                                       deviceState: tmp.appendingPathComponent("missing.json"), app: "test/1")
-        let vault = self.vault!, state = self.state
-        updater.titleWriter = { note, build, wall in
-            calls.add(note)
-            // The caller's own clock (here: the test's state file) writes the delta the builder decides on disk.
-            guard let ops = try build() else { return nil }
-            let rev = try vault.apply(ops, to: note, deviceState: state, app: "app/1", wall: wall)
-            return RevisionName(hlc: rev.hlc, device: rev.device, seq: rev.seq, kind: .delta)
-        }
-        updater.writerDevice = try DeviceState.loadOrCreate(at: state).device
+        let revisions = try vault.loadNote(id).revisions.count
         let r = try await updater.run(o, notes: try inputs())
         XCTAssertEqual(r.titled, [id.uuidString.lowercased()])
-        XCTAssertEqual(calls.ids, [id])
-        XCTAssertEqual(try title(id), "2026-09-21 10.46 Spring Lab Results Show")
-        // The `titleOp` names the writer's revision, so the next pass keeps the title.
+        XCTAssertEqual(try title(id), "", "the note keeps no title")
+        XCTAssertEqual(try vault.loadNote(id).revisions.count, revisions, "and no revision is written for the title")
+        XCTAssertEqual(InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: nil), "2026-09-21 11.26 Spring Lab Results Show")
         let again = try await updater.run(o, notes: try inputs())
-        XCTAssertEqual(again.titled, [])
-        XCTAssertEqual(again.restoredTitles, [])
-        XCTAssertEqual(calls.ids, [id])
+        XCTAssertEqual(again.titled, [], "once per text")
     }
 
-    /// A rename made between the decision and the write wins: the writer's builder reads the note on disk again and
-    /// gives no ops (review of #52).
-    func testARenameBetweenTheDecisionAndTheWriteWins() async throws {
+    /// A title the user typed is never touched: no title is derived while it stands.
+    func testARenameKeepsTheDerivedTitleAway() async throws {
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         try enable()
+        try vault.apply([.setMeta(.title("My lab"))], to: id, deviceState: state, app: "app/1", wall: now)
         var o = InsightsUpdateOptions()
         o.now = now; o.force = true
         o.platform = .init(platform: "mac", os: "macOS 27.2")
-        var updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
+        let updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
                                       deviceState: state, app: "test/1")
-        let vault = self.vault!, state = self.state, now = self.now
-        updater.titleWriter = { note, build, wall in
-            // The user renames the note just before the write.
-            try vault.apply([.setMeta(.title("My lab"))], to: note, deviceState: state, app: "app/1", wall: now)
-            guard let ops = try build() else { return nil }
-            let rev = try vault.apply(ops, to: note, deviceState: state, app: "app/1", wall: wall)
-            return RevisionName(hlc: rev.hlc, device: rev.device, seq: rev.seq, kind: .delta)
-        }
-        updater.writerDevice = try DeviceState.loadOrCreate(at: state).device
         let r = try await updater.run(o, notes: try inputs())
         XCTAssertEqual(r.titled, [])
         XCTAssertEqual(try title(id), "My lab")
-        XCTAssertNil(InsightsStore(vault: vault).snapshot().notes[id]?[vault.writerDevice!]?.titleOp, "no titleOp for a title not written")
+        XCTAssertNil(InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: nil))
     }
 
-    /// A device that is not the work device generates whatever its type (D13 for 1.2: every device with the model makes
-    /// summaries; `insights.compute` is gone), and never embeds.
-    func testADeviceThatIsNotTheWorkDeviceGenerates() async throws {
+    /// A device generates whatever its type (D21: every capable device does the work; `insights.compute` is gone and
+    /// `insights.workDevice` is deprecated: accepted, ignored, hidden), and one without the embedder never embeds.
+    func testADeviceWithoutTheEmbedderGeneratesWhateverItsType() async throws {
         try note("A", Self.physics[0])
         try enable()
-        try InsightsSettingsWrite.setWorkDevice(DeviceID("0000beef"), vault: vault, now: now)
         let ipad = try await run(embedder: nil) { $0.deviceType = .ipad }
         XCTAssertEqual(ipad.generated.count, 1)
         XCTAssertEqual(ipad.embedded, [])
         XCTAssertFalse(ipad.mapBuilt)
         XCTAssertNil(SharedSettingsCatalog.spec(named: "insights.compute"), "the setting is gone")
+        let old = try XCTUnwrap(SharedSettingsCatalog.spec(named: "insights.workDevice"), "a shipped key stays in the registry")
+        XCTAssertTrue(old.deprecated)
+        XCTAssertNotNil(old.validated(.string("0000beef")), "still accepted")
+        XCTAssertNotNil(old.validated(.null), "and resettable")
+    }
+
+    /// A 1.2.0 settings file still holds `insights.workDevice`: it is kept in the file, ignored, and nothing fails or
+    /// changes because of it.
+    func testA120SettingsFileWithAWorkDeviceStaysReadable() async throws {
+        try note("A", Self.physics[0])
+        try enable()
+        try vault.updateSharedSettings { s in
+            try s.set(SettingSlotKey("insights.workDevice"), to: .string("0000beef"), type: nil, now: now)
+        }
+        XCTAssertTrue(InsightsSettings.read(vault).enabled)
+        XCTAssertEqual(try vault.readSharedSettings()?.value(SettingSlotKey("insights.workDevice")), .string("0000beef"), "kept")
+        let r = try await run()
+        XCTAssertEqual(r.generated.count, 1, "a designation of an unlisted device holds nothing back")
+        XCTAssertEqual(r.embedded.count, 1)
+        XCTAssertTrue(r.mapBuilt)
+        XCTAssertEqual(try vault.readSharedSettings()?.value(SettingSlotKey("insights.workDevice")), .string("0000beef"), "still kept")
+        // A 1.2.0 device record says `workDevice` for itself: shown as compatible.
+        let me = try XCTUnwrap(vault.writerDevice)
+        let store = InsightsStore(vault: vault)
+        var record = try XCTUnwrap(store.snapshot().devices[me])
+        record.compatibility = "workDevice"
+        try store.write(.device(record), now: now)
+        let others = DeviceID("0000beef")!
+        let status = InsightsReader(vault: vault).status(inputs: try inputs(), me: others, embedder: nil, now: now)
+        XCTAssertEqual(status.devices.first { $0.device == me.rawValue }?.compatibility, "compatible")
     }
 
     /// A cancelled run stops between notes, saves what it made, backs nothing off and runs nothing after the notes
@@ -131,16 +139,12 @@ extension InsightsUpdaterTests {
         try InsightsSettingsWrite.setEnabled(true, vault: vault, now: now)
         XCTAssertTrue(InsightsSettings.read(vault).enabled)
         XCTAssertEqual(vault.insightsMode(), .on)
-        try InsightsSettingsWrite.setWorkDevice(me, vault: vault, now: now)
-        XCTAssertEqual(InsightsSettings.read(vault).workDevice, me)
         try InsightsSettingsWrite.setVoiceNoteTitle("{slug} ({date})", vault: vault, now: now)
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, "{slug} ({date})")
         XCTAssertThrowsError(try InsightsSettingsWrite.setVoiceNoteTitle("{nope}", vault: vault, now: now))
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, "{slug} ({date})", "a refused format writes nothing")
         try InsightsSettingsWrite.setVoiceNoteTitle(nil, vault: vault, now: now)
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, VoiceNoteTitleFormat.defaultFormat)
-        try InsightsSettingsWrite.setWorkDevice(nil, vault: vault, now: now)
-        XCTAssertNil(InsightsSettings.read(vault).workDevice)
         // Off: the explicit false, and this copy's files go.
         try note("A", Self.physics[0])
         try InsightsStore(vault: vault).write(.note(InsightsNoteFile(noteId: UUID(), device: me, written: 0)), now: now)
@@ -155,16 +159,12 @@ extension InsightsUpdaterTests {
         _ = try await run(embedder: FakeEmbeddingProvider(revisions: [1, 2])) { $0.embeddingsOnly = true }
         let settings = InsightsSettings.read(vault)
         let me = try XCTUnwrap(vault.writerDevice)
-        XCTAssertEqual(settings.workDevice, me)
         let snapshot = InsightsStore(vault: vault).snapshot()
         let away = InsightsSettingsWrite.planPinMove(to: 3, language: "en", vault: vault, snapshot: snapshot, settings: settings, now: now)
         XCTAssertEqual(away.leftOut, [me])
-        XCTAssertTrue(away.movesWorkDevice)
-        XCTAssertNil(away.workDevice, "no recently seen device supports 3")
         let move = InsightsSettingsWrite.planPinMove(to: 2, language: "en", vault: vault, snapshot: snapshot, settings: settings, now: now)
         XCTAssertEqual(move.revision, 2)
         XCTAssertEqual(move.leftOut, [], "this device supports revision 2")
-        XCTAssertFalse(move.movesWorkDevice)
         try InsightsSettingsWrite.apply(move, vault: vault, now: now)
         XCTAssertEqual(InsightsSettings.read(vault).pins["en"], 2)
     }

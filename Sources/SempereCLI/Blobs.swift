@@ -31,7 +31,7 @@ struct BlobsCommand: ParsableCommand {
 /// Notes named on the command line (ids or titles), or every note.
 private func notes(_ queries: [String], in vault: Vault) throws -> [UUID] {
     if queries.isEmpty { try vault.requireCompleteCopy() }
-    return queries.isEmpty ? try vault.noteIDs() : try queries.map { try vault.resolveNote($0) }
+    return queries.isEmpty ? try vault.noteIDs() : try queries.map { try vault.resolveShownNote($0) }
 }
 
 private func noteName(_ id: UUID) -> String { id.uuidString.lowercased() }
@@ -169,7 +169,7 @@ struct BlobsExtract: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let ref = try findReference(sha256, note: id, in: vault)
         if let out {
             let url = URL(fileURLWithPath: out)
@@ -242,7 +242,7 @@ struct BlobsAdd: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let ref = try vault.writeBlob(note: id, contentsOf: URL(fileURLWithPath: file), type: type)
         struct Out: Encodable { var note: String; var sha256: String; var size: Int64; var type: String; var file: String }
         let o = Out(note: noteName(id), sha256: ref.sha256, size: ref.size, type: ref.type, file: try vault.blobFileName(for: ref))
@@ -282,7 +282,7 @@ struct BlobsCopy: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let src = try vault.resolveNote(from), dst = try vault.resolveNote(to)
+        let src = try vault.resolveShownNote(from), dst = try vault.resolveShownNote(to)
         let ref = try findReference(sha256, note: src, in: vault)
         try vault.copyBlob(ref, from: src, to: dst)
         let file = try vault.blobFileName(for: ref)

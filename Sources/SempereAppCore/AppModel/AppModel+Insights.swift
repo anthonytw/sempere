@@ -10,7 +10,7 @@ import SempereInsights
 // foreground while the device is on power and from the background processing task. Every write goes through the
 // package (`InsightsStore`, `InsightsSettingsWrite`, `updateSharedSettingsUnderWriteLock`), which takes the vault's
 // write lock itself: nothing here holds that lock around a store call (`VaultFileLock` is not reentrant; PR 1 notes,
-// item 6). Voice-note titles are written through the model's own clock (`writeInsightsTitle`).
+// item 6). Voice-note titles are derived into the device's own insights file (`InsightsNoteFile.title`), never into the note.
 //
 // Memory (review of #50, L7): the vault's sidecars and vectors are read for a refresh and dropped after it; the model
 // keeps only the index (summaries, keywords, at most 8 edges per note, cluster members), and the related graph is built
@@ -30,6 +30,13 @@ public struct InsightsServices: Sendable {
     public var maxGraphNotes: Int
     /// This platform (the device record's).
     public var platform: InsightsPlatform
+    /// The language of a question (NaturalLanguage's recognizer, which lives outside the package); nil: the vault's main
+    /// language (Ask, docs/design/1.3-ask.md §3.1).
+    public var detectLanguage: (@Sendable (_ question: String, _ among: [String]) -> String?)?
+    /// The recognizer's hypotheses for an Ask question among languages (`AskOptions.languageHypotheses`); nil: none.
+    public var languageHypotheses: (@Sendable (_ question: String, _ among: [String], _ likely: [String]) -> [AskLanguage.Hypothesis])?
+    /// The name tagger for checking a translated answer (`AskOptions.nameTagger`); nil: none.
+    public var nameTagger: (@Sendable (_ text: String, _ language: String) -> Set<String>?)?
 
     public init(model: @escaping @Sendable () -> (any ModelProvider)?, embedder: @escaping @Sendable () -> (any EmbeddingProvider)?,
                 powerWindow: @escaping @MainActor @Sendable () -> Bool, maxGraphNotes: Int = 4000,
@@ -54,8 +61,8 @@ public struct InsightsCapability: Equatable, Sendable {
 
     /// Summaries, keywords and titles can be made here.
     public var generates: Bool { model?.isAvailable == true }
-    /// The device can hold the work device, the map and titles device (D13): it embeds. Making summaries alone is not
-    /// enough (vectors and the map need the embedder; `WorkDeviceStatus.capable` lists only devices with the pin).
+    /// The device can embed and build the map (D21): vectors and the map need the embedder (a device that only makes
+    /// summaries does the rest of the work).
     public var canWork: Bool { embedder }
 }
 
@@ -87,7 +94,7 @@ public struct InsightsModelState: Equatable, Sendable {
     public var mode: Vault.InsightsMode = .unset
     /// This device's capability.
     public var capability = InsightsCapability()
-    /// Processed counts, devices, the work device and the map (`InsightsReader.status`); nil until read.
+    /// Processed counts, devices and the map (`InsightsReader.status`); nil until read.
     public var status: InsightsReader.Status?
     /// A pass is running on this device.
     public var isWorking = false
@@ -135,7 +142,7 @@ public struct InsightsCluster: Identifiable, Hashable, Sendable {
     public var label: [String]
     /// Its notes, by title.
     public var members: [UUID]
-    /// Members placed on this device (not in the work device's map yet).
+    /// Members placed on this device (not in the shared map yet).
     public var placed: Set<UUID>
 }
 
@@ -263,6 +270,7 @@ extension AppModelCore {
         runtime.dueNotes = []
         insightsIndex = InsightsIndex()
         insights = InsightsModelState()
+        stopAsk()
     }
 
     // MARK: Reading
@@ -376,6 +384,8 @@ extension AppModelCore {
         if let index = result.3 {
             insightsIndex = index
             insights.revision += 1
+            // A voice note's derived title may have changed: Spotlight donates the title the list shows.
+            spotlightNotesChanged()
         }
         // Turned off here or on another device: this device's memo of failed generations goes with it.
         if result.1 == .off { forgetInsightsFailures(vaultId: vault.vaultId) }
@@ -395,7 +405,7 @@ extension AppModelCore {
         index.outsideGraph = Set(bounded.leftOut)
         let map = reader.mapView(inputs: inputs, me: me, embedder: embedder, set: set)
         index.map = InsightsMapLayout(view: map, edges: index.graph?.edges)
-        for t in TopicSummaries.shownAll(inputs: inputs, snapshot: reader.snapshot) { index.topics[t.scope] = t }
+        for t in TopicSummaries.shownAll(inputs: inputs, snapshot: reader.snapshot, language: reader.settings.language) { index.topics[t.scope] = t }
         var members: [Int: [UUID]] = [:], placed: [Int: Set<UUID>] = [:]
         for node in map.nodes {
             guard let c = node.cluster, let id = UUID(uuidString: node.note) else { continue }
@@ -541,8 +551,7 @@ extension AppModelCore {
 
     // MARK: Settings
 
-    /// Settings' switch (D4): on writes `insights.enabled` true (the first capable device then claims the work device
-    /// in its first pass); off writes the explicit false that deletes `insights/` everywhere, and deletes this copy's.
+    /// Settings' switch (D4): on writes `insights.enabled` true (any capable device then does the work in its next pass); off writes the explicit false that deletes `insights/` everywhere, and deletes this copy's.
     public func setInsightsEnabled(_ on: Bool) async {
         // Off: every pass (foreground or the background task's) stops and has ended before the false is written and the
         // files are deleted, so none writes a sidecar after the purge.
@@ -553,24 +562,22 @@ extension AppModelCore {
         if on { requestInsightsPass(force: false) }
     }
 
-    /// Designates the work device (D13; nil clears it).
-    public func setInsightsWorkDevice(_ device: DeviceID?) async {
-        await writeInsightsSettings { vault in try InsightsSettingsWrite.setWorkDevice(device, vault: vault) }
-        if device == vault?.writerDevice { requestInsightsPass(force: false) }
-    }
-
-    /// "Use This Device" (D13: the user designates; a device also takes the role by itself once the work device has not
-    /// been seen for 14 days, in its next pass).
-    public func claimInsightsWorkDevice() async {
-        guard let me = vault?.writerDevice, insights.capability.canWork else { return }
-        await setInsightsWorkDevice(me)
-    }
-
     /// The voice-note title format (D14); nil resets it. Returns false when the format is refused.
     @discardableResult
     public func setInsightsVoiceNoteTitle(_ format: String?) async -> Bool {
         if let format, VoiceNoteTitleFormat.check(format) != nil { return false }
         await writeInsightsSettings { vault in try InsightsSettingsWrite.setVoiceNoteTitle(format, vault: vault) }
+        return true
+    }
+
+    /// The language of generated summaries and voice-note titles (`insights.language`); nil: the note's own. Returns false
+    /// when it is not a language tag. A change makes summaries and titles be made again in the new language, a few at a
+    /// time, on every device.
+    @discardableResult
+    public func setInsightsLanguage(_ tag: String?) async -> Bool {
+        if let tag, SharedSettingsCatalog.spec(named: InsightsSettings.keys.language)?.validated(.string(tag)) == nil { return false }
+        await writeInsightsSettings { vault in try InsightsSettingsWrite.setLanguage(tag, vault: vault) }
+        requestInsightsPass(force: false)
         return true
     }
 
@@ -621,14 +628,9 @@ extension AppModelCore {
 
     // MARK: Passes
 
-    /// This device has work it may do (D13): it can make summaries (every such device does), or it embeds and holds the
-    /// work device, would claim a role nobody holds, or would take over a work device not seen for 14 days.
+    /// This device has work it may do (D21: any capable device does): it can make summaries or it embeds.
     public var insightsHasRole: Bool {
-        let s = insights.settings
-        guard insights.mode == .on else { return false }
-        if insights.capability.generates { return true }
-        guard insights.capability.canWork else { return false }
-        return s.workDevice == nil || s.workDevice == vault?.writerDevice || insights.status?.workDeviceNotSeen == true
+        insights.mode == .on && (insights.capability.generates || insights.capability.canWork)
     }
 
     /// The one insights slot is taken (a pass, or a topic's "Regenerate"): "Process Now" would start nothing.
@@ -795,8 +797,7 @@ extension AppModelCore {
             insights.passOutcome = forced ? .notListed : nil
             return ([], false)
         }
-        let clock: DeviceClock
-        do { clock = try deviceClockForWriting() } catch {
+        do { _ = try deviceClockForWriting() } catch {
             insights.passOutcome = forced ? .cannotWrite(services.describeError(error)) : nil
             return ([], false)
         }
@@ -806,10 +807,8 @@ extension AppModelCore {
         var remains = false
         var failed = false
         let started = insightsNow()
-        var updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
+        let updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
                                       app: services.appName)
-        updater.titleWriter = { [self] id, build, now in try await self.writeInsightsTitle(id, build, wall: now) }
-        updater.writerDevice = clock.device
         while true {
             guard !Task.isCancelled else { remains = true; break }
             guard generation == gen else { break }
@@ -873,16 +872,24 @@ extension AppModelCore {
         return (reports, remains)
     }
 
-    /// A voice note's automatic title (D14), written through the model's clock like every other edit, inside the edit
-    /// gate: `build` decides from the note as it is on disk then, so a rename made here in between wins (it gives no
-    /// ops). Nothing is written to a note open in an editor. Nil when nothing was written.
-    func writeInsightsTitle(_ id: UUID, _ build: @escaping @Sendable () throws -> [Op]?, wall: Date) async throws -> RevisionName? {
-        guard !isNoteOpen(id) else { return nil }
-        var written: RevisionName?
-        try await commit(ids: [id]) { vault, clock, verifier in
-            guard let ops = try build(), !ops.isEmpty else { return }
-            written = try await NoteWriter.append(ops, to: id, vault: vault, clock: clock, wall: wall, verify: verifier(id))
-        }
-        return written
+    /// What the list and the editor show as `note`'s title (`NoteDisplayTitle`): its own title when the user gave one, else
+    /// for a voice note the title Note Insights derived or a default from its source and language. Empty for a note with
+    /// no title that is no voice note; callers say "Untitled".
+    public func displayTitle(_ note: NoteSummary) -> String {
+        _ = insights.revision   // the index is not observed: a refresh bumps this, so a view that shows a title redraws
+        return note.displayTitle(generated: insightsIndex.shown[note.id]?.generatedTitle, words: displayTitleWords)
+    }
+
+    /// The title a web page share of `note` shows (`NoteDisplayTitle.shareTitle`): `displayTitle(note)`, without the capture's
+    /// date or time unless the share includes dates.
+    func shareTitle(_ note: NoteSummary, includeDates: Bool, vault: Vault) -> String {
+        note.shareTitle(generated: insightsIndex.shown[note.id]?.generatedTitle,
+                        format: InsightsSettings.read(vault, type: settingsDeviceType).voiceNoteTitle,
+                        includeDates: includeDates, words: displayTitleWords)
+    }
+
+    /// True when `displayTitle(note)` is the made-up default ("Voice note <date>"), not a title the user or Insights gave.
+    public func showsDefaultTitle(_ note: NoteSummary) -> Bool {
+        note.showsDefaultTitle(generated: insightsIndex.shown[note.id]?.generatedTitle)
     }
 }

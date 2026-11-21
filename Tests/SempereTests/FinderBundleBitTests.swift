@@ -51,6 +51,22 @@ final class FinderBundleBitTests: TempDirTestCase {
         XCTAssertTrue(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Wompa.SEMPERE-backup")))
         XCTAssertFalse(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Foo.app")))
         XCTAssertFalse(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Notes")))
+        // A sync folder 1.3 makes (`SyncFolderName`), by name; a folder of any other name only by what it holds
+        // (`testAFolderOfAnyNameHoldingAVaultApplies`).
+        XCTAssertTrue(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Notes 2.sempere-vault")))
+        XCTAssertTrue(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/v1.2.Sempere-Vault")))
+        XCTAssertFalse(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Notes Sempere Vault 2")))
+    }
+
+    func testAFolderOfAnyNameHoldingAVaultApplies() throws {
+        let vault = tmp.appendingPathComponent("Bare", isDirectory: true)
+        let backup = tmp.appendingPathComponent("Kept", isDirectory: true)
+        for dir in [vault, backup] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+        XCTAssertFalse(FinderBundleBit.appliesTo(vault))
+        try Data("{}".utf8).write(to: vault.appendingPathComponent("vault.json"))
+        try Data("{}".utf8).write(to: backup.appendingPathComponent("backup.json"))
+        XCTAssertTrue(FinderBundleBit.appliesTo(vault))
+        XCTAssertTrue(FinderBundleBit.appliesTo(backup))
     }
 
     #if canImport(Darwin)
@@ -86,6 +102,20 @@ final class FinderBundleBitTests: TempDirTestCase {
         XCTAssertTrue(FinderBundleBit.clear(at: vault))
         XCTAssertEqual(attribute(vault), info([8: 0x40, 9: 0x0E]), "other flags kept")
         XCTAssertFalse(FinderBundleBit.clear(at: tmp.appendingPathComponent("missing.sempere")))
+    }
+
+    /// The read-only check and the reporting clear (`sempere vault conflicts`, `BundleBitRepair`'s log): a missing
+    /// folder or attribute is "not set", never a failure (that would log an error before a target's first run).
+    func testIsSetAndClearReporting() throws {
+        let vault = tmp.appendingPathComponent("Report.sempere", isDirectory: true)
+        try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+        XCTAssertEqual(FinderBundleBit.isSet(at: vault), false)
+        XCTAssertEqual(FinderBundleBit.clearReporting(at: vault), .notSet)
+        XCTAssertEqual(FinderBundleBit.clearReporting(at: tmp.appendingPathComponent("missing.sempere")), .notSet)
+        try setAttribute(vault, info([8: 0x20]))
+        XCTAssertEqual(FinderBundleBit.isSet(at: vault), true)
+        XCTAssertEqual(FinderBundleBit.clearReporting(at: vault), .cleared)
+        XCTAssertEqual(FinderBundleBit.isSet(at: vault), false)
     }
     #endif
 }

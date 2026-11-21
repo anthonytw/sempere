@@ -193,7 +193,8 @@ development language and **Spanish (`es`) is complete**. Only the interface is t
 
 - **Vault data is shown as written**: note titles, notebook and tag names (the `/` hierarchy of
   §5.4), recording titles, transcripts and page text are never translated or altered. Only how the
-  viewer *displays* an empty title ("Untitled") is localized.
+  viewer *displays* an empty title ("Untitled", and a voice note's default "Voice note <date and time>",
+  `web/src/format/displaytitle.ts`) is localized.
 - **The language** is the first supported one of `navigator.languages`, in the user's order (`es-MX`
   is `es`; a browser that lists none gets English), or the choice made with the **Language** selector
   ("Automatic", "English", "Español", each language in its own name). It is on the open and unlock
@@ -324,6 +325,14 @@ takes seconds. Three things make a visit fast:
    (`--web-viewer` creates it on the server, with `sempere-index.json`;
    `docs/cli.md`). When a note is opened, the summary computed from its
    revisions replaces its entry.
+   A quick voice note with no title of its own is listed as the app lists it (`format.md` §12.2, 1.3): under the
+   title Note Insights derived when the entry carries one (`shown`, the title `sempere notes list` shows), else
+   under the default made from the entry's `voice` (the capture's start, zone and source) in the viewer's language
+   and the capture's zone ("Voice note Oct 7, 2026, 10:32 AM"), else under its stored title. The note's header
+   shows the same title (the row's `shown` is kept when the note is opened, while its stored title is unchanged).
+   The viewer never reads the insights files; the derived title is inside the sealed file, so the server sees no
+   title. Entries written before 1.3 carry neither member, and such a note shows "Untitled" until a writer of 1.3
+   rewrites the file (any unlocked `sempere` command or a sync does, `format.md` §12.4).
 2. **A cache of ciphertext.** Revisions and blobs fetched over HTTP are kept
    in IndexedDB (`web/src/vault/cache.ts`), keyed by the vault's URL and id,
    its **key state** (a hash of `vault.json`'s `epochId` and, while a
@@ -877,6 +886,10 @@ are missing: download the vault first.
   there is black (`smoke-attachments.mjs` checks that most of the render stays
   clear); an equation without a rendering, or whose rendering cannot be drawn, shows
   its LaTeX source in a monospace font. The viewer has no math typesetter.
+- **Voice-note titles** come from the published summaries only: a voice note that has no current entry (new or
+  changed since the file was written) is decrypted and listed under its default title ("Voice note <date and time>")
+  even when Note Insights derived one, until the file is rewritten. Search and the title sort use the stored title, as
+  `sempere search` does, so a derived title is not searchable here.
 - **Search** covers titles, tags, notebooks, recognized text, text boxes,
   equations' LaTeX source and PDF page text (`pageText`, format.md §8.2.6), as in the app; words are not
   highlighted on the page yet. A note with `markersBehindText` (§5.4) draws
@@ -886,6 +899,94 @@ are missing: download the vault first.
   is below that); Swift accepts larger ones for a few informational fields and
   for origin indices.
 
+## Share files
+
+One note, read by someone with no vault, no key and no app: a single `.html` file with the viewer's note view built in and the
+note inside, encrypted with a passphrase. Made by `sempere share` ([cli.md](cli.md)) or the app's File ▸ Export ▸ Web Page
+(Encrypted)…; design in [design/1.3-share.md](design/1.3-share.md). No server of ours is involved: the sender sends the file
+(Mail, Messages, AirDrop, a drive link) and the passphrase another way, and the recipient opens the file **in a web browser**
+(Mail's preview, Quick Look and most chat apps' previews run no scripts and show only "Open this file in a web browser").
+
+**The file.** The share template (`web/`, `npm run build:share`, committed as `Sources/SempereShareViewer/ShareViewerTemplate.swift`
+by `scripts/build-share-template.sh`; the `Web viewer` CI job rebuilds it and fails on a difference) is one HTML page: a
+`<meta>` Content-Security-Policy, one `<style>`, one `<script>` (the note view and its renderers, no pdf.js, no vault code), and a data
+block `<script type="text/plain" id="share-data" data-format="sempere-share/1">` holding an **age file with one scrypt
+recipient** (work factor 2^18, armored). The title is always "Shared note" and the default file name `Shared note.html`: the
+note's title is inside the ciphertext only. That title is the one the writer shows (`NoteDisplayTitle.shareTitle`): a voice note
+with no title of its own carries its derived title or "Voice note" and the capture's date and time, and a share without dates
+carries no title that tells the capture time ("Voice note" instead), so the page shows `meta.title` as it is.
+
+```
+default-src 'none'; script-src 'sha256-<script>'; style-src 'sha256-<style>'; img-src data: blob:; media-src blob:;
+connect-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none';
+manifest-src 'none'; require-trusted-types-for 'script'; trusted-types sempere-share-worker
+```
+
+The page can send nothing anywhere (`connect-src 'none'`, no form, no frame), stores nothing and never puts the passphrase in the
+address; the only storage it reads is the full viewer's language choice (`localStorage` key `sempere-viewer-language`, a language tag,
+which a browser may share between pages on the same origin, `file:` pages included). scrypt runs in a worker made from a `blob:` copy of the page's own script through the one Trusted Types policy
+`sempere-share-worker` (which admits only `blob:` URLs); where a browser refuses that worker on a `file:` page, it runs on the
+page's thread behind "Decrypting…". The page accepts a work factor of at most 20 (the age header is read before any work), one
+passphrase recipient only, and says only "That passphrase did not open this note" for a wrong passphrase. It follows the browser's
+language (English or Spanish).
+
+**Recovery without Sempere (frozen once shipped; `WebPageShareTests.testStockAgeOpensTheFileWithTheDocumentedRecipe` runs it).** With
+`age` 1.1 or later, which asks for the passphrase:
+
+```bash
+sed -n '/-----BEGIN AGE ENCRYPTED FILE-----/,/-----END AGE ENCRYPTED FILE-----/p' "Shared note.html" | age -d > payload.bin
+# the note as JSON: the 4 bytes at offset 5 are the length of the gzip member that starts at byte 10 (counting from 1)
+tail -c +10 payload.bin | head -c "$((16#$(xxd -s 5 -l 4 -p payload.bin)))" | gunzip | jq .
+```
+
+**The payload, `sempere-share/1`** (big-endian integers):
+
+```
+"SHRE" ‖ 0x01 ‖ u32 gzipLength ‖ gzip(JSON) ‖ { u32 64 ‖ name ‖ u64 length ‖ bytes } *
+```
+
+- The JSON is `{ "format": "sempere-share/1", "shareId", "generator": "sempere-share/1", "note" }`. `shareId` is a fresh random id; there is no
+  note id, vault id, device name or app version. `note` is the note's **current state** as `sempere export --format json` writes it
+  (`docs/format.md` §5), flattened: no revisions, history, clocks, tombstones, `origin`, `parent` or `rec` fields, no deleted items or erased
+  strokes, no other notes, no `vault.json`. Pages keep their strokes with their ids (a stroke's texture seed is in its id), paper and items.
+  Tags (`--tags`), the notebook path (`--notebook-path`) and the creation date (`--dates`; otherwise 1970-01-01) are included only on
+  request, recognized text unless `--no-text`, recordings and their transcripts only with `--audio`. Recognized text and transcripts
+  carry no recognizer name (their `engine` is empty: it would tell the sender's system version).
+- **A share without dates carries no date of a recording.** Its `started` is 1970-01-01, its transcript's `created` too (the transcript
+  keeps its language, which the page shows), and an MP4 / M4A recording's container is edited in place before it is added: the
+  creation and modification times of `mvhd`, of each `tkhd` and of each `mdhd` are zeroed and its tag boxes (`udta`, `meta`, XMP
+  `uuid`) become `free` boxes, so nothing moves and it plays as before (`AudioMetadata`). The app's recordings are MP4 and carry
+  only those times and a gapless-playback tag; an MP4 whose boxes cannot be read is left out with a notice rather than shared with
+  its dates. A recording imported in another container (MP3, WAV, CAF, …) is shared as stored and may still carry its own tags (an
+  ID3 date, a `bext` chunk, a location an app wrote). With `--dates` every recording is shared as stored.
+- Each attachment's **name is the SHA-256 of its content** in lowercase hex, which is how an item's `{ sha256, size, type }` finds it.
+  The viewer checks every name, length and duplicate before it shows anything.
+- Pictures are re-encoded for the share (at most 2048 px on the long side, JPEG quality 0.82 by default, PNG when transparent and small),
+  with orientation baked in, the crop scaled with the picture and **all metadata (location, camera) removed**. PDF pages are
+  rasterized (150 dpi, as pictures: no PDF parser in the page), an equation's render likewise, a video becomes its poster frame
+  (the clip is never included), audio is as stored apart from the dates and tags above. The whole file is at most 20 MB by default (`--max-size`, up to 200): a
+  note that cannot fit fails with where the bytes went (ink and text, pictures, audio, viewer), never a truncated file; pictures shrink
+  step by step (2048, 1600, 1280 px) before that, and a recording that does not fit is left out with a notice.
+- The container's parser is fuzzed on both sides (`WebPageShareFuzzTests`, `web/test/share.test.ts`) and bounded by its input: a gzip
+  member of at most 64 MiB, at most 4096 attachments, no length past the end.
+- The shared JSON is a contract between Swift (writer) and TypeScript (reader), pinned by a fixture both sides test
+  (`Tests/SempereRenderTests/Fixtures/share/`, rewritten with `SEMPERE_WRITE_SHARE_FIXTURE=1 swift test --filter WebPageShareTests/testFixture`).
+
+**Checking a file.** `sempere share --verify FILE.html` compares the file, with its data block taken out, byte for byte to the template
+the release ships: the script, the style, the CSP meta and everything else, and reports the scrypt work factor of the age header. It never
+decrypts. The hashes of each release's template are listed here; a recipient who distrusts a file can compare them. The weakness of
+any self-contained page remains: whoever can change the file in transit can change its code to capture the passphrase, so send the
+file and the passphrase by different ways, `--verify`, or use the stock `age` path above.
+
+| Release | Script (`script-src`) | Style (`style-src`) | Template (SHA-256 of the page as `ShareViewerTemplate.html`: the file whose data block holds only the placeholder `@@SEMPERE-SHARE-DATA@@`, no final newline) |
+| --- | --- | --- | --- |
+| 1.3 | `sha256-CR74HbzQVmCsYzajiaE6p7KcpA/33OYuYwCQWXp3HbI=` | `sha256-cZL1/KwjSNvC7zebHbw9rRO44PocwPVtFlmx9sv8pAo=` | `41adba17f1b228da79fbc9f0f0f49c6b4862ecda3a90eaa80cbe9da98d55e5a0` |
+
+**Tests.** Swift: `WebPageShareTests` (flattening, what leaks, pictures, sizes, audio, encryption, the stock `age` recipe, `--verify`, the
+fixture), `JPEGEncoderTests`, `CLIShareTests`. Web: `web/test/share.test.ts` (the Swift fixture opens, hostile containers, work factor 21
+refused, the worker fallback, the committed template's CSP and hashes). `node scripts/smoke-share.mjs FILE.html PASSPHRASE` opens a real
+file in Chromium (or `BROWSER=webkit`) from disk and fails on any request beyond the file or any CSP violation.
+
 ## Development and tests
 
 ```bash
@@ -894,6 +995,7 @@ npm ci                 # exact versions from package-lock.json
 npm run dev            # Vite dev server (no CSP in dev mode)
 npm run lint && npm run typecheck && npm test
 npm run build          # dist/, with the CSP meta tag
+npm run build:share    # dist-share/share-viewer.html, the share template (scripts/build-share-template.sh writes it for Swift)
 npm run fixture        # rewrite test/fixtures/render.sempere (TypeScript writes, Swift reads)
 scripts/golden.sh      # rewrite test/golden from the Swift CLI (builds it)
 # browser smoke tests, Playwright + Chromium (smoke.mjs needs sempere-index.json in the vault: `sempere vault index`):
@@ -971,7 +1073,8 @@ Tests (`web/test/`, vitest, Node 22):
   goldens (`test/golden/*.summaries.json`, from `sempere vault summaries
   --plaintext`) equal to what the viewer computes from the revisions,
   tampered, foreign-key and wrong-vault files refused, malformed entries
-  dropped alone. The listing (`listing.test.ts`): summaries shown first,
+  dropped alone; a voice note's row from `shown`, from `voice` (in English and Spanish), from neither, and from an
+  entry written before 1.3, with malformed members dropped alone. The listing (`listing.test.ts`): summaries shown first,
   only stale notes decrypted, gone notes dropped, a second visit with the
   cache downloading nothing, eviction. The cache (`cache.test.ts`: LRU,
   write-once paths only, a failing cached file evicted and fetched again,

@@ -18,7 +18,7 @@ final class CLISettingsTests: CLITestCase {
         XCTAssertEqual(listing["schemaVersion"] as? Int, 1)
         XCTAssertEqual(listing["minReaderVersion"] as? Int, 1)
         let rows = try XCTUnwrap(listing["settings"] as? [[String: Any]])
-        XCTAssertEqual(rows.count, SharedSettingsCatalog.specs.count)
+        XCTAssertEqual(rows.count, SharedSettingsCatalog.specs.filter { !$0.deprecated }.count, "deprecated keys are not listed")
         XCTAssertTrue(rows.allSatisfy { $0["source"] as? String == "default" })
         XCTAssertFalse(list.out.contains("$meta"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: v.vault.sharedSettingsURL.path), "reading writes nothing")
@@ -43,6 +43,19 @@ final class CLISettingsTests: CLITestCase {
         let reset = try XCTUnwrap(try v.vault.readSharedSettings()?.slots[SettingSlotKey("photos.removeMetadata")])
         XCTAssertNil(reset.value)
         XCTAssertNotNil(reset.meta, "a reset is recorded")
+    }
+
+    /// The insight language (1.3): a vault-wide language tag, `same` for the default (the note's own language).
+    func testTheInsightLanguageSetting() throws {
+        let v = try makeVault()
+        XCTAssertEqual(try cli(["settings", "get", "insights.language", "--json"] + base(v)).json.flatMap { ($0 as? [String: Any])?["source"] as? String },
+                       "default")
+        XCTAssertEqual(try cli(["settings", "set", "insights.language", "pt-BR"] + base(v)).status, 0)
+        XCTAssertEqual(try cli(["settings", "get", "insights.language"] + base(v)).out.trimmingCharacters(in: .whitespacesAndNewlines), "\"pt-BR\"")
+        XCTAssertEqual(try cli(["settings", "set", "insights.language", "not a tag"] + base(v)).status, 2)
+        XCTAssertEqual(try cli(["settings", "set", "insights.language", "same"] + base(v)).status, 0)
+        let get = try cli(["settings", "get", "insights.language", "--json"] + base(v))
+        XCTAssertTrue((get.json as? [String: Any])?["value"] is NSNull, get.out)
     }
 
     func testTypeBlocks() throws {

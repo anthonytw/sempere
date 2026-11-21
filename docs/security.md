@@ -109,8 +109,9 @@ storage, and check it now and then (Verify Backup).
 
 Your storage provider, and anyone with a copy of the files, can see:
 
-- that a vault exists, its folder's name (the app sets none, so it is whatever the
-  folder is called), how many notes it has, how big each saved change to a note is
+- that a vault exists, its folder's name (a sync or backup folder the app makes is named
+  after the vault's name on the device, `<name>.sempere-vault` or `<name>.sempere-backup`; any
+  other folder is whatever it is called), how many notes it has, how big each saved change to a note is
   (exactly: only attachments are padded to size classes), and roughly how big each
   attachment is;
 - when files were written, and by which device (file names carry random ids,
@@ -118,6 +119,10 @@ Your storage provider, and anyone with a copy of the files, can see:
 - what kind each attachment is (image, PDF, audio, video or transcript: the
   kind is part of the file name), and whether voice notes are waiting in the
   inbox or notebook records exist;
+- that the vault's shared settings (`settings.age`: preferences and saved tools) and the published note
+  summaries (`sempere-summaries.sealed`, `summaries/<device>.sealed`) exist, their exact sizes and when they
+  were written: all sealed, but a summaries file's size shows roughly how many notes there are, and its write
+  times when notes changed;
 - the public keys of the vault's devices and of its recovery key, the devices'
   names (by default the model and a short tag, such as "MacBook Pro 3F2A",
   never the computer's name; rename them in Devices), each device's kind (iPad,
@@ -158,6 +163,24 @@ sent back, with the device list, is encrypted to the new device's key
   a vault opens by itself on the device that holds its key, unless you set it to
   ask for Face ID or Touch ID (Settings ▸ Sync & Devices). A vault handed to the
   app from another app or AirDrop asks before it closes the open one.
+- **Spotlight, if you turn it on.** Settings ▸ Spotlight (off by default, per vault and per device, never synced)
+  copies note titles, notebook names, tags and dates (and, when two or more vaults use Spotlight on the device, the
+  vault's name, in each item's description), and with Include Note Text the text of the notes (recognized
+  handwriting, typed text, PDF text, transcripts; 20,000 characters per note), into the system's Core Spotlight
+  index on that device. The index is the operating system's, outside the vault's encryption: the system, Siri and
+  Apple Intelligence can read it, and on a Mac, which has no data protection classes, so can anyone or any app
+  that can read your account's files. On an iPhone or iPad the index is created with complete file protection
+  (unreadable while the device is locked). The items stay while the switch is on, even with the app closed, until
+  30 days after the last time you opened the vault (each unlock renews them), and go when you turn it off, delete the note, change the vault's keys, remove a device, or remove the vault from
+  the device; any that escape (a crash, a vault deleted in Files) expire then too. Sempere makes no claim
+  about whether the system backs the index up. `sempere spotlight plan` shows exactly what would be donated
+  ([`cli.md`](cli.md)).
+- **A shared web page.** File ▸ Export ▸ Web Page (Encrypted)… and `sempere share` make one note into a file that is encrypted
+  with a passphrase (age, scrypt) and opens in any browser. It is outside the vault: whoever has the file and the passphrase reads
+  that note, and the file cannot be taken back. The app keeps neither the passphrase nor a record of what was shared. The page is
+  its own code, so a person who can change the file in transit can change that code to capture the passphrase when it is typed:
+  send the file and the passphrase by different ways, and `sempere share --verify` checks a file against a release
+  ([web-viewer.md](web-viewer.md) "Share files").
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note
   until it is sealed, and files staged for an export or a drag; on a Mac, the
@@ -174,7 +197,13 @@ sent back, with the device list, is encrypted to the new device's key
   listings, drawings and attachment previews, and the memo of notes whose insights could not be made (so they are
   not asked of the model again at once; private, not backed up, deleted when Note Insights is turned off on this device,
   or at the next pass after it is turned off elsewhere, and when the vault is removed from the device), are encrypted under keys derived from the vault's key ([`format.md`](format.md) §10).
-  Note insights are kept on the device only in memory, outside the vault's own `insights/` files. Details: [`io.md`](io.md),
+  Note insights are kept on the device only in memory, outside the vault's own `insights/` files. **Ask your notes**
+  (`sempere ask`, the app's Ask) keeps nothing: the question, the passages sent to Apple's on-device model, the answer and the
+  passage embeddings it makes are held in memory for that request and dropped; none is written to the vault, the caches, the
+  recent-searches memory, the clipboard (except an explicit Copy of the answer) or a log, and the answer is not donated to
+  Spotlight. The model has no tools, no network and no write access, and the question and every note text are neutralized so
+  they cannot close or open the prompt's blocks; its output is checked against the cited passages before it is shown, and drawn as
+  plain text. Details: [`design/1.3-ask.md`](design/1.3-ask.md) §3.3, §5. Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).
 - **Exports.** A PDF, image or Markdown export is not encrypted. Where you send
   it is up to you.
@@ -197,8 +226,9 @@ sent back, with the device list, is encrypted to the new device's key
   makes the watch a new provisioning key, so the profile that WatchConnectivity keeps
   in its persisted context (encrypted to the old key) can no longer be opened by the
   watch. Files the iPhone does not admit (the setting was off, or the key changed
-  since, or an epoch it never held) are kept on the iPhone only, never in the vault
-  or the ledger, and need your **Add** (one note at a time, after a confirmation that
+  since, or an epoch it never held) are kept on the iPhone, and sealed on the watch
+  until you add or delete them there (the watch cannot open its copy, but a lost watch
+  keeps it), never in the vault or the ledger, and need your **Add** (one note at a time, after a confirmation that
   warns about notes that came after the setting was turned off or under an earlier key,
   which may be a lost watch's; a note under an epoch or vault the iPhone never held can
   only be deleted); **Delete** removes them. At most 200

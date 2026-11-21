@@ -19,7 +19,7 @@ final class InsightsFuzzTests: VaultTestCase {
         let contents: [InsightsFileContent] = [
             .note(InsightsNoteFile(noteId: note, device: device, written: 1, lang: "en", gen: gen,
                                    emb: .init(hash: String(repeating: "b", count: 32), key: key, vector: [0.1, 0.2, 0.3]),
-                                   titleOp: .init(stamp: "00017900000000000-a1b2c3d4", title: "2026-10-07 14.32 Spring lab"))),
+                                   title: .init(hash: String(repeating: "a", count: 32), text: "2026-10-07 14.32 Spring lab", at: 1))),
             .map(InsightsMapFile(device: device, written: 2, key: key, dim: 2, canaries: InsightsCanaries(set: 1, vectors: [[1, 0]]),
                                  mean: [0, 0], clusters: [.init(id: 1, parent: nil, level: 0, label: ["a"], centroid: [1, 0], members: [note])],
                                  layout: [note: (0.1, 0.2)], built: .init(notes: 1, hashes: "x"))),

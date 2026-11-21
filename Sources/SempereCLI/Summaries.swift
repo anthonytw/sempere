@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 
 /// `sempere vault summaries`: the published summaries file (format.md §12)
 /// the web viewer lists a vault from without decrypting every note.
@@ -55,13 +56,15 @@ struct VaultSummaries: ParsableCommand {
             inVault = vault.devicePublishedSummariesURL(id)
         }
         let target = out.map { $0 == "-" ? nil : URL(fileURLWithPath: $0) } ?? inVault
-        let reuse = target.map { url -> [UUID: PublishedSummaries.Entry] in
-            guard let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes) else { return [:] }
+        let reuse = target.flatMap { url -> PublishedSummaries.Contents? in
+            guard let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes) else { return nil }
             // The device file is reused only when it is this device's, signed.
-            if let device { return (try? vault.openDevicePublishedSummaries(data, device: device).entries) ?? [:] }
-            return (try? vault.openPublishedSummaries(data)) ?? [:]
-        } ?? [:]
-        let (entries, read) = try vault.publishedSummaryEntries(reuse: reuse, cache: cache.cache(for: vault))
+            if let device { return try? vault.openDevicePublishedSummaries(data, device: device) }
+            return try? vault.openPublishedSummariesContents(data)
+        }
+        let (entries, read) = try vault.publishedSummaryEntries(reuse: reuse?.entries ?? [:], reuseTitled: reuse?.titles ?? false,
+                                                                cache: cache.cache(for: vault),
+                                                                derivedTitles: { InsightsNotes.derivedTitles($0, for: $1) })
         let notes = try vault.noteIDs().count
         let data: Data
         if let device {

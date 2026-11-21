@@ -5,9 +5,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { shownTitle } from "../src/format/displaytitle.ts";
+import { setLocale } from "../src/i18n/index.ts";
 import { loadNote, summarize } from "../src/vault/library.ts";
 import {
-  SummariesError, decodeEntry, decodeSummaries, entrySummary, openSummaries, readSummaries, sealSummaries,
+  SummariesError, decodeEntry, decodeSummaries, entrySummary, maxShownLength, openSummaries, readSummaries, sealSummaries,
   summariesKeyFromSecret, summariesKeyInfo,
 } from "../src/vault/summaries.ts";
 import { fixtures, golden, gzip, sealFor, unlockFixture, webFixtures } from "./support.ts";
@@ -103,5 +105,65 @@ describe("published summaries", () => {
     expect([...m.keys()]).toEqual(["11111111-1111-4111-8111-111111111111"]);
     expect(() => decodeSummaries({ format: "sempere-summaries/2", vaultId, notes: {} }, vaultId)).toThrow(SummariesError);
     expect(() => decodeSummaries({ format: "sempere-summaries/1", vaultId, notes: [] }, vaultId)).toThrow(SummariesError);
+  });
+
+  // 1.3 (format.md §12.2): a voice note's `voice` and `shown`, optional, each dropped alone; the list row's title.
+  describe("a voice note's shown title", () => {
+    const base = {
+      revisions: ["17596320000000000-a1b2c3d4-1.delta.age"], title: "", tags: [], favorite: false, deleted: false,
+      created: "2026-10-04T16:20:00.000Z", modified: "2026-10-04T16:20:00.000Z", pages: 1, pageTexts: [],
+    };
+    const voice = { started: "2026-10-07T14:32:00.000Z", tz: "America/New_York", source: "watch" };
+    const row = (v: unknown) => {
+      const e = decodeEntry(v);
+      if (!e) throw new Error("entry dropped");
+      return entrySummary("6f1c2b9e-0a43-4f6e-9a51-2c8d7e3b4a10", e);
+    };
+
+    it("shows `shown` when the writer published one", () => {
+      const r = row({ ...base, voice, shown: "2026-10-07 10.32 Standup" });
+      expect(r.shown).toBe("2026-10-07 10.32 Standup");
+      expect(r.voice).toEqual({ started: Date.UTC(2026, 9, 7, 14, 32), tz: "America/New_York", source: "watch" });
+      expect(shownTitle(r)).toBe("2026-10-07 10.32 Standup");
+      expect(r.shownFrom).toEqual(base.revisions);   // what opening the note checks before keeping it
+      expect(row({ ...base, voice }).shownFrom).toBeUndefined();
+    });
+
+    it("renders the default from `voice` in the viewer's language and the capture's zone", () => {
+      const r = row({ ...base, voice });
+      expect(r.shown).toBeUndefined();
+      expect(shownTitle(r)).toMatch(/^Watch voice note Oct 7, 2026,? 10:32\s?AM$/);
+      setLocale("es");
+      try {
+        expect(shownTitle(r)).toMatch(/^Nota de voz del reloj 7 oct 2026,? 10:32$/);
+      } finally {
+        setLocale("en");
+      }
+    });
+
+    it("shows the stored title without either member, and an old file's entry reads as before", () => {
+      expect(shownTitle(row({ ...base, title: "Groceries" }))).toBe("Groceries");
+      const old = row(base);
+      expect(old.voice).toBeUndefined();
+      expect(old.shown).toBeUndefined();
+      expect(shownTitle(old)).toBe("");   // the row says "Untitled"
+      // A stored 1.0-1.2 default stays as stored when nothing better was published.
+      expect(shownTitle(row({ ...base, title: "Voice note 2026-10-07 10:32", voice }))).toBe("Voice note 2026-10-07 10:32");
+    });
+
+    it("drops a malformed member alone, and `shown` without `voice`", () => {
+      for (const bad of [{ voice: 7 }, { voice: { started: "x" } }, { voice: { tz: "UTC" } }, { shown: "Standup" }]) {
+        const r = row({ ...base, ...bad });
+        expect(r.voice).toBeUndefined();
+        expect(r.shown).toBeUndefined();
+      }
+      for (const shown of [5, "   ", "x".repeat(maxShownLength + 1), null]) expect(row({ ...base, voice, shown }).shown).toBeUndefined();
+      expect(row({ ...base, voice, shown: "e\u0301".repeat(maxShownLength) }).shown).toBeDefined();
+      expect(row({ ...base, voice: { ...voice, tz: "z".repeat(65) } }).voice).toEqual({ started: Date.UTC(2026, 9, 7, 14, 32), source: "watch" });
+      // A `tz` or `source` of another type makes `voice` malformed (Swift decodes the member as a whole); null reads as absent.
+      expect(row({ ...base, voice: { started: voice.started, tz: 3 } }).voice).toBeUndefined();
+      expect(row({ ...base, voice: { started: voice.started, source: [] } }).voice).toBeUndefined();
+      expect(row({ ...base, voice: { started: voice.started, tz: null, source: null } }).voice).toEqual({ started: Date.UTC(2026, 9, 7, 14, 32) });
+    });
   });
 });

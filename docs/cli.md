@@ -439,6 +439,7 @@ sempere vault verify
 sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|- | --device-file] [--plaintext] [--no-cache]
 sempere vault merge-copy FROM [--dry-run] [--json]
+sempere vault conflicts [VAULT] [--merge [--dry-run | --remove-versions] [--quarantine DIR]] [--json]
 sempere vault catch-up [--json]
 sempere vault reencrypt --recovery-out FILE (--keep ID | --remove ID)... [--recovery-passphrase | --generate-passphrase]
                         [--allow-unreachable TARGET]... [--no-pull] [--password-env VAR] [--yes] [--json]
@@ -599,13 +600,18 @@ sempere vault reencrypt --status [--json]
   every revision (`docs/web-viewer.md` "Opening fast"). Per note: title, tags,
   notebook, favorite and deleted flags, created and modified dates, page count
   and each page's searchable text, with the revision file names it was made
-  from; notes with an unreadable revision get no entry. Sealed with AES-256-GCM
+  from; notes with an unreadable revision get no entry. A voice note whose stored
+  title is blank or a default also gets `voice` (capture start, zone and source)
+  and, once Note Insights derived a title for it, `shown`: the title `notes list`
+  shows, so the viewer lists it the same way (`format.md` §12.2). Sealed with AES-256-GCM
   under a key derived from the vault key, so it needs the key (exit 4
   without it) and only the vault's keys open it. Entries of an existing file
   whose notes did not change are reused (others go through the summary cache
   unless `--no-cache`), so a rerun reads only changed notes. Once it exists it
   is kept current: every command that unlocks the vault rewrites it when a
-  note changed (a failure is a warning); commands without the key leave it
+  note, or the title a voice note is shown under, changed (a stamp of the
+  listing, the file and the insights note files kept beside the summary cache
+  skips the work when none changed; a failure is a warning); commands without the key leave it
   alone, so it may lag until the next one. `--plaintext` writes the JSON
   content instead, in the clear (for checks and the web goldens); it needs
   `--out`, so it never lands at the vault's sealed path by default, and a
@@ -618,6 +624,40 @@ sempere vault reencrypt --status [--json]
   signed with the device's signing keys (from its device key file; a key
   without them cannot write it): the per-device files the apps publish so
   that another device lists a vault's notes before they arrive.
+- `conflicts [VAULT]` (macOS; elsewhere it fails as unsupported) reports a provider's conflict versions of a vault
+  folder in iCloud Drive or another provider, reading only, without a key (docs/io.md "A vault folder held as a
+  package"): whether the provider records the folder as a package (`isPackage`, its type, the Finder's `kHasBundle`
+  flag; `packageCause` `finderBundleBit` or `providerRecord`), the unresolved versions of the folder itself and of its
+  mutable files, and per version the files the folder lacks, by kind, and the mutable files that differ; then the
+  write-once files safe to copy back and the mutable ones that need care. `VAULT` defaults to `--vault` /
+  `$SEMPERE_VAULT`. Exit 0 when there is no version and the folder is not a package, 3 otherwise. `--json`: `folder`,
+  `provider`, `record`, `heldAsPackage`, `packageCause`, `versions` (`id`, `item` ("" for the folder), `modified`,
+  `device`, `files`, `missing` (kind → paths), `differing`), `writeOnceMissing`, `mutableToReview`.
+  With `--merge` (pause Sempere on every device first) it holds one write of the folder for the whole run, reads
+  `vault.json` again inside it, places the versions' missing epoch records first and reopens the vault, then copies
+  back the other missing write-once files, each read without following links, checked under the vault's key as a
+  received file and placed without replacing anything. One that fails goes to the quarantine; one the acceptance rule
+  sets aside goes to this machine's set-aside store; one that waits for a device-change record leaves its version
+  unresolved. A retired kit's passphrase copy is never copied back; an unknown file only a version has is never placed
+  (kept aside, `keptUnknown`). Mutable files are copied aside into `<quarantine>/kept/`; `settings.age` is merged per
+  key with the current file (never when that cannot be read), `vault.json` decided by `judgeIncoming` (only a later
+  version by home in the same epoch is taken), anything else left and listed. A version that cannot be listed whole
+  (contents not downloaded, a folder that cannot be read) is never resolved. Then the versions with nothing left are
+  marked resolved and kept (`--remove-versions`: removed, except a version with a quarantined or unplaced file), and,
+  only when everything was merged, the Finder's flag is cleared. The quarantine defaults to
+  `$XDG_STATE_HOME/sempere/conflicts/<vault id>/<time>/` (with `report.json`), may not be inside the vault, and a
+  real run refuses a `--quarantine` folder that is not empty (`--quarantine` goes with `--merge`). It needs this
+  machine's device key or `--identity` (exit 4 without); `--recovery-key` opens read-only, so it is refused with
+  `--merge` (exit 2) and works with `--merge --dry-run`. `--dry-run` prints the plan, writes nothing (not even the
+  vault's index or summaries) and works locked (structural checks). Exit 0 when everything was merged and resolved,
+  3 when something was left or quarantined, 1 on a failure (a Finder flag that cannot be cleared included). `--json`:
+  `dryRun`, `complete`, `copied`, `quarantined` (path → one `version: why` per version), `setAside`, `keptAside`,
+  `keptUnknown`, `skipped`, `written`, `settled` (path → how), `unsettled` (path → one `version: why` per version),
+  `resolved`, `removed`, `left`, `errors` (path → one `version: message` per version), `quarantine`,
+  `heldAsPackage`, `bundleBit` (`result` `notSet`, `cleared` or `failed`, `errno`, `heldAsPackageAfter`,
+  `recordAfter`). Each version also carries `skipped` (links and special files, never followed) and `problem` (why it
+  cannot be judged). The app warns about such a folder but never merges it; this is the recovery path. `store sync`
+  and `sync folder` print a warning on stderr for a target folder held as a package.
 - `merge-copy FROM` merges another copy of the same vault into the vault
   (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
   from another device, a folder restored from a backup. Every revision, blob,
@@ -727,8 +767,8 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   for byte with the source and the source is listed again; only then does the vault appear in the store,
   moved there in one rename. Any failure, or an interruption, leaves nothing listed (what it left in the
   store's staging folder is removed by the next store command). A vault id the store already holds is
-  refused (exit 1). `--name` names the copy (default: the source folder's name without `.sempere` or
-  `.sempere-backup`); `-q` prints only the new
+  refused (exit 1). `--name` names the copy (default: the source folder's name without `.sempere`,
+  `.sempere-vault` or `.sempere-backup`); `-q` prints only the new
   path; `-v` reports progress on stderr. `--keep-syncing` makes the source a folder target of the copy (the
   app's "Keep syncing with this folder"): `store sync` then syncs the two both ways. The source, which
   holds the vault, is the target itself (`target add`'s rule).
@@ -759,14 +799,19 @@ a unique id prefix (4 characters or more), its name, path or URL.
   (`SyncRunAssessment`): a complete run without problems. A run cut short after it moved files (the link lost
   midway) is progress, not a last success: the next `store sync` continues it.
 - `target add` adds a target. `--folder PATH` places the vault's copy by the app's rule (Add Folder…,
-  `FolderTargetPlacement`): a `PATH` named `….sempere` is the copy itself, and so is one that already holds
-  this vault (or a `vault.json` not downloaded yet: the sync compares vault ids before it writes), as the
-  targets 1.0.0 synced straight into `PATH` do; any other folder gets the copy in
-  `PATH/<name>.sempere` (the store folder's name), or the next free `<name> N.sempere` when that name holds
-  another vault or a backup, so the vault's files never mix with other files in `PATH`. The copy may be
+  `FolderTargetPlacement`): a `PATH` that already holds this vault is the copy itself whatever its name (or a
+  `vault.json` not downloaded yet: the sync compares vault ids before it writes), as the targets 1.0.0 synced
+  straight into `PATH` do; so is a `PATH` named `….sempere-vault` or `….sempere` that is empty or not made yet.
+  Any other folder gets the copy in a folder of its own: this vault's copy already in `PATH`, found by its vault
+  id whatever its folder's name (a `….sempere-vault` first, then a `….sempere` an older version made, then any
+  other; two of the first kind present are refused: name the one to sync with as `PATH`), else a new folder
+  `PATH/<name>.sempere-vault`, or the next free `<name> N.sempere-vault` when that name holds another vault, a
+  backup or other files, so the vault's files never mix with other files in `PATH`. New copies end in
+  `.sempere-vault`, not `.sempere`: iCloud Drive kept `….sempere` sync folders as packages (docs/io.md "A vault
+  folder held as a package"); existing `….sempere` targets keep working unchanged. The copy may be
   missing or empty (the first sync copies the vault into it) or hold the same vault (the first sync is a
   union: what either side lacks is copied, nothing is deleted). Refused (exit 1): a `PATH` that holds another
-  vault, a `….sempere` holding other files but no vault, a cloud placeholder not downloaded (a
+  vault (or a `vault.json` that is no manifest, outside a folder named like a sync folder), a `….sempere` holding other files but no vault, a cloud placeholder not downloaded (a
   `.<name>.icloud` stand-in), a backup, a folder inside a vault or a backup, one overlapping the store, a
   file. `--json` and `target list` show the copy's path. `--webdav URL [--user NAME]`: https,
   or http to localhost (exit 2 otherwise); no password is stored. A target at the same place (the same
@@ -1143,7 +1188,8 @@ for `--prune` and for a full `verify`.
   through a linked folder is reported and skipped.
 - On macOS, `backup` clears the Finder's bundle flag (`kHasBundle` in `com.apple.FinderInfo`, which makes
   the Finder, Files and iCloud Drive treat a folder as a package) on the vault and the backup folder when
-  they are named `….sempere` / `….sempere-backup`, before and after the run, as the app does, and prints
+  they are named `….sempere` / `….sempere-vault` / `….sempere-backup` or hold a `vault.json` or `backup.json` (the
+  flag makes a folder of any name a package), before and after the run, as the app does, and prints
   `Cleared the Finder's bundle flag on NAME: …` on stderr for each one it cleared (stdout and `--json` are
   unchanged). `sync folder` and `store sync` do the same for the vault and a folder target (docs/io.md
   "Vaults are folders").
@@ -1151,7 +1197,7 @@ for `--prune` and for a full `verify`.
   Back Up names it (`BackupDestination`): the backup is a vault folder that
   `store import`, `restore` and the app's Open Vault… take on any device (always
   as a one-time copy), and its name never looks like the vault's sync folder
-  (`<name>.sempere`), which other devices open to join. What a folder is stays
+  (`<name>.sempere-vault`, or `<name>.sempere` from an older version), which other devices open to join. What a folder is stays
   decided by its content: anything holding `backup.json` (or iCloud's
   `.backup.json.icloud`) is a backup whatever its name. `FOLDER`
   itself is used only when it is named `*.sempere-backup` and is this vault's
@@ -1342,9 +1388,10 @@ sempere notes language ID|TITLE [TAG | --none]
 sempere notes markers ID|TITLE behind|above
 sempere notes favorite ID|TITLE [--off]
 sempere notes search QUERY [--notebook PATH] [--tag T] [--deleted] [--no-cache]
-sempere notes delete ID|TITLE
-sempere notes undelete ID|TITLE
+sempere notes delete ID|TITLE...
+sempere notes undelete ID|TITLE...
 sempere notes history ID|TITLE [--sessions]
+sempere notes revisions ID|TITLE
 sempere notes restore ID|TITLE --to REVISION [--dry-run]
 sempere notes checkpoint ID|TITLE [--name TEXT]
 sempere notes layout ID|TITLE paged|pageless [--dry-run]
@@ -1352,12 +1399,17 @@ sempere notes dedupe (ID|TITLE ... | --all) [--dry-run]
 ```
 
 `list` prints id, title, pages, strokes and last modified (the date of the last edit, format.md §12.2:
-recognition, from the app, `recognize` or an import, and compaction's snapshots do not move it); deleted notes are
+recognition, from the app, `recognize` or an import, a transcript (the app, `transcribe`, an adoption), and compaction's snapshots do not move it); deleted notes are
 hidden unless `--deleted`, and `--favorites` lists only favorites. Notes are in
 title order (Finder order: `Note 2` before `Note 10`) unless `--sort modified`
 or `--sort created` (newest first, notes without the date last);
 `--favorites-first` puts the favorites ahead of the other notes, each group in
-that order. These are the app's note-list rules (`NoteOrder`). `--notebook` takes a notebook path and lists the
+that order. These are the app's note-list rules (`NoteOrder`). A quick voice note stores no title (1.3), so `list` and
+`show` print what the app shows (`NoteDisplayTitle`): the title Note Insights derived for the note's current text when
+there is one, else "Voice note <date and time in the capture's zone>" ("Watch voice note …" for the Apple Watch; always
+English, dates in `en_US_POSIX`, the same on every machine), only while the stored title is blank or a default stored
+before 1.3; a title anyone typed is shown as it is. `--json` keeps `title` as stored and adds `displayTitle`. The title
+order sorts by that shown title, as the app's list does. `sempere ask` names notes the same way. `--notebook` takes a notebook path and lists the
 notes in it or below it, comparing whole segments (`A/B` holds `A/B/C` but not
 `A/Bc`), as the app's sidebar does; `--tag` ignores case. Notes are read in parallel without their stroke
 geometry, and the summaries are kept in an encrypted per-device cache
@@ -1376,7 +1428,10 @@ blob, whether it has a transcript, id), and the revision history
 `video`, `audio` (recordings or audio cards) and `pdf`, in that order (the
 app's row icons). A note is named by its
 full id, an id prefix of 4 or more characters, or its exact title
-(case-insensitive); an ambiguous name is an error that lists the candidates.
+(case-insensitive); an ambiguous name is an error that lists the candidates. A voice note with no title of its own is
+also named by the title `notes list` shows for it (`displayTitle`: the one Note Insights derived, else "Voice note" and
+the date); a name that is one note's stored title and another's shown title is ambiguous and lists both. `export`,
+`share` and `spotlight plan` name it by that title too (`share` without the capture time unless `--dates`).
 
 `history` lists the note's restore points, one per readable revision, oldest
 first by `(hlc, device, seq)`: kind, wall time, device, app and revision name.
@@ -1399,6 +1454,19 @@ point is `complete: false` (shown as `(incomplete)`) when the note as of it can
 no longer be rebuilt: revisions before it were compacted away and no snapshot
 at or before it covers them, or one before it (or any snapshot) is unreadable. Unreadable
 revisions are not listed; a warning on stderr counts them.
+
+`revisions` is read-only diagnosis of a note's log (`RevisionLog`, format.md §5.3, §5.4): every revision that reads,
+oldest first by `(hlc, device, seq)`, with kind, wall time, device, app and revision name; for a delta its ops in order
+(`setMeta title`, `deleteNote`, `restoreNote`; runs of one op counted, `addStroke ×12`), for a snapshot the `deleted` flag
+it holds and the clock it records for it (`@own stamp` when it records none) and, positioned, its `asOf`. Unlike
+`history` it also lists positioned snapshots, and every listed revision that does not read here, with why
+(`not read: NAME: setAside|pending|newer|unreadable: …`: set aside under an earlier key, its epoch record not arrived,
+written by a newer version, or damaged). The first line says whether the note is deleted and which stamp and revision
+set that (`no revision here holds it` when only a snapshot's recorded clock still carries it, `never set`). `--json`
+emits `note`, `deleted`, `deletedClock`, `deletedBy`, `revisions` (each `revision`, `kind`, `hlc`, `device`, `seq`,
+`wall`, `app`, `session`, `checkpoint`, `asOf`, and `ops` for a delta or `included`, `deleted` and `deletedClock` for a
+snapshot), `failures` (each `revision`, `kind`, `error`) and `problem`: why the revisions that read do not merge (two different revisions with one device and `seq`, as two installs sharing one device state file write; the text output's `does not merge:` line), which the app lists as a live note with a problem. Run it on each device's copy of a note that came back
+after a delete, or went away, to see which device's revision decided it.
 
 `restore` is the CLI's revert (the app's Undo and Redo buttons undo the steps of the open session on one
 canvas and are not available here: a command is one delta, with no session stack). It makes the note look as it did at `REVISION` (the merge of every
@@ -1534,7 +1602,7 @@ absent).
   `favorite`), or with `--off` takes the mark off; one delta, nothing written
   when the note already is that way. `list --favorites` lists the marked
   notes. The app's Favorites list and the web viewer's show them.
-- `delete` moves the note to Recently Deleted; `undelete` brings it back.
+- `delete` moves one or several notes to Recently Deleted; `undelete` brings them back. Several notes are resolved and read first (one that does not resolve or cannot be read stops the call before anything is written), then one `deleteNote` / `restoreNote` delta each is written (`Vault.setDeleted`); a note already that way is left alone. `--json` prints `{"notes": [...]}` like `notes move`.
   (`restore` is a different thing: it rolls a note back to an earlier
   revision.)
 
@@ -2115,7 +2183,9 @@ and changes nothing. `--json` gives `{note, page, pageId, strokes, engine, secon
 ```
 sempere transcribe (ID|TITLE [RECORDING...] | --all) [--language TAG] [--engine auto|speechtranscriber|sfspeech]
                    [--force] [--dry-run] [--no-download]
+sempere transcribe ID|TITLE [RECORDING...] --again [--language TAG] [--insights] [--dry-run]
 sempere transcribe --check [--language TAG]
+sempere transcribe --languages
 sempere transcribe --download-model [--language TAG]
 ```
 
@@ -2153,11 +2223,24 @@ Transcription ▸ Download Language Model button runs. It stands alone (`--check
 Speech framework or no such model. The SFSpeechRecognizer fallback has no
 downloadable model.
 
+`--again` is the app's "Transcribe Again" for one note (it needs a note, not `--all`): it
+replaces the transcripts of the note's recordings, the ones named or else all of them, whether or not they
+had one, in `--language` (else the note's language, else this machine's; the app's own Transcription language setting is not read here). A
+transcript is a register, so the replaced one stays in the note's history, as any earlier value of a field
+does, until compaction and `blobs gc` collect it (`format.md` §8.3.2). `--insights` (with `--again`, or any run for one
+note) then makes the note's Note Insights again from the new text, as `sempere insights update --note NOTE
+--force` does (summary, keywords, vector and a voice note's derived title; needs Note Insights on and the
+model, else the transcripts are replaced and the command exits 1 saying the insights were not made again;
+nothing is made again for a note that transcribed nothing). `--dry-run` lists what would be read and, with
+`--insights`, says the insights would be made again. `--languages` prints the languages the recognizers here
+support (BCP 47 tags, one per line; `--json` gives `{supported, languages}`; none without the Speech
+framework) and needs no vault: it is the list "Transcribe Again" offers.
+
 **macOS only.** The Linux build exits 1 with a message and changes nothing
-(`--dry-run` and `--check` still work). `--json` gives `{dryRun, notes: [{note,
+(`--dry-run`, `--check` and `--languages` still work). `--json` gives `{dryRun, notes: [{note,
 title, file, error, recordings: [{id, title, engine, language, segments, words,
-transcript, error}]}]}`; a recording that cannot be transcribed is reported
-and the exit code is 1.
+transcript, error}]}], insights}`; `insights` (only with `--insights`) is `{dryRun, redone, skipped, generated,
+titled, error}`; a recording that cannot be transcribed is reported and the exit code is 1.
 
 ### Quick capture inbox
 
@@ -2202,7 +2285,9 @@ in `vault.json`, or `from a device no longer in this vault (…)`).
 A capture sealed by a device that is no longer in the vault never verifies:
 it is reported and kept.
 `import` adopts each capture as a note in the capture's notebook ("Inbox"),
-titled from its date: the audio and transcript as blobs, then one delta as this
+with the title the capture was given by `--title` and otherwise none (from 1.3 a voice note stores no title: `notes list`,
+`notes show` and the app show a default from its source and language, "Voice note <date>", or the title Note Insights
+derived, `insights title`; a title typed later is the note's and always wins): the audio and transcript as blobs, then one delta as this
 machine (the note's page shows the recording's card, where its transcript reads, as a recording made
 in a note does) (the recording records who captured it, `captured`, `format.md`
 §8.3.1), then the inbox files are deleted. The note, page and recording ids
@@ -2334,6 +2419,61 @@ known}]}`; `get` gives `{key, value, source}`; `set` and `reset` give `{key, val
 block}`; `edit` gives `{changed}`; `validate` gives `{valid, issues: [{severity,
 path, message}]}`.
 
+### Saved tools
+
+```
+sempere tools list   [--json]
+sempere tools add    NAME --ink INK --color '#RRGGBB' --width W [--opacity O] [--json]
+sempere tools edit   TOOL [--name N] [--ink INK] [--color C] [--width W] [--opacity O] [--json]
+sempere tools remove TOOL [--json]
+sempere tools move   TOOL (--to N | --before TOOL | --after TOOL) [--json]
+sempere tools export [--out FILE] [--json]
+sempere tools import FILE [--replace] [--yes] [--json]
+```
+
+The palette's saved tools (`docs/design/1.3-custom-tools.md`): an ink, a color, an exact width and an opacity under a
+name, shown in the palette of every device that follows the vault's shared settings. They are settings
+(`docs/settings-sync.md` §5.1: `palette.tool.<uuid>`, one slot per tool, and `palette.toolOrder`), so the commands write
+`settings.age` the way `settings` does: merged per key, no device type recorded, exit 6 for an untrusted device list, 7
+for a read-only vault or settings that need a newer sempere. `TOOL` is an id, an id prefix (4 or more characters) or an
+exact name; a name or prefix that several tools share is an error (exit 1) naming the ids.
+
+- `list` shows the tools in palette order (`#`, id, name, ink, color, width, opacity). `--json`:
+  `{tools: [{id, name, ink, color, width, opacity, at, order}], hidden, warnings}`; `hidden` counts tools kept in the file but
+  not shown (an ink of a newer version, an invalid slot, or beyond the 64th).
+- `add` checks the values like the app's editor: an ink of `pen`, `monoline`, `fountainPen`, `marker`, `pencil`,
+  `watercolor` or `crayon`; a color `#RRGGBB`; a width inside the ink's range (`DrawingToolState.widthRange`, never clamped);
+  an opacity 0.05 to 1 (default 1); a name of 1 to 40 characters; at most 64 tools. A value that is not valid is exit 3, an
+  unknown ink or a malformed color exit 2. The new tool goes last.
+- `edit` rewrites that tool's slot only (the options given change; nothing given is exit 2). `remove` records a reset of the
+  slot, so a device that still holds the tool does not bring it back. `move` writes the order slot (`--to` is 1-based).
+- `export` writes `{"format": "sempere-tools/1", "tools": [{name, ink, color, width, opacity}]}` (no ids) to `--out` (never
+  overwriting a file) or the standard output. `import` adds the file's tools with fresh ids after the existing ones; an
+  entry that is not valid is skipped and reported on stderr (`--json`: `{added, removed, skipped}`); with `--replace` every
+  saved tool of the vault is removed first (every live `palette.tool.*` slot, as the app's Replace does, so a tool this
+  version does not show goes too; `removed` counts them), which needs `--yes`. A file that is not `sempere-tools/1` is exit 3; one over 1 MB is read
+  no further. This is the way to share a pen set between vaults and people.
+
+The CLI has no device-local list: it edits the vault's file, and a device with Sync Settings with This Vault off keeps its own.
+
+### Spotlight
+
+```
+sempere spotlight plan [--text [--transcripts]] [--json]
+```
+
+What the app's opt-in Spotlight indexing (Settings ▸ Spotlight) would donate for the vault, from the same planner
+(`SpotlightPlanner`): one record per note that is not deleted, newest first, with its item `id`
+(`<vault id>/<note id>`), `domain`, `title` ("Untitled note" when blank), `description` (notebook and date, or with
+`--text` the notebook and the first 140 characters of text), `keywords` (the tags), `modified` and `textLength`
+(characters of text that would be donated, 0 without `--text`), and the caps (20,000 text characters, 50,000 notes,
+30 days to expiry). `--text` is "Include Note Text": recognized handwriting, typed text, PDF text and equations'
+source; `--transcripts` also reads recording transcripts (the app follows Search Recording Transcripts). It never
+writes anything. The text itself is shown only as a length, except that with `--text` each record's description
+holds the start of the note's text (its first 140 characters), as the app's item would. Indexing itself is app-only: Core Spotlight items belong to an app's
+bundle identity, which a command-line binary does not have in a form the system can open. `--json`: `{vault, includeText,
+items: [...], omitted, caps}`.
+
 ### Note insights
 
 ```
@@ -2345,26 +2485,28 @@ sempere insights status
 sempere insights topic   --notebook P | --tag T [--generate] | --list
 sempere insights map     [--format json|svg] [--rebuild] [--pin REV [--yes]]
 sempere insights title   NOTE [--format F] [--dry-run]
-sempere insights work-device [ID | --claim]
 sempere insights purge
 ```
 
 Summaries, keywords and concepts per note, related notes, a map of the notes, notebook and tag summaries and
 voice-note titles, made on the vault's devices only (`format.md` §16, `docs/design/1.2-note-insights.md`): Apple's
 on-device language model (`SystemLanguageModel.default`) and NaturalLanguage's sentence embedding at a pinned
-revision; never a server. They are off until `sempere settings set insights.enabled true`. Every device with the
-model makes summaries and keywords; one **work device** (`insights.workDevice`) also embeds every note, builds the map
-and titles voice notes. The first capable device to run `update` claims it when none is set, or when the work device
-has not been seen for 14 days or left the device list (only a device with the embedder holds the role). Every command takes `--json`, the access options and `--no-cache`.
+revision; never a server. They are off until `sempere settings set insights.enabled true`. Any capable
+device does the work (no device is designated; `insights.workDevice` of 1.2.0 is deprecated: an old
+file's value is accepted and ignored): a device with the model makes the summaries and keywords no device has, one that supports the
+pinned revision embeds the notes no device has a vector of and rebuilds the map, and any device titles voice notes.
+Every command takes `--json`, the access options and `--no-cache`.
 
 - `update` does this device's work now (the scheduling policy of the design's §3.7): generate each eligible note
-  (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on the work
-  device also embed each eligible note, tombstone deleted notes, title
-  voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when more than
-  10% changed or weekly (the first build pins the embedding revision, the lowest every recently seen device supports),
+  (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on a device that
+  supports the pin also embed each eligible note no device has a current vector of (`--force`: again), tombstone deleted
+  notes, derive titles for voice notes whose own title is blank or a default stored before 1.3 (`insights.voiceNoteTitle`;
+  kept in the note's insights file, never written to the note), rebuild the map when
+  more than 10% changed since the best map of any device, or weekly (the build is deterministic: devices that rebuild
+  at once write the same map; the first build pins the embedding revision, the lowest every recently seen device supports),
   write this device's record and the notebook and tag summaries that are due (each at most once a day; one whose
   model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo; skipped
-  while the latest from any device is current). A device that is not the work device never embeds into the vault. The
+  while the latest from any device is current). The
   JSON report counts what waits: `backedOff` (with `backedOffReason`, the first error), `waitingToSettle` and
   `waitingOpen`. A note whose generation failed is
   not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
@@ -2374,39 +2516,104 @@ has not been seen for 14 days or left the device list (only a device with the em
   and writes nothing; `--embeddings-only` needs only the embedder. Off: exit 1.
 - `show` prints a note's summary, keywords, concepts, which device made them and when, and whether they are
   `current`, `stale` (an older text or model), `missing` or `deleted`.
-- `related` lists related notes with their score and why (shared keywords, or "similar wording"): from the work
-  device's vectors when this device passes the map's canaries (notes not embedded yet are embedded here and marked
+- `related` lists related notes with their score and why (shared keywords, or "similar wording"): from the
+  vault's synced vectors when this device passes the map's canaries (notes not embedded yet are embedded here and marked
   placed, never written), a local set when it fails them, the shared set as it is on a device without the pinned
   revision (a vector reader) and on Linux, keyword overlap alone without vectors.
 - `search` finds notes whose keywords, concepts or summary hold every word of the query ("matched in summary").
-- `status`: processed, stale and missing notes; the work device and when it was last seen ("not seen for 14 days"
-  offers `work-device --claim`; one that has written nothing yet shows "nothing written yet"); the pinned revision and an upgrade offer with the devices it would leave out; the map;
-  per device its files, model availability, embedding revisions and compatibility.
+- `status`: processed, stale and missing notes; the devices that can embed and build the map (`capableDevices`); the
+  pinned revision and an upgrade offer with the devices it would leave out; the map and the device that built it; per
+  device its files, whether the generation model is available, its embedding revisions, whether it supports the pin,
+  compatibility and when it was last seen (capability from its record, never a role).
 - `topic` shows a notebook's or tag's generated summary (the latest any device made), whether it is stale (its
   summarized members changed since) and its members, the sources to check it against; `--generate` makes it now
   (needs the model; exit 1 with fewer than 3 summarized members or when nothing survives the fact check). `--list`
   lists every notebook and tag with at least 3 summarized notes and the state of its summary (what the app's Topic
   Summaries list shows).
 - `map` prints the map as JSON (nodes with positions and clusters, clusters with labels) or SVG. `--rebuild` (needs
-  the embedder) rebuilds it on the work device, or shows one built here elsewhere. `--pin REV` moves the pinned
-  revision: it lists the devices left out (they become vector readers) and needs `--yes`; if the work device lacks
-  `REV`, the role moves to a device that has it.
-- `title` titles a voice note from its insights while its title is still the capture default (a user's title is never
-  replaced; a rename from another device that lost to this device's title is restored), with `--format` or the
-  vault's format; it uses a stored slug, else asks the model (exit 3 without one).
-- `work-device` shows the work device and the capable devices; `ID` sets it, `--claim` takes it for this device
-  (needs the embedder). A work device not seen for 14 days is taken over by the next capable device's `update`.
+  the embedder) embeds what is missing and rebuilds it on this device. `--pin REV` moves the pinned
+  revision: it lists the devices left out (they become vector readers) and needs `--yes`.
+- `title` derives a voice note's title from its insights while the note's own title is blank or a default stored before 1.3
+  (a user's title is never touched, and the derived title is never written into the note: it lives in this device's
+  insights file for the note, `format.md` §16.2 `title`, and `notes list`, `notes show` and the app show it in place of
+  a blank title), with `--format` or the vault's format; it uses a stored slug, else asks the model (exit 3 without one).
+- The language of generated summaries and voice-note titles is the shared setting `insights.language` (`sempere settings set
+  insights.language es`; `same` or `settings reset` for the default, the note's own language): a device with the model makes
+  each summary and title in the note's language, as before, then puts them into that language, and notes whose summary is in
+  another language are made again on every device: all of them in one `update` (a catch-up after a language change; `--limit n`
+  caps the model generations of a run, and the app does the same work in small batches of a few at a time). Keywords stay as the note has them.
 - `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
   deletes them on the targets, and every device deletes its own.
 
-Linux runs everything but `update`, `topic --generate`, `map --rebuild` and `work-device --claim` (exit 3, "needs
+Linux runs everything but `update`, `topic --generate` and `map --rebuild` (exit 3, "needs
 macOS 26"); `map --pin` works there (it only writes the setting). Writes are refused like every write (exit 6, 7).
-`--json`: `update` gives `{device, claimedWorkDevice, generated, embedded, tombstoned, dropped, titled,
-restoredTitles, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
+`--json`: `update` gives `{device, generated, embedded, tombstoned, dropped, titled,
+removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
 `{note, title, state, summary, keywords: [{t, w}], concepts, device, deviceName, written, model, os, prompt, dropped,
-slug, embedded, embeddingKey}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
+slug, embedded, embeddingKey, generatedTitle}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
 keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `topic` gives `{scope, members, summary, generated, stale, device,
-at}` (`--list`: an array of those); `status`, `map`, `title`, `work-device` and `purge` give their fields as named in the text output.
+at}` (`--list`: an array of those); `status`, `map`, `title` and `purge` give their fields as named in the text output.
+
+### Ask your notes
+
+```
+sempere ask QUESTION [--vault V] [--limit N] [--notebook PATH] [--tag T] [--since DATE] [--until DATE]
+                     [--lang BCP47] [--retrieve-only] [--require-model] [--explain] [--json]
+```
+
+A question in words, answered from your notes on this machine (`docs/design/1.3-ask.md`): vector matches from Note
+Insights (when this machine's embeddings match the vault's, as for `insights related`) and keyword matches (the question's
+content words, stemmed, over titles, tags, notebooks, insight keywords and text) are fused (reciprocal rank), the best
+passages of the best six notes are picked, and Apple's on-device model (macOS 26 with Apple Intelligence) writes at most five
+sentences from those passages only, each naming its sources. The answer is checked: a sentence with no source, an unknown
+source, a number or name its cited passages do not hold, or too few words in common with them is dropped, and with none left,
+or over 40% dropped (a sentence dropped only for sharing too few words does not count), or the model saying the notes do not
+answer, there is no answer. Repeated sentences are removed (their sources merged into the first). Nothing leaves the machine and nothing
+is written: no question, answer or history is stored in the vault or anywhere else. Deleted notes and notes outside the
+filters are never candidates; `--since` and `--until` take `YYYY-MM-DD` (local) or RFC 3339 and compare the note's modified
+date. A question over 400 characters is cut (a notice says so).
+
+The first line of text output is the mode (`answer`, `retrieval` or `keyword`) and, when it is not `answer`, what is
+missing in parentheses ("Apple Intelligence is turned off", "I couldn't find that in your notes"). `answer`: the sentences,
+each followed by `[n]` for the notes it came from, then "Notes used" (title, notebook, pages, id) and "Other matching notes".
+`retrieval` (no model, or the model's answer failed or did not pass the check) and `keyword` (also no usable vectors: Note
+Insights off or not set up for the question's language, no embedder here, or embeddings that do not match the vault's) list
+"Best matches", each with why it matched (`your words`, `similar topic`) and its best passage. The mode ladder never ends in
+an error: the exit is 0 whatever the mode. On Linux there is no model and no embedder: `keyword` mode.
+
+- `--limit N` notes are listed (default 6); the model reads at most 6.
+- `--lang` is the question's language (default: detected on macOS from the question's own words, among the languages the
+  on-device model supports, when it has at least three words that are not names and the recognizer is at least 80% sure;
+  otherwise among the notes' and this machine's languages; else the vault's main language). The embedder needs a
+  language the vault pins (`insights.embeddingRevision`); otherwise vector matching is skipped (a notice says so) and
+  generation still runs if the model supports the language.
+- **A question in another language** (none of the notes is written in it, e.g. Spanish about English notes;
+  `docs/design/1.3-ask.md` §3.8): the model first translates the question into the notes' main language (pinned first), and
+  keyword matching (words of both forms) and vector matching (the translation) search with it; stderr shows `note: searched
+  as (en): …`. The model answers in the notes' language, the answer is checked against the passages there, then translated
+  into the question's language, and every number, date, code and name of the translation is checked again against the cited
+  passages (a sentence that changed or invented one is dropped). That is three model calls instead of one. Without the
+  model (or with `--retrieve-only`) the question is searched as it is, and a notice (or, when nothing matched, the missing
+  line) says it could not be translated. An answer the recognizer finds in a note's language rather than the question's is
+  translated and checked the same way.
+- In `answer` mode "Other matching notes" lists only notes above a relevance cutoff: a keyword score at least half the
+  best one, or a vector score at least 90% of the best cited note's. Fewer, or none, is fine; `retrieval` and `keyword` list
+  every best match.
+- `--retrieve-only` never calls the model. `--require-model` exits 3 with the reason when the model cannot run (the
+  insights convention); the two together are a usage error (2).
+- `--explain` adds each candidate's vector and keyword ranks, fused score and the two scores the cutoff reads, the passages
+  sent with a token estimate, and each dropped sentence with the reason (`repeats an earlier sentence`, `translation: …`).
+- `--json`: `{question, mode, lang, enough, dropped, answer: [{text, sources: [note id]}], notes: [{note, title, notebook,
+  modified, pages, why: ["keywords", "similar"], used, passages: [{page, text}]}], missing, missingKind, vectors, notices,
+  explain?, searchedAs?, searchLang?, untranslatedTo?}` (`missingKind`: `noModel`, `disabled`, `notReady`, `deviceNotEligible`, `unsupported`, `language`,
+  `notesLanguage` (the model lacks the notes' language, so the question could not be translated), `failed` or
+  `notFound`; `vectors`: `used`, or why not: `off`, `noEmbedder`, `language`, `noMap`, `incompatible`, `noVectors`,
+  `unembeddable`, `none`; `searchedAs`/`searchLang`: the question's translation and its language when it was translated
+  for searching; `untranslatedTo`: the notes' language when the question needed a translation into it and did not get
+  one; all are additions to the design's shape). The
+  citations are note ids drawn by the program from validated source ids, never from the model's text.
+- A read-only vault works (nothing is written); a locked or incomplete vault gives the usual exit codes.
+
 
 ### Export
 
@@ -2791,6 +2998,46 @@ alone (its files count as unchanged and survive `--clean`), so a second run of a
 vault takes a listing, not a render. Notes are read one at a time as they are rendered. (A
 skipped note reports no placeholder warnings; they were printed when it was rendered.)
 
+### Share
+
+```
+sempere share (ID|TITLE) --out PATH (--passphrase-file FILE | --share-passphrase-env VAR | --generate-passphrase)
+              [--audio] [--no-text] [--tags] [--notebook-path] [--dates] [--max-size MB] [--image-quality low|normal|high]
+              [--pdf-renderer auto|poppler|none] [--pdf-timeout SECONDS] [--vault V] [--json]
+sempere share --verify FILE.html [--json]
+```
+
+One note as a single encrypted HTML file with the web viewer built in ([web-viewer.md](web-viewer.md) "Share files", design
+[design/1.3-share.md](design/1.3-share.md)): the recipient opens it in any browser and types the passphrase; nothing is uploaded and no
+server of ours is involved. The note is flattened to its current state (no history, other notes or keys), encrypted with age and one
+scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is written to the vault).
+
+- `--out` is the file, or a folder (the file is then `Shared note.html` in it); never over an existing file. The name and the page's
+  `<title>` never carry the note's title.
+- The passphrase is never an argument (it would show in `ps`): `--passphrase-file FILE` (`-` for standard input; one trailing
+  newline is dropped), `--share-passphrase-env VAR` (named so as not to clash with the vault's own `--passphrase-env`), or
+  `--generate-passphrase` (seven random words, printed once: as `passphrase` in the JSON, or as a `Passphrase:` line on standard
+  error). Exactly one of the three. The recipient learns it, so it must not be the vault's: `--share-passphrase-env` naming the
+  variable the vault's passphrase comes from (`--passphrase-env`, else `SEMPERE_PASSPHRASE`), and a passphrase equal to that
+  variable's value or to one the vault was opened with (a recovery key's passphrase copy, a passphrase-wrapped device key), are refused
+  (exit 2) before anything is written.
+- Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
+  transcripts (`--audio`). Recognized text is in unless `--no-text`. Without `--dates` no date of a recording goes either: an MP4
+  recording's container times are zeroed and its tags blanked, and a transcript's creation time is left out; a recording imported in
+  another container is shared as stored ([web-viewer.md](web-viewer.md) "Share files").
+- The page shows the title `notes list` shows. For a voice note with no title of its own that is its derived title or "Voice note"
+  and the capture's date and time, but without `--dates` a title that tells the capture time (the default, or a derived title whose
+  format has `{date}` or `{time}`) becomes the bare words ("Voice note", "Watch voice note").
+- Pictures are re-encoded (at most 2048 px, JPEG, metadata removed), PDF pages become pictures (Poppler's `pdftoppm`, as for `export`;
+  without it they are left out with a warning), videos are never included (the poster frame is shown). `--image-quality` picks how hard.
+- The file is at most `--max-size` MB (default 20, at most 200). A note that cannot fit fails (exit 1) with the breakdown (ink and text,
+  pictures, audio, viewer) and writes nothing; pictures shrink first, and a recording that does not fit is skipped with a warning.
+- `--verify FILE.html` checks that the file's script, style and Content-Security-Policy are exactly this release's (the file with its data
+  block taken out equals the shipped template) and reports the scrypt work factor and the script's hash; it never decrypts and needs no
+  vault. Exit 1 when the file is not one this release made.
+- `--json`: `{file, bytes, pages, sections: {ink, images, audio, template}, scryptLog2N, scriptSha256, skipped: [...], passphrase?}`;
+  for `--verify`: `{file, ok, bytes, matchesTemplate, policyMatches, scriptSha256, styleSha256, scryptLog2N, problems}`.
+
 ### Recover
 
 ```
@@ -3171,6 +3418,18 @@ more than 30 minutes, the machine asleep or offline, is left out). So runs from 
 stall; such a file still keeps the exit code at 1 through `arriving`, so nothing is silent. A `vault.json` in the folder that does not arrive stops the run before anything
 is copied (exit 1). The provider's conflict versions of `vault.json` and `settings.age`
 are merged, or kept as conflict copies, and removed, so no version picker appears.
+
+In a provider's folder on a Mac (iCloud Drive), the files the run wrote are only on this machine until the provider
+has uploaded them. After a run that is not a `--dry-run`, `sync folder` asks the provider once (`ubiquitousItemIsUploaded`,
+`ubiquitousItemUploadingError`) and, when any are still waiting, prints `waiting: N files written here, not uploaded by the
+provider yet` on stderr. When iCloud reports an upload error it prints `provider upload error: its storage is full: …` only
+when the error says so (`NSFileWriteOutOfSpaceError`, `NSUbiquitousFileNotUploadedDueToQuotaError`, the File Provider's
+insufficient quota); any other error, such as iCloud's "server not available" while it is slow or out of reach, is
+`provider upload delayed: …`, usually temporary. The JSON report has `providerPending` (a count), `providerError` and, for a
+full storage, `providerStorageFull: true`; all are absent otherwise. The exit code is unchanged (the run itself
+succeeded); run `sync folder` again later to see the count fall. The CLI has no separate sync status command, and keeps
+no record between runs, so this is a look at the files of that run only (`store sync` does not report it yet). The app
+keeps the list and rechecks it (docs/io.md "Sync targets in the app").
 
 The folder is not trusted: symbolic links in it are never followed, FIFOs and names that are not vault
 files are not taken (listed as ignored with `-v`), reads are bounded. In a plain folder, conditional

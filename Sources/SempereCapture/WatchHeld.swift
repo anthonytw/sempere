@@ -148,28 +148,50 @@ public final class WatchHeldStore: @unchecked Sendable {
 
     /// Every held file, oldest first.
     public func list() -> [HeldCapture] {
+        lock.withLock { scan().items }
+    }
+
+    /// Every held file, oldest first, and whether the list is certainly complete: false when a folder or a sidecar could not
+    /// be READ (a locked disk before the first unlock, an I/O error), when files may be held that are missing from it.
+    /// A sidecar that reads but does not decode is not a read failure (it is junk, and is swept once old).
+    public func listChecked() -> (items: [HeldCapture], complete: Bool) {
         lock.withLock { scan() }
     }
 
     /// Lists the held files, and removes what has no partner (a file without a valid sidecar, a sidecar without its file)
     /// once it is older than `orphanAge`.
-    private func scan() -> [HeldCapture] {
+    private func scan() -> (items: [HeldCapture], complete: Bool) {
         let fm = FileManager.default
         var out: [HeldCapture] = []
+        var complete = true
         let cutoff = now().addingTimeInterval(-Self.orphanAge)
         func old(_ url: URL) -> Bool {
             guard let m = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date else { return false }
             return m < cutoff
         }
-        for dir in (try? fm.contentsOfDirectory(atPath: root.path)) ?? [] {
+        func listing(_ url: URL) -> [String] {
+            do { return try fm.contentsOfDirectory(atPath: url.path) } catch {
+                // A folder that is not there holds nothing; one that is there but cannot be listed may hold files.
+                if fm.fileExists(atPath: url.path) { complete = false }
+                return []
+            }
+        }
+        for dir in listing(root) {
             guard UUID(uuidString: dir) != nil else { continue }
             let url = root.appendingPathComponent(dir, isDirectory: true)
-            let names = (try? fm.contentsOfDirectory(atPath: url.path)) ?? []
+            let names = listing(url)
             var paired = Set<String>()
             for name in names where name.hasSuffix(Self.sidecarSuffix) {
                 let sidecar = url.appendingPathComponent(name)
-                guard let data = try? BoundedRead.contents(of: sidecar, maxBytes: 4096),
-                      let held = try? decoder().decode(HeldCapture.self, from: data) else { continue }
+                // A sidecar that cannot be READ (not decoded) is no evidence the note is gone: it and its file are neither listed
+                // as complete nor swept; the next scan reads it again.
+                guard let data = try? BoundedRead.contents(of: sidecar, maxBytes: 4096) else {
+                    complete = false
+                    paired.insert(name)
+                    paired.insert(String(name.dropLast(Self.sidecarSuffix.count)))
+                    continue
+                }
+                guard let held = try? decoder().decode(HeldCapture.self, from: data) else { continue }
                 let fileName = CaptureFile.name(held.id, .capture)
                 let file = url.appendingPathComponent(fileName)
                 guard fm.fileExists(atPath: file.path) else {
@@ -186,7 +208,7 @@ public final class WatchHeldStore: @unchecked Sendable {
                 if old(target), (try? fm.removeItem(at: target)) != nil { orphansRemoved += 1 }
             }
         }
-        return out.sorted { ($0.receivedAt, $0.id.uuidString) < ($1.receivedAt, $1.id.uuidString) }
+        return (out.sorted { ($0.receivedAt, $0.id.uuidString) < ($1.receivedAt, $1.id.uuidString) }, complete)
     }
 
     public var count: Int { list().count }
@@ -212,7 +234,7 @@ public final class WatchHeldStore: @unchecked Sendable {
                   let epoch = sealed.epoch, let epochId = sealed.epochId else {
                 throw WatchHeldError.unreadable("not a watch capture")
             }
-            let existing = scan()
+            let existing = scan().items
             if existing.contains(where: { $0.id == parsed.id && $0.vault == vault }) { return }
             guard !Self.isFull(existing, adding: sealed.data.count, maxFiles: maxFiles, maxBytes: maxBytes) else {
                 throw WatchHeldError.full

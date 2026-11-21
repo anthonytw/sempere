@@ -23,6 +23,11 @@ if grep -rEn '^[[:space:]]*import[[:space:]]+[A-Z]' Sources/SempereInsights | gr
   echo "error: Sources/SempereInsights imports something besides Foundation and Sempere" >&2
   exit 1
 fi
+# A folder target's provider record (CLAUDE.md "Hard rules"): UniformTypeIdentifiers in UbiquitousFolderHooks.swift only.
+if grep -rEn '^[[:space:]]*import[[:space:]]+UniformTypeIdentifiers\b' Sources/ | grep -v '^Sources/SempereSync/UbiquitousFolderHooks.swift:'; then
+  echo "error: UniformTypeIdentifiers outside Sources/SempereSync/UbiquitousFolderHooks.swift" >&2
+  exit 1
+fi
 # Subprocesses (Poppler for PDF backgrounds) only in the CLI: Process does not exist on iOS.
 if grep -rEn '\bProcess\(\)|: Process\b' Sources/ --exclude-dir=SempereCLI; then
   echo "error: Process outside Sources/SempereCLI" >&2

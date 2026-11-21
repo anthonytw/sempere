@@ -50,14 +50,85 @@ struct ProviderUploadsTests {
         #expect(!ProviderUploads.files(below: folder, cap: 5).capped)
         #expect(ProviderUploads.files(below: folder, cap: 5).paths.count == 2)
 
-        // iCloud refusing to upload (its storage full): an error the bar shows as a problem.
-        // `CocoaError.ubiquitousFileUbiquityServerNotAvailable` (4355), by its number: the same on every platform.
-        let full = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "full")
+        // iCloud refusing to upload: the record keeps the error (whether it is a problem yet is `Persistence`'s).
+        // `CocoaError.ubiquitousFileNotUploadedDueToQuota` (4354), by its number: the same on every platform.
+        let full = ProviderUploads.State.failed(code: 4354, domain: NSCocoaErrorDomain, message: "full")
         let failing = ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["notes/x/1.delta.age"], check: { _ in full })
         #expect(failing.error == full)
-        #expect(full.isStorageUnavailable)
-        #expect(!ProviderUploads.State.failed(code: 1, domain: "provider", message: "x").isStorageUnavailable)
-        #expect(!ProviderUploads.State.waiting.isStorageUnavailable)
+        #expect(ProviderUploads.summary(in: dir).error == full, "kept across launches")
+    }
+
+    /// TestFlight 1.3.0 (112): iCloud lagging read "its storage may be full". Only an error that says the storage is
+    /// full is one: `fileWriteOutOfSpace` (640), `ubiquitousFileNotUploadedDueToQuota` (4354), the File Provider's
+    /// `insufficientQuota` (-1003). iCloud's `ubiquitousFileUbiquityServerNotAvailable` (4355), which it reports while it is
+    /// slow or out of reach, and every other error are uncertain.
+    @Test func onlyAnErrorThatSaysSoIsAFullStorage() {
+        func failed(_ code: Int, _ domain: String = NSCocoaErrorDomain) -> ProviderUploads.State {
+            .failed(code: code, domain: domain, message: "m")
+        }
+        #expect(failed(640).isStorageFull)
+        #expect(failed(4354).isStorageFull)
+        #expect(failed(-1003, ProviderUploads.fileProviderErrorDomain).isStorageFull)
+        #expect(!failed(4355).isStorageFull, "server not available: a lag, never 'full'")
+        #expect(!failed(4353).isStorageFull, "file unavailable")
+        #expect(!failed(-1004, ProviderUploads.fileProviderErrorDomain).isStorageFull, "server unreachable")
+        #expect(!failed(640, "provider").isStorageFull, "a code means nothing in another domain")
+        #expect(!failed(-1003, NSCocoaErrorDomain).isStorageFull)
+        #expect(!ProviderUploads.State.waiting.isStorageFull)
+        #expect(!ProviderUploads.State.uploaded.isStorageFull)
+    }
+
+    /// An upload error is a problem only once it lasted: every look for `problemAfter` and at least `problemSightings`
+    /// looks saw one. A look with none, or with no network path, starts over; a full storage is held to the same rule.
+    @Test func anUploadErrorIsAProblemOnlyOnceItLasted() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let lag = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "server not available")
+        let after = ProviderUploads.problemAfter
+        var p = ProviderUploads.Persistence()
+        #expect(p.problem(at: start) == nil && !p.isActive)
+
+        // Seen often but briefly (the session's quick looks: 15 s, 30 s, 60 s…): not a problem.
+        for i in 0..<10 { p.observe(lag, at: start.addingTimeInterval(Double(i) * 15)) }
+        #expect(p.isActive)
+        #expect(p.problem(at: start.addingTimeInterval(150)) == nil)
+        // Long but seen too few times: not a problem.
+        var sparse = ProviderUploads.Persistence()
+        sparse.observe(lag, at: start)
+        sparse.observe(lag, at: start.addingTimeInterval(after + 60))
+        #expect(sparse.problem(at: start.addingTimeInterval(after + 60)) == nil)
+        sparse.observe(lag, at: start.addingTimeInterval(after + 120))
+        #expect(sparse.problem(at: start.addingTimeInterval(after + 120)) == lag, "three looks over the whole time")
+
+        // Lasting: a problem, the latest error.
+        p.observe(lag, at: start.addingTimeInterval(after))
+        #expect(p.problem(at: start.addingTimeInterval(after)) == lag)
+        let other = ProviderUploads.State.failed(code: 1, domain: "provider", message: "other")
+        p.observe(other, at: start.addingTimeInterval(after + 30))
+        #expect(p.problem(at: start.addingTimeInterval(after + 30)) == other)
+
+        // One look with no error (uploads went through, or only waiting) starts over.
+        p.observe(.waiting, at: start.addingTimeInterval(after + 60))
+        #expect(!p.isActive && p.problem(at: start.addingTimeInterval(after + 60)) == nil)
+        p.observe(lag, at: start.addingTimeInterval(after + 90))
+        #expect(p.problem(at: start.addingTimeInterval(after + 90)) == nil, "the time starts over")
+        p.observe(nil, at: start.addingTimeInterval(after + 100))
+        #expect(!p.isActive)
+
+        // No network path: the provider cannot upload, which is no fault; the looks then start over too.
+        var offline = ProviderUploads.Persistence()
+        for i in 0...4 { offline.observe(lag, at: start.addingTimeInterval(Double(i) * after / 4)) }
+        #expect(offline.problem(at: start.addingTimeInterval(after)) == lag)
+        offline.observe(lag, at: start.addingTimeInterval(after + 1), networkDown: true)
+        #expect(!offline.isActive && offline.problem(at: start.addingTimeInterval(after + 1)) == nil)
+
+        // A full storage: the same rule (nothing is lost meanwhile: the changes are on this device).
+        let full = ProviderUploads.State.failed(code: 4354, domain: NSCocoaErrorDomain, message: "full")
+        var quota = ProviderUploads.Persistence()
+        quota.observe(full, at: start)
+        #expect(quota.problem(at: start) == nil)
+        quota.observe(full, at: start.addingTimeInterval(after / 2))
+        quota.observe(full, at: start.addingTimeInterval(after))
+        #expect(quota.problem(at: start.addingTimeInterval(after)) == full)
     }
 
     /// The system's answer for a provider's file (TestFlight 1.1.0 (69)): only a provider that says it uploaded the file
@@ -86,5 +157,85 @@ struct ProviderUploadsTests {
         // An answer always wins over age.
         #expect(ProviderUploads.state(isUploaded: false, isUploading: nil, error: nil, modified: old, now: now) == .waiting)
         #expect(ProviderUploads.state(isUploaded: true, isUploading: nil, error: nil, modified: fresh, now: now) == .uploaded)
+    }
+
+    /// Owner 2026-11-19: a file just written into a provider's folder that the provider has not taken in yet answers nothing;
+    /// it waits (it used to count as uploaded and the bar said synced). An old one with no answer, or a gone one, drops.
+    @Test func aFreshFileWithNoProviderAnswerWaitsAndAnOldOneDoesNot() throws {
+        let dir = try TestTemp.directory("provider-state")
+        let folder = try TestTemp.directory("provider-folder")
+        try Data([1]).write(to: folder.appendingPathComponent("fresh.age"))
+        try Data([1]).write(to: folder.appendingPathComponent("old.age"))
+        let now = Date()
+        // Only the folder is the provider's; its files answer nothing.
+        let check: ProviderUploads.Check = { $0 == folder ? .uploaded : nil }
+        let later = now.addingTimeInterval(ProviderUploads.settleTime + 1)
+        #expect(ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["fresh.age", "gone.age"], check: check,
+                                       now: now).count == 1)
+        #expect(ProviderUploads.pending(in: dir) == ["fresh.age"])
+        #expect(ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["old.age"], check: check, now: later).count == 0)
+        // The CLI's one look, kept nowhere.
+        #expect(ProviderUploads.waiting(folder: folder, paths: ["fresh.age", "fresh.age", "gone.age"], check: check, now: now).count == 1)
+        #expect(ProviderUploads.waiting(folder: folder, paths: ["fresh.age"], check: { _ in nil }, now: now).count == 0, "not a provider's folder")
+        let full = ProviderUploads.State.failed(code: 640, domain: NSCocoaErrorDomain, message: "full")
+        #expect(ProviderUploads.waiting(folder: folder, paths: ["fresh.age"], check: { $0 == folder ? .uploaded : full }, now: now).error == full)
+    }
+
+    /// Every file a folder remote places is logged, so settings, records and summaries count as waiting too.
+    @Test func aFolderRemoteLogsTheFilesItPlaces() throws {
+        let folder = try TestTemp.directory("provider-folder")
+        let log = FolderRemote.WriteLog()
+        var remote = FolderRemote(root: folder)
+        remote.writeLog = log
+        try remote.createBase()
+        #expect(try remote.write(["settings.age"], .data(Data([1])), condition: .unconditional))
+        #expect(try remote.write(["a.age"], .data(Data([2])), condition: .create))
+        #expect(try !remote.write(["a.age"], .data(Data([3])), condition: .create), "a refused write is not logged")
+        #expect(log.paths == ["settings.age", "a.age"])
+    }
+
+    /// Review of build 111, S1: the app's look between runs (`recheck`) and a run's `update` read, change and write the
+    /// same record. A look that overlaps a run never drops the paths the run recorded, and leaves its in-flight mark.
+    @Test func aRecheckOverlappingARunKeepsItsPathsAndItsMark() async throws {
+        let dir = try TestTemp.directory("provider-state")
+        let folder = try TestTemp.directory("provider-folder")
+        ProviderUploads.save(ProviderUploads.Record(paths: ["old.age"]), in: dir)
+        #expect(!ProviderUploads.begin(stateDirectory: dir))
+        // The look answers slowly for the file it finds waiting, so the run's update lands while it asks.
+        let asking = Sync.Flag()
+        let slow: ProviderUploads.Check = { url in
+            if url == folder { return .uploaded }
+            asking.set()
+            Thread.sleep(forTimeInterval: 0.3)
+            return .waiting
+        }
+        let look = Task.detached { ProviderUploads.recheck(folder: folder, stateDirectory: dir, check: slow) }
+        for _ in 0..<200 where !asking.isSet { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(asking.isSet)
+        #expect(ProviderUploads.record(in: dir).inFlight, "the look leaves the run's mark")
+        let run = Task.detached {
+            ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["new.age"],
+                                   check: { $0 == folder ? .uploaded : .waiting })
+        }
+        _ = await look.value
+        #expect(await run.value.count == 2)
+        let record = ProviderUploads.record(in: dir)
+        #expect(Set(record.paths) == ["old.age", "new.age"], "the run's new path survives the look")
+        #expect(!record.inFlight, "the run's update clears its own mark")
+
+        // A look alone keeps the mark of a run under way.
+        ProviderUploads.begin(stateDirectory: dir)
+        #expect(ProviderUploads.recheck(folder: folder, stateDirectory: dir, check: { $0 == folder ? .uploaded : .waiting }).count == 2)
+        #expect(ProviderUploads.record(in: dir).inFlight)
+    }
+}
+
+/// Test helpers for the overlapping look.
+private enum Sync {
+    final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.lock(); value = true; lock.unlock() }
+        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
     }
 }

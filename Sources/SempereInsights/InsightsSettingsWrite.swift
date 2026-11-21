@@ -1,10 +1,10 @@
 import Foundation
 import Sempere
 
-// MARK: - Changing the vault's insights settings (docs/design/1.2-note-insights.md §3.7, §3.8, D12-D14)
+// MARK: - Changing the vault's insights settings (docs/design/1.2-note-insights.md §3.7, §3.8, D12-D14, D21)
 //
-// The one place that writes the four `insights.*` keys of `settings.age`, for Settings ▸ Note Insights and the CLI
-// (`insights purge`, `insights work-device`, `insights map --pin`, `settings set`'s validation is the catalog's). Every
+// The one place that writes the `insights.*` keys of `settings.age`, for Settings ▸ Note Insights and the CLI
+// (`insights purge`, `insights map --pin`, `settings set`'s validation is the catalog's). Every
 // write takes the vault's write lock (`updateSharedSettingsUnderWriteLock`), so the caller must not hold it.
 
 public enum InsightsSettingsWrite {
@@ -24,11 +24,6 @@ public enum InsightsSettingsWrite {
         return on ? [] : try InsightsStore(vault: vault).purge()
     }
 
-    /// Designates the work device (D13), or clears it (nil: the first capable device claims it).
-    public static func setWorkDevice(_ device: DeviceID?, vault: Vault, now: Date = Date()) throws {
-        try write(vault, InsightsSettings.keys.workDevice, device.map { .string($0.rawValue) } ?? .null, now: now)
-    }
-
     /// The voice-note title format (D14); nil or the default resets it. Refuses a format `VoiceNoteTitleFormat.check`
     /// rejects.
     public static func setVoiceNoteTitle(_ format: String?, vault: Vault, now: Date = Date()) throws {
@@ -37,14 +32,23 @@ public enum InsightsSettingsWrite {
         try write(vault, InsightsSettings.keys.voiceNoteTitle, .string(f), now: now)
     }
 
+    /// The language of generated summaries and voice-note titles (`insights.language`): a BCP 47 tag, or nil for "same as the
+    /// note" (the default; resets the key). Refuses a tag that is none. Changing it makes summaries and titles be made again,
+    /// in the new language, a few at a time (every device reads the same setting, so they all write the same language).
+    public static func setLanguage(_ tag: String?, vault: Vault, now: Date = Date()) throws {
+        guard let tag else { return try write(vault, InsightsSettings.keys.language, nil, now: now) }
+        guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.language), spec.validated(.string(tag)) != nil else {
+            throw InsightsSettingsError.invalidLanguage(tag)
+        }
+        try write(vault, InsightsSettings.keys.language, .string(tag), now: now)
+    }
+
     /// What moving the pinned embedding revision would do (D12): the devices it leaves out (they become vector
-    /// readers) and where the work device goes when it lacks the revision.
+    /// readers).
     public struct PinMove: Hashable, Sendable {
         public var language: String
         public var revision: Int
         public var leftOut: [DeviceID]
-        public var workDevice: DeviceID?
-        public var movesWorkDevice: Bool
     }
 
     /// The move of `language`'s pin to `revision` as things stand (no write).
@@ -53,15 +57,10 @@ public enum InsightsSettingsWrite {
         let listed = Set(vault.manifest.devices.compactMap { $0.id.flatMap(DeviceID.init) })
         let recent = EmbeddingPin.recent(snapshot.devices, listed: listed, now: now)
         let leftOut = EmbeddingPin.leftOut(recent, language: language, revision: revision)
-        var work = settings.workDevice
-        if let w = settings.workDevice, let r = snapshot.devices[w], !(r.supported[language] ?? []).contains(revision) {
-            work = recent.filter { ($0.value.supported[language] ?? []).contains(revision) }.map(\.key).sorted().first
-        }
-        return PinMove(language: language, revision: revision, leftOut: leftOut, workDevice: work,
-                       movesWorkDevice: work != settings.workDevice)
+        return PinMove(language: language, revision: revision, leftOut: leftOut)
     }
 
-    /// Writes `move`: the pin, and the work device when it moves.
+    /// Writes `move`: the pin (a device that supports the new revision builds the map at it).
     public static func apply(_ move: PinMove, vault: Vault, now: Date = Date()) throws {
         try vault.updateSharedSettingsUnderWriteLock { s in
             guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.pin) else { return }
@@ -69,18 +68,17 @@ public enum InsightsSettingsWrite {
             if case .object(let cur) = s.resolve(spec, for: nil).value { o = cur }
             o[move.language] = .number(Double(move.revision))
             try s.write(spec, .object(o), block: nil, type: nil, now: now)
-            if move.movesWorkDevice, let w = SharedSettingsCatalog.spec(named: InsightsSettings.keys.workDevice) {
-                try s.write(w, move.workDevice.map { .string($0.rawValue) } ?? .null, block: nil, type: nil, now: now)
-            }
         }
     }
 }
 
 public enum InsightsSettingsError: Error, Hashable, Sendable, CustomStringConvertible {
     case invalidFormat(String)
+    case invalidLanguage(String)
     public var description: String {
         switch self {
         case .invalidFormat(let why): return "not a voice-note title format: \(why)"
+        case .invalidLanguage(let tag): return "not a language tag: \(tag) (use a BCP 47 tag such as es or pt-BR)"
         }
     }
 }

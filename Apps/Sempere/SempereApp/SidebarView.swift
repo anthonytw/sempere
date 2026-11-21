@@ -27,8 +27,7 @@ struct SidebarView: View {
     @State private var deletingNotebook: String?
     /// The window's undo manager: a notebook moved from a row's menu is undone there.
     @Environment(\.undoManager) private var undoManager
-    /// iPhone and iPad: the notebooks whose sub-notebooks are shown (`PhoneNotebookRows`); folded by default,
-    /// as the Mac's outline is.
+    /// The notebooks whose sub-notebooks are shown (`PhoneNotebookRows`); folded by default.
     @State private var unfolded: Set<String> = []
 
     /// A notebook row's context menu (`NotebookRowAction.notebookMenu`).
@@ -60,6 +59,16 @@ struct SidebarView: View {
         return model.canDeleteNotebook(path) ? actions : actions.filter { !$0.destructive }
     }
 
+    /// → (`unfold`) or ← on a Mac: the selected notebook's sub-notebooks shown or hidden; any other row, or another
+    /// device, leaves the key to the list.
+    private func foldSelected(unfold: Bool) -> KeyPress.Result {
+        guard Platform.isMac, case .notebook(let path) = model.sidebarSelection,
+              let next = PhoneNotebookRows.setting(path, unfold: unfold, in: unfolded, tree: model.notebookTree)
+        else { return .ignored }
+        withAnimation { unfolded = next }
+        return .handled
+    }
+
     private func moveToTopLevel(_ path: String) {
         let undo = UndoBox(undoManager)
         Task { await model.move(.notebook(path), to: .topLevel, undoManager: undo.manager) }
@@ -70,28 +79,21 @@ struct SidebarView: View {
             .accessibilityIdentifier("sidebar-notebook-\(node.path)")
     }
 
-    /// Notebook rows for `nodes` (and everything inside them): an outline on a Mac, or on an iPhone and an
-    /// iPad the tree drawn by `PhoneNotebookRows` (folding with a chevron of its own). `inbox` marks the
-    /// Inbox's own row.
-    @ViewBuilder
+    /// Notebook rows for `nodes` (and everything inside them): the tree drawn by `PhoneNotebookRows`, folding
+    /// with a chevron of its own, on every device. `inbox` marks the Inbox's own row.
+    ///
+    /// Never a system outline (`OutlineGroup`): its row with sub-notebooks only folds on a tap or click and
+    /// never selects, so a notebook holding sub-notebooks could not open its own notes. An iPhone's stack
+    /// folds any such row; on an iPad (1.2.0 owner report) and a Mac (1.3.0 build 112 owner check) a top-level
+    /// one is a header. Here a tap or click on a row opens its notebook, and the chevron at its end folds or
+    /// unfolds its sub-notebooks.
     private func notebookRows(_ nodes: [NotebookNode], inbox: String? = nil) -> some View {
-        if !Platform.isMac {
-            // An outline row's tap only folds it on an iPhone's stack, and on an iPad a top-level
-            // row with sub-notebooks is a header whose tap only folds it (1.2.0 owner report);
-            // neither selects it, so a notebook holding sub-notebooks could not open its own
-            // notes. The iPhone and the iPad draw the tree themselves: a tap on a row opens its
-            // notebook, the chevron at its end folds or unfolds its sub-notebooks (`PhoneNotebookRows`).
-            ForEach(PhoneNotebookRows.rows(nodes, unfolded: unfolded)) { row in
-                decorated(phoneNotebookRow(row, inbox: row.node.path == inbox), row.node)
-            }
-        } else {
-            OutlineGroup(nodes, children: \.childrenOrNil) { node in
-                notebookRow(node, inbox: node.path == inbox)
-            }
+        ForEach(PhoneNotebookRows.rows(nodes, unfolded: unfolded)) { row in
+            decorated(phoneNotebookRow(row, inbox: row.node.path == inbox), row.node)
         }
     }
 
-    /// An iPhone or iPad notebook row: the label, indented by depth, and for a notebook with sub-notebooks a
+    /// A notebook row: the label, indented by depth, and for a notebook with sub-notebooks a
     /// disclosure chevron of its own at the trailing end (the drag handle leaves that end to it,
     /// `NotebookDragSourceModifier.chevronWidth`), so the row's tap still opens the notebook.
     private func phoneNotebookRow(_ row: PhoneNotebookRows.Row, inbox: Bool) -> some View {
@@ -112,16 +114,12 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(row.unfolded ? String(localized: "Fold \(name)", comment: "Sidebar on an iPhone or iPad: hide a notebook's sub-notebooks (the notebook's name)")
-                                                 : String(localized: "Unfold \(name)", comment: "Sidebar on an iPhone or iPad: show a notebook's sub-notebooks (the notebook's name)"))
+                .accessibilityLabel(row.unfolded ? String(localized: "Fold \(name)", comment: "Sidebar: hide a notebook's sub-notebooks (the notebook's name)")
+                                                 : String(localized: "Unfold \(name)", comment: "Sidebar: show a notebook's sub-notebooks (the notebook's name)"))
                 .accessibilityIdentifier("sidebar-fold-\(row.node.path)")
                 .help(row.unfolded ? "Hide the sub-notebooks" : "Show the sub-notebooks")
             }
         }
-    }
-
-    private func notebookRow(_ node: NotebookNode, inbox: Bool) -> some View {
-        decorated(notebookLabel(node, inbox: inbox), node)
     }
 
     /// A notebook row's selection tag, drop target, drag source and swipe action (every platform).
@@ -146,7 +144,7 @@ struct SidebarView: View {
                     Button("Export All Notes…", systemImage: ExportCommand.menuImage) {
                         model.requestBulkExport(.vault, window: ui?.id)
                     }
-                    // Note Insights' map (design §6 item 5), once the work device has built one.
+                    // Note Insights' map (design §6 item 5), once a device has built one.
                     if !model.insightsMap.isEmpty {
                         Button("Map of Related Notes", systemImage: "point.3.connected.trianglepath.dotted") {
                             ui?.insightsMapShown = true
@@ -204,10 +202,13 @@ struct SidebarView: View {
             }
             Label("Recently Deleted", systemImage: "trash").tag(SidebarItem.deleted)
         }
+        // A Mac's → and ← unfold and fold the selected notebook, as an outline's did (review of build 113, S4).
+        .onKeyPress(.rightArrow) { foldSelected(unfold: true) }
+        .onKeyPress(.leftArrow) { foldSelected(unfold: false) }
         .onChange(of: model.recentlyRecognizedNotes.isEmpty) { model.leaveEmptyRecognizedSection() }
-        // iPhone and iPad: a notebook chosen elsewhere is listed, its parents unfolded.
+        // A notebook chosen elsewhere is listed, its parents unfolded.
         .onChange(of: model.sidebarSelection, initial: true) { _, selection in
-            guard !Platform.isMac, case .notebook(let path) = selection else { return }
+            guard case .notebook(let path) = selection else { return }
             unfolded = PhoneNotebookRows.revealing(path, in: unfolded)
         }
         // "Recently Recognized" also changes when a run leaves the 7-day window, which no note change reports.

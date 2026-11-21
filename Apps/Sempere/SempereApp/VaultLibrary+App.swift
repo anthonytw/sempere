@@ -15,20 +15,24 @@ extension UTType {
     /// "Vaults are folders").
     static let sempere = UTType(exportedAs: "io.github.anthonytw.sempere.vault", conformingTo: .folder)
 
+    /// A `.sempere-vault` folder: a folder sync target made by 1.3 or later (`SyncFolderName`), opened like a `.sempere`.
+    /// Declared in `SempereInfo.plist` as a plain folder too, never a package.
+    static let sempereSyncVault = UTType(exportedAs: "io.github.anthonytw.sempere.syncvault", conformingTo: .folder)
+
     /// A `.sempere-backup` folder (a backup, `BackupDestination`): a plain folder too, never a package, for the
     /// same reason. Opening one is a one-time copy (`CopyInFollowUp`).
     static let sempereBackup = UTType(exportedAs: "io.github.anthonytw.sempere.backup", conformingTo: .folder)
 
-    /// What the "open vault" pickers accept: vault folders, backups, and plain folders
-    /// (a vault in a folder not named `.sempere`, or the folder holding one). `.package` too: iCloud Drive may hold
+    /// What the "open vault" pickers accept: vault folders (`.sempere`, `.sempere-vault`), backups, and plain folders
+    /// (a vault in a folder of any other name, or the folder holding one). `.package` too: iCloud Drive may hold
     /// a `.sempere` or `.sempere-backup` as a package (an early build declared one), which the document picker greys
     /// out unless packages are allowed (owner's test of build 11); any other package is refused after the pick
     /// (`PickedFolderRules.acceptsFromDocumentPicker`).
-    static var vaultPickerTypes: [UTType] { [.sempere, .sempereBackup, .folder, .package] }
+    static var vaultPickerTypes: [UTType] { [.sempere, .sempereSyncVault, .sempereBackup, .folder, .package] }
 
     /// What the iPhone's and iPad's folder pickers accept (`FolderPicker`): folders, and vaults and backups held as
     /// packages, as for `vaultPickerTypes`.
-    static var folderPickerTypes: [UTType] { [.folder, .sempere, .sempereBackup, .package] }
+    static var folderPickerTypes: [UTType] { [.folder, .sempere, .sempereSyncVault, .sempereBackup, .package] }
 }
 
 extension VaultLibrary {

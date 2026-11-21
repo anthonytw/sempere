@@ -44,31 +44,65 @@ public enum FinderBundleBit {
         return bytes.allSatisfy { $0 == 0 } ? .remove : .rewrite(Data(bytes))
     }
 
+    /// What `clearReporting(at:)` did.
+    public enum ClearResult: Equatable, Sendable {
+        /// The flag was not set (or the attribute is absent, or the platform has no Finder flags).
+        case notSet
+        /// It was set and is now cleared.
+        case cleared
+        /// It is set and could not be cleared (`errno` of the failing call), or the attribute could not be read.
+        case failed(Int32)
+    }
+
     /// Clears `kHasBundle` on the folder at `url` when it is set (the caller holds any security scope it needs).
     /// True when it was set and is now cleared; false when it was not set, the attribute cannot be read or written,
     /// or the platform has no Finder flags.
     @discardableResult
     public static func clear(at url: URL) -> Bool {
+        clearReporting(at: url) == .cleared
+    }
+
+    /// `clear(at:)`, telling a flag that was not set from one that could not be cleared (logged by `BundleBitRepair`:
+    /// a repair that fails silently every run looked like one that never ran).
+    public static func clearReporting(at url: URL) -> ClearResult {
         #if canImport(Darwin)
         let path = url.path
         // Never through a symbolic link named like a vault: its target may be a real package (review of #123).
         let options = XATTR_NOFOLLOW
         let size = getxattr(path, attributeName, nil, 0, 0, options)
-        guard size > 0, size <= 64 else { return false }
+        if size < 0 { return [ENOATTR, ENOTSUP, ENOENT].contains(errno) ? .notSet : .failed(errno) }
+        guard size > 0, size <= 64 else { return .notSet }
         var buffer = [UInt8](repeating: 0, count: size)
         let read = getxattr(path, attributeName, &buffer, size, 0, options)
-        guard read == size else { return false }
+        guard read == size else { return .failed(errno) }
         switch cleared(Data(buffer)) {
         case .unchanged:
-            return false
+            return .notSet
         case .rewrite(let bytes):
             let written = bytes.withUnsafeBytes { setxattr(path, attributeName, $0.baseAddress, bytes.count, 0, options) }
-            return written == 0
+            return written == 0 ? .cleared : .failed(errno)
         case .remove:
-            return removexattr(path, attributeName, options) == 0
+            return removexattr(path, attributeName, options) == 0 ? .cleared : .failed(errno)
         }
         #else
-        return false
+        return .notSet
+        #endif
+    }
+
+    /// Whether the folder at `url` has `kHasBundle` set, read only (`sempere vault conflicts`); nil when the attribute
+    /// cannot be read or the platform has no Finder flags. False when the folder has no `com.apple.FinderInfo`.
+    public static func isSet(at url: URL) -> Bool? {
+        #if canImport(Darwin)
+        let path = url.path
+        let size = getxattr(path, attributeName, nil, 0, 0, XATTR_NOFOLLOW)
+        if size < 0 { return errno == ENOATTR ? false : nil }
+        guard size <= 64 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: max(size, 1))
+        let read = getxattr(path, attributeName, &buffer, size, 0, XATTR_NOFOLLOW)
+        guard read == size else { return nil }
+        return isSet(in: Data(buffer.prefix(size)))
+        #else
+        return nil
         #endif
     }
 
@@ -78,10 +112,13 @@ public enum FinderBundleBit {
         urls.filter { appliesTo($0) && clear(at: $0) }
     }
 
-    /// Whether `url` is named like a vault or a backup folder (`….sempere`, `….sempere-backup`): the folders whose
-    /// flag Sempere clears.
+    /// Whether `url` is a vault or a backup folder, the folders whose flag Sempere clears: named like one
+    /// (`….sempere`, `….sempere-vault`, `….sempere-backup`: `BackupDestination.isHolderName`), or
+    /// holding a `vault.json` or `backup.json` whatever its name (a folder sync target of any name: the flag makes a
+    /// folder without an extension a package too).
     public static func appliesTo(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ext == BackupDestination.vaultExtension || ext == BackupDestination.folderExtension
+        if BackupDestination.isHolderName(url) { return true }
+        let fm = FileManager.default
+        return BackupDestination.isVault(url, fm) || BackupDestination.isBackup(url, fileManager: fm)
     }
 }

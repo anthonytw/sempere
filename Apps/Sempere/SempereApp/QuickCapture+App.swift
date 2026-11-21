@@ -81,7 +81,6 @@ extension QuickCapture {
         capture.vaultStore = vaultStore
         // The app's words for errors even when no `AppModel` exists yet (a start from a widget before any is made).
         capture.describeError = { AppModel.describe($0) }
-        capture.noteTitle = { QuickCapture.title($0) }
         capture.reloadSurfaces = { QuickCapture.reloadSystemSurfaces() }
         return capture
     }

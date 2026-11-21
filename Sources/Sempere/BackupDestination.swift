@@ -35,8 +35,12 @@ public enum BackupDestination {
 
     /// The extension of a backup folder (`<name>.sempere-backup`).
     public static let folderExtension = "sempere-backup"
-    /// The extension of a vault folder.
+    /// The extension of a vault folder: the in-app store's own, and a folder sync target an older version made.
+    /// Folder targets made by 1.3 or later end in `SyncFolderName.fileExtension` (`….sempere-vault`); readers decide by
+    /// `vault.json`, and accept both names (`vaultExtensions`).
     public static let vaultExtension = "sempere"
+    /// Every extension a vault folder may have: `.sempere` and `.sempere-vault` (`isVaultName`).
+    public static let vaultExtensions = [vaultExtension, SyncFolderName.fileExtension]
 
     /// The backup folder for the vault `vaultId` called `vaultName` when the user chose `parent`:
     /// - `parent` named `….sempere-backup` that is this vault's backup, or empty: `parent` itself;
@@ -106,11 +110,11 @@ public enum BackupDestination {
     /// The vault id in `dir`'s `backup.json`, nil when it has none or it cannot be read.
     public static func backupVaultId(of dir: URL) -> String? { backupVaultId(dir) }
 
-    /// `name` without `.sempere-backup` or `.sempere`, trimmed, with characters a folder name cannot hold replaced;
+    /// `name` without `.sempere-backup`, `.sempere-vault` or `.sempere`, trimmed, with characters a folder name cannot hold replaced;
     /// "Notes" when empty.
     static func baseName(_ name: String) -> String {
         var s = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        for ext in [folderExtension, vaultExtension] where s.lowercased().hasSuffix("." + ext) {
+        for ext in [folderExtension, SyncFolderName.fileExtension, vaultExtension] where s.lowercased().hasSuffix("." + ext) {
             s = String(s.dropLast(ext.count + 1))
             break
         }
@@ -180,14 +184,19 @@ public enum BackupDestination {
 // MARK: - By name
 
 extension BackupDestination {
-    /// Whether `url` is named like a vault (`….sempere`) or a backup folder (`….sempere-backup`). Says nothing about
-    /// what it holds.
+    /// Whether `url` is named like a vault (`….sempere`, `….sempere-vault`: `isVaultName`) or a backup folder
+    /// (`….sempere-backup`). Says nothing about what it holds.
     public static func isHolderName(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ext == vaultExtension || ext == folderExtension
+        isVaultName(url) || url.pathExtension.lowercased() == folderExtension
     }
 
-    /// The nearest folder above `url` (never `url` itself) named like a vault or a backup, nil when there is none.
+    /// Whether `url` is named like a vault: `….sempere` (the in-app store's, or a sync folder an older version made) or
+    /// `….sempere-vault` (a sync folder made by 1.3 or later, `SyncFolderName`), any case. Says nothing about what it
+    /// holds.
+    public static func isVaultName(_ url: URL) -> Bool { vaultExtensions.contains(url.pathExtension.lowercased()) }
+
+    /// The nearest folder above `url` (never `url` itself) named like a vault or a backup (`isHolderName`), nil when
+    /// there is none.
     /// For what an app may not read: its security scope covers a picked folder only, so what lies above it goes by
     /// name. An app's container is not a vault, whatever its name: the Mac app's own is
     /// `~/Library/Containers/io.github.anthonytw.sempere` (`isAppContainer`).

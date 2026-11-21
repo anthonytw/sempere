@@ -7,6 +7,8 @@ public enum ShareFormat: String, CaseIterable, Sendable, Identifiable {
     /// The notes' recordings (with transcripts), clips, images and PDFs as
     /// files, a folder per note with `media.json` (`MediaExport`).
     case media
+    /// One note as a single encrypted HTML page with the web viewer built in (`WebPageShare`, docs/design/1.3-share.md).
+    case webPage
 
     public var id: String { rawValue }
 
@@ -18,6 +20,7 @@ public enum ShareFormat: String, CaseIterable, Sendable, Identifiable {
         case .markdown: return "Text (Markdown)"
         case .html: return "HTML"
         case .media: return "Media"
+        case .webPage: return "Web Page (Encrypted)"
         }
     }
 }
@@ -40,6 +43,12 @@ public struct ShareOptions: Sendable, Equatable {
     /// transcripts as text, embedded as PDF file attachments (the CLI's
     /// `--recordings attach`, docs/attachments.md §10).
     public var pdfAttachments: Bool
+    /// Web page only: what the page carries (`WebShareOptions`).
+    public var webShare = WebShareOptions()
+    /// Web page only: the passphrase the page is encrypted with. Never kept anywhere by the export.
+    public var webSharePassphrase = ""
+    /// Web page only: the viewer page (`ShareTemplate`, from `SempereShareViewer`; `AppModel.exportNotes` fills it in).
+    public var webShareTemplate: ShareTemplate?
 
     public init(format: ShareFormat, paper: Bool = true, dpi: Double = 144, mergePDF: Bool = false,
                 markdownImages: ExportImages = .none, markdownPDF: Bool = false, pdfAttachments: Bool = false) {
@@ -58,10 +67,13 @@ public struct ShareOptions: Sendable, Equatable {
 public enum ShareExportError: Error, Equatable, CustomStringConvertible, Sendable {
     /// A PNG resolution outside 0 ... `ShareOptions.maxDPI`.
     case invalidResolution(Double)
+    /// A web page holds exactly one note.
+    case webPageNeedsOneNote
 
     public var description: String {
         switch self {
         case .invalidResolution: return "The resolution must be greater than 0 and at most \(Int(ShareOptions.maxDPI)) dpi."
+        case .webPageNeedsOneNote: return "A web page holds one note."
         }
     }
 }
@@ -88,6 +100,8 @@ public struct ShareResult: Sendable {
     public var withoutMedia = 0
     /// Warnings of the export (media left out, metadata kept), one per line.
     public var warnings: [String] = []
+    /// Web page: where the page's bytes went (for the size line).
+    public var webShareSections: WebShareSections?
 }
 
 /// Renders notes into a scratch directory for sharing. One engine for the app's
@@ -100,6 +114,7 @@ public struct ShareResult: Sendable {
 /// | Markdown | `<stem>.md`; with the PDF or page PNGs, a folder `<stem>/` with the `.md`, those files and a `README.md` | folder `Sempere Export/` mirroring the notebooks |
 /// | HTML | one self-contained `<stem>.html` | folder `Sempere Export/` with one file per note and `index.html` |
 /// | Media | a folder `<stem>/` with the media files and `media.json` | the same per note; a note without media writes nothing |
+/// | Web page | `Shared note.html`, encrypted (the title is never in a name) | not offered: one note |
 ///
 /// Everything is blocking: call `run` off the main actor. It checks
 /// `Task.checkCancellation()` between notes (and pages).
@@ -128,6 +143,7 @@ public enum ShareExport {
                            imageDecoder: (any ImageDecoding)? = nil,
                            progress: (Int, Int) -> Void = { _, _ in },
                            errorText: @escaping @Sendable (Error) -> String = { "\($0)" }) throws -> ShareResult {
+        if options.format == .webPage && notes.count != 1 { throw ShareExportError.webPageNeedsOneNote }
         let needsDPI = options.format == .png || (options.format == .markdown && options.markdownImages == .png)
         if needsDPI && !options.isValid { throw ShareExportError.invalidResolution(options.dpi) }
         let fm = FileManager.default
@@ -167,7 +183,29 @@ public enum ShareExport {
         }
         func name(_ s: NoteSummary, _ state: NoteState) -> String { ExportName.stem(title: state.meta.title, noteId: s.id) }
 
+        var webSections: WebShareSections?
+        var webWarnings: [String] = []
         switch options.format {
+        case .webPage:
+            let (s, state) = notes[0]
+            progress(0, 1)
+            try Task.checkCancellation()
+            do {
+                guard let template = options.webShareTemplate else { throw WebShareError.badTemplate }
+                let made = try WebPageShare.make(state, blobs: blobs?(s.id), options: options.webShare,
+                                                 passphrase: options.webSharePassphrase, template: template,
+                                                 pdfRasterizer: pdfRasterizer, imageDecoder: imageDecoder)
+                try Task.checkCancellation()
+                let url = scratch.appendingPathComponent(WebPageShare.fileName)
+                try write(made.file, url)
+                items = [url]
+                exported = 1
+                webSections = made.sections
+                webWarnings = made.skipped
+            } catch let e as WebShareError {
+                failures.append("\(s.id.uuidString.lowercased()): \(e.description)")
+            }
+            progress(1, 1)
         case .markdown, .html:
             if options.format == .html && notes.count == 1, let (s, state) = notes.first {
                 progress(0, 1)
@@ -310,7 +348,8 @@ public enum ShareExport {
         result.mediaFiles = mediaFiles
         result.withoutMedia = withoutMedia
         if options.format == .media { result.recordingsOmitted = 0 }
-        result.warnings = report.warnings
+        result.warnings = options.format == .webPage ? webWarnings : report.warnings
+        result.webShareSections = webSections
         return result
     }
 

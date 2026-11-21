@@ -2,6 +2,7 @@ import ArgumentParser
 import Dispatch
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSpeech
 
 /// `sempere transcribe`: on-device transcription of a note's recordings
@@ -24,6 +25,11 @@ struct TranscribeCommand: ParsableCommand {
             it is used only when that permission is already granted). --engine picks one.
 
             By default only recordings without a transcript are read; --force replaces existing transcripts. \
+            --again is "Transcribe Again" for one note: it replaces the transcripts of the note's recordings (the \
+            ones named, else all) in --language (else the note's language, else this machine's), keeping the \
+            earlier ones in the note's history, and --insights then makes the note's Note Insights again \
+            (as sempere insights update --note NOTE --force). --languages lists the languages the recognizers \
+            here support. \
             --dry-run lists them without reading (this works on Linux too). --check prints which engines can \
             transcribe here and needs no vault. --download-model installs SpeechTranscriber's model for the \
             language through Apple's asset service (what the app's Settings button does; also no vault), and \
@@ -50,6 +56,15 @@ struct TranscribeCommand: ParsableCommand {
     @Flag(name: .long, help: "Replace transcripts that exist.")
     var force = false
 
+    @Flag(name: .long, help: "Transcribe the note's recordings again, replacing their transcripts (needs a note; --force for one note).")
+    var again = false
+
+    @Flag(name: .long, help: "With --again (or a note): make the note's insights again afterwards.")
+    var insights = false
+
+    @Flag(name: .long, help: "Print the languages the recognizers here support (no vault needed).")
+    var languages = false
+
     @Flag(name: .customLong("dry-run"), help: "Only list the recordings that would be transcribed.")
     var dryRun = false
 
@@ -64,18 +79,35 @@ struct TranscribeCommand: ParsableCommand {
     var downloadModel = false
 
     @OptionGroup var access: AccessOptions
+    @OptionGroup var cache: CacheOptions
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
         if downloadModel && (check || dryRun || noDownload || all || note != nil) {
             throw ValidationError("--download-model stands alone (it takes only --language)")
         }
+        if languages && (check || downloadModel || dryRun || all || note != nil || again || insights || force) {
+            throw ValidationError("--languages stands alone")
+        }
+        if languages { return }
+        if again && all { throw ValidationError("--again is for one note, not --all") }
+        if insights && all { throw ValidationError("--insights is for one note, not --all") }
         if let language, TranscriptionLanguage.tag(language) == nil { throw ValidationError("--language is not a language tag: \(language)") }
         if downloadModel || check { return }
         if all == (note != nil) { throw ValidationError("give a note id or title, or --all") }
         if all && !recordings.isEmpty { throw ValidationError("recordings can be named only with one note") }
         if engineChoice == nil && engine != "auto" { throw ValidationError("--engine must be auto, speechtranscriber or sfspeech") }
         if let language, TranscriptionLanguage.tag(language) == nil { throw ValidationError("--language is not a language tag: \(language)") }
+    }
+
+    /// `SEMPERE_TRANSCRIBE_FAKE=1` in a debug build: every recording gets a fixed transcript without the Speech
+    /// framework, so the CLI tests run the rest of the command (the transcript write, `--insights`) for real.
+    static var fakeTranscription: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["SEMPERE_TRANSCRIBE_FAKE"] == "1"
+        #else
+        return false
+        #endif
     }
 
     var engineChoice: TranscriptionEngine? { TranscriptionEngine(rawValue: engine) }
@@ -88,6 +120,18 @@ struct TranscribeCommand: ParsableCommand {
         "\(SpeechTranscriptionError.unavailable); nothing was changed")
 
     func run() throws {
+        if languages {
+            let tags = blocking { await SpeechTranscription.supportedLanguages() } ?? []
+            if output.json {
+                struct Out: Encodable { var supported: Bool; var languages: [String] }
+                try output.emitJSON(Out(supported: SpeechTranscription.isSupported, languages: tags))
+            } else if tags.isEmpty {
+                output.info(SpeechTranscription.isSupported ? "No supported languages." : "No Speech framework: nothing can be transcribed here.")
+            } else {
+                for t in tags { print(t) }
+            }
+            return
+        }
         if downloadModel {
             if !SpeechTranscription.isSupported { throw Self.unavailable }
             let options = self.options
@@ -108,7 +152,7 @@ struct TranscribeCommand: ParsableCommand {
             }
             return
         }
-        if !dryRun && !SpeechTranscription.isSupported { throw Self.unavailable }
+        if !dryRun && !Self.fakeTranscription && !SpeechTranscription.isSupported { throw Self.unavailable }
         let vault = try access.openVault(.required)
         if !dryRun { try vault.requireWritable() }   // format.md §7.3: exit 7, not a failure per recording
         let ids: [UUID]
@@ -116,12 +160,19 @@ struct TranscribeCommand: ParsableCommand {
             try vault.requireCompleteCopy()
             ids = try vault.summaries(of: nil).filter { !$0.deleted && $0.recordings > 0 }.map(\.id)
         } else {
-            ids = [try vault.resolveNote(note ?? "")]
+            ids = [try vault.resolveShownNote(note ?? "")]
         }
         let results = ids.map { run(note: $0, vault: vault) }
+        // "Also redo insights" (--insights): once the transcripts are replaced, the note's insights are made again with
+        // the model, as `insights update --note ID --force`. Not for a note whose transcription failed: its text did not change.
+        var redone: InsightsOutcome?
+        if insights, let id = ids.first, let r = results.first {
+            let transcribed = r.error == nil && r.recordings.contains { $0.error == nil }
+            redone = dryRun ? InsightsOutcome(dryRun: true) : (transcribed ? redoInsights(note: id, vault: vault) : InsightsOutcome(skipped: true))
+        }
         if output.json {
-            struct Out: Encodable { var dryRun: Bool; var notes: [NoteResult] }
-            try output.emitJSON(Out(dryRun: dryRun, notes: results))
+            struct Out: Encodable { var dryRun: Bool; var notes: [NoteResult]; var insights: InsightsOutcome? }
+            try output.emitJSON(Out(dryRun: dryRun, notes: results, insights: redone))
         } else {
             for r in results {
                 let title = r.title.isEmpty ? "(untitled)" : r.title
@@ -140,7 +191,13 @@ struct TranscribeCommand: ParsableCommand {
             }
             let done = results.reduce(0) { $0 + $1.recordings.filter { $0.error == nil }.count }
             output.info("\(dryRun ? "Dry run: " : "")\(done) recording(s) \(dryRun ? "would be transcribed" : "transcribed").")
+            if let redone {
+                if redone.dryRun { output.info("The note's insights would be made again.") }
+                else if redone.redone { output.info("Insights made again: \(redone.generated.count) summary, \(redone.titled.count) title.") }
+                else if redone.skipped { output.info("Insights not made again: nothing was transcribed.") }
+            }
         }
+        if let why = redone?.error { throw CLIError.failure("the transcripts are replaced, but the insights were not made again: \(why)") }
         let failed = results.filter { $0.error != nil || $0.recordings.contains { $0.error != nil } }.count
         if failed > 0 { throw CLIError.failure("\(failed) note(s) had recordings that could not be transcribed") }
     }
@@ -154,6 +211,41 @@ struct TranscribeCommand: ParsableCommand {
         var words: Int?
         var transcript: BlobRef?
         var error: String?
+    }
+
+    /// What `--insights` did.
+    struct InsightsOutcome: Encodable {
+        var dryRun = false
+        /// The note's insights were made again.
+        var redone = false
+        /// Nothing was transcribed, so nothing was redone.
+        var skipped = false
+        var generated: [String] = []
+        var titled: [String] = []
+        var error: String?
+    }
+
+    private func redoInsights(note id: UUID, vault: Vault) -> InsightsOutcome {
+        var out = InsightsOutcome()
+        let p = InsightsCLI.providers()
+        guard let model = p.model, model.availability.isAvailable else {
+            out.error = InsightsCLI.modelReason(p.model); return out
+        }
+        do {
+            var o = InsightsCLI.updateOptions(for: vault)
+            o.note = id; o.force = true
+            let options = o
+            let updater = InsightsUpdater(vault: vault, model: model, embedder: p.embedder, deviceState: DeviceState.defaultURL(), app: appName)
+            let inputs = try InsightsCLI.inputs(vault, cache: cache)
+            let report = try blockingThrowing { try await updater.run(options, notes: inputs) }
+            out.redone = true; out.generated = report.generated; out.titled = report.titled
+            if let why = report.failures[id.uuidString.lowercased()] { out.error = why; out.redone = false }
+        } catch let e as InsightsUpdateError {
+            out.error = e.description
+        } catch {
+            out.error = CLIError.from(error).message
+        }
+        return out
     }
 
     struct NoteResult: Encodable {
@@ -174,7 +266,7 @@ struct TranscribeCommand: ParsableCommand {
             var targets: [Recording]
             if recordings.isEmpty {
                 targets = state.recordings.sorted(by: Recording.sortsBefore)
-                if !force { targets = targets.filter { $0.transcript == nil } }
+                if !force && !again { targets = targets.filter { $0.transcript == nil } }
             } else {
                 var seen = Set<UUID>()
                 targets = try recordings.map { try resolveRecording($0, in: state) }.filter { seen.insert($0.id).inserted }
@@ -194,7 +286,11 @@ struct TranscribeCommand: ParsableCommand {
                     let opts = o
                     let ext = r.blob.type.lowercased().hasPrefix("audio/mp4") ? "m4a" : nil
                     let transcript: Transcript = try vault.withBlobFile(note: id, r.blob, pathExtension: ext) { url in
-                        try blockingThrowing { try await SpeechTranscription.transcribe(file: url, recording: r.id, options: opts) }
+                        if Self.fakeTranscription {
+                            return Transcript(recording: r.id, engine: "fake", language: opts.language ?? "en", created: Date(),
+                                              segments: [.init(start: 0, end: 1, text: "texto de prueba")])
+                        }
+                        return try blockingThrowing { try await SpeechTranscription.transcribe(file: url, recording: r.id, options: opts) }
                     }
                     let content = try transcript.encoded()
                     let ref = try vault.writeBlob(note: id, content, type: BlobRef.transcriptType)

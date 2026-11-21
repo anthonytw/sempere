@@ -89,7 +89,8 @@ extension AppModelCore {
     /// from the listed summaries; notes still downloading without a summary
     /// are left out.
     public func bulkExportJobs(_ scope: BulkExportScope, options: BulkExportOptions) -> [BulkExportJob] {
-        let listed = notes.filter { !placeholderNoteIDs.contains($0.id) }
+        // A voice note with no title of its own is named by the title the list shows for it.
+        let listed = notes.filter { !placeholderNoteIDs.contains($0.id) }.map { $0.showing(title: displayTitle($0)) }
         return BulkExportPlan.jobs(for: scope, from: listed, format: options.format, layout: options.layout)
     }
 

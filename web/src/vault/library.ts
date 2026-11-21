@@ -2,6 +2,7 @@
 // and summarize for the note list and search. Unreadable revisions are
 // reported with the note (format.md §4), never silently dropped.
 
+import { type VoiceOrigin, voiceOrigin } from "../format/displaytitle.ts";
 import { type NoteState, type Revision, modifiedDate } from "../format/model.ts";
 import { type NewerContent, emptyNewer, mergeNewer } from "../format/newer.ts";
 import { type JSONObject } from "../format/json.ts";
@@ -24,6 +25,8 @@ export interface LoadedNote {
   error?: string;
   failures: RevisionFailure[];
   revisionCount: number;
+  /** The revision file names that were read (absent for a note that could not be listed). */
+  files?: string[];
   /** The date of the last edit among the readable revisions (Unix ms; `modifiedDate`, format.md §12.2). */
   modified?: number;
   /** The note holds items or recordings (format.md §8). */
@@ -49,6 +52,12 @@ export interface NoteSummary {
   hasAttachments: boolean;
   /** The note holds content a newer version wrote (format.md §7.4). */
   newer: boolean;
+  /** Where and when its voice recording was captured, for the title shown while it stores none (absent: none, or an entry of the published summaries without `voice`). */
+  voice?: VoiceOrigin;
+  /** The title Note Insights derived that the writing device shows (published summaries' `shown`, format.md §12.2); only from an entry. */
+  shown?: string;
+  /** The revision file names the entry that gave `shown` was made from: `shown` stays only while they are the note's. */
+  shownFrom?: string[];
 }
 
 function holdsAttachments(r: Revision): boolean {
@@ -106,7 +115,7 @@ export async function loadNote(source: VaultSource, vault: UnlockedVault, id: st
   const readable = revs.filter((r): r is Revision => r !== undefined);
   failures.sort((a, b) => (a.file < b.file ? -1 : 1));
   const note: LoadedNote = {
-    id, failures, revisionCount: files.length, hasAttachments: readable.some(holdsAttachments),
+    id, failures, revisionCount: files.length, files, hasAttachments: readable.some(holdsAttachments),
   };
   for (const r of readable) if (r.newer) mergeNewer(newer, r.newer);
   if (newer.revisions > 0 || newer.unreadable > 0) note.newer = newer;
@@ -159,5 +168,7 @@ export function summarize(n: LoadedNote): NoteSummary {
   if (s?.meta.notebook !== undefined) out.notebook = s.meta.notebook;
   if (n.modified !== undefined) out.modified = n.modified;
   if (n.error !== undefined) out.error = n.error;
+  const voice = s ? voiceOrigin(s.recordings) : undefined;
+  if (voice !== undefined) out.voice = voice;
   return out;
 }

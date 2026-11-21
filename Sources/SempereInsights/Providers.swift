@@ -96,6 +96,36 @@ public protocol ModelProvider: Sendable {
     func summarize(topic: String, summaries: [String], language: String?) async throws -> String
     /// A 2-6 word title for a voice note's transcript (D14).
     func title(transcript: String, language: String?) async throws -> String
+    /// `text` (a summary or a title) written in `language` (a BCP 47 tag): unchanged when it already is in it, names and
+    /// numbers kept. For the insight language setting (`insights.language`, format.md §16.8): the summary and the title are
+    /// first made and fact-checked in the note's own language, then put into the chosen one.
+    func translate(_ text: String, to language: String) async throws -> String
+    /// A short answer to `question` from `sources` only, each sentence naming the sources it uses (docs/design/1.3-ask.md
+    /// §3.1 step 7). Untrusted output: `AskValidator` checks it. The default throws (a provider that cannot answer).
+    func answer(question: String, sources: [AskSource], language: String?) async throws -> ModelAnswer
+    /// `question` put into `language` (a BCP 47 tag) so it can be matched against notes written in it: translated, never
+    /// answered, names, numbers and dates kept as written (docs/design/1.3-ask.md §3.8). The default uses `translate`.
+    func translateQuestion(_ question: String, from source: String, to language: String) async throws -> String
+    /// Each of `sentences` (an answer written in `source`) put into `language`, one for one and in order, every number,
+    /// date, time, code and name kept as written (design §3.8). The default translates each with `translate`.
+    func translateSentences(_ sentences: [String], from source: String, to language: String) async throws -> [String]
+}
+
+extension ModelProvider {
+    /// A provider that cannot translate refuses: a fixed insight language is then not made by this device.
+    public func translate(_ text: String, to language: String) async throws -> String {
+        throw InsightsProviderError.failed("this model cannot translate")
+    }
+
+    public func translateQuestion(_ question: String, from source: String, to language: String) async throws -> String {
+        try await translate(question, to: language)
+    }
+
+    public func translateSentences(_ sentences: [String], from source: String, to language: String) async throws -> [String] {
+        var out: [String] = []
+        for s in sentences { out.append(try await translate(s, to: language)) }
+        return out
+    }
 }
 
 /// A sentence embedder at explicit revisions (design §3.8): never "the current" one.

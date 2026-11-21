@@ -67,7 +67,7 @@ struct PagesScribble: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let state = try vault.reconstruct(noteId: id)
         try requireLive(state)
         let target = try pageNumbered(page, of: state)

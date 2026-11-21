@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 import SempereWebDAV
 
@@ -185,6 +186,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         options.keepServerChanges = keepServerChanges
         options.deleteExtraneous = deleteExtraneous
         options.publishForWebViewer = webViewer
+        options.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
         options.skipUnchangedNotes = skipUnchanged
         options.deepListing = !noDeepListing
         options.largeBlobs = largeBlobs
@@ -397,6 +399,16 @@ enum SyncCLI {
         for e in r.errors { printStderr("error: \(e.path): \(e.message)") }
         for q in r.quarantined { printStderr("quarantined: \(q.path): \(q.message); not placed in the vault") }
         for e in r.rejected { printStderr("rejected: \(e.path): \(e.message); the local copy is kept") }
+        if let n = r.providerPending {
+            printStderr("waiting: \(n) \(n == 1 ? "file" : "files") written here, not uploaded by the provider yet (it holds them only on this machine until it does)")
+        }
+        if let e = r.providerError {
+            // One look: only an error that says the storage is full is called that; any other is often a delay that
+            // clears by itself (iCloud's "server not available" while it catches up).
+            printStderr(r.providerStorageFull == true
+                ? "provider upload error: its storage is full: \(e)"
+                : "provider upload delayed: \(e) (usually temporary; run sync folder again later to see it clear)")
+        }
         for a in r.arriving { printStderr("arriving: \(a.path): \(a.message)") }
         for d in r.deferred { printStderr("deferred: \(d.path): \(d.message) (--large-blobs now sends it)") }
         for a in r.setAside { printStderr("set aside: \(a.path): \(a.message); kept on this machine, not placed (sempere set-aside)") }

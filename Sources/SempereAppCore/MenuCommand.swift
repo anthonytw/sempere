@@ -28,11 +28,17 @@ public enum MenuCommand: String, CaseIterable, Sendable {
     case duplicateItem, bringItemToFront, deleteItem, toggleRecording
     // Edit
     case find, undo, redo
+    /// Edit ▸ Find ▸ Ask Your Notes… (⌥⌘F): the search field in Ask mode (docs/design/1.3-ask.md §3.6).
+    case askYourNotes
     // Tools
     /// The note's modes (`NoteMode`): the top bar's pencil and Hand.
     case toggleAnnotate, toggleHand
     case toolPen, toolMarker, toolPencil, toolEraser, toolLasso, toggleRuler
     case toolText, eraserSmaller, eraserLarger, toggleCompactPalette
+    /// Tools ▸ Saved Tools: the first nine saved tools (⌃⌘1 to ⌃⌘9; docs/design/1.3-custom-tools.md §3.5), saving the
+    /// current tool as one, and Settings ▸ Writing ▸ Saved Tools.
+    case savedTool1, savedTool2, savedTool3, savedTool4, savedTool5, savedTool6, savedTool7, savedTool8, savedTool9
+    case saveCurrentTool, manageSavedTools
     // View
     case zoomIn, zoomOut, fitWidth, actualSize, toggleNoteList, togglePageStrip
     // Window
@@ -64,14 +70,14 @@ public enum MenuCommand: String, CaseIterable, Sendable {
     }
 
     /// Commands whose shortcut UIKit's own menu bar already uses on a Mac
-    /// (⌘O for "Open…", ⌘F for "Find…", ⌘, for the app menu's "Settings…").
+    /// (⌘O for "Open…", ⌘F for "Find…", ⌥⌘F for "Find and Replace…", ⌘, for the app menu's "Settings…").
     /// UIKit refuses a SwiftUI menu group holding such a shortcut, and with it
     /// every other command of the group (TestFlight build 6: the File and Edit
     /// commands were missing), so these are not SwiftUI commands: `MacMenus`
     /// turns UIKit's own items into them. UIKit's Settings… opened Catalyst's
     /// generated preferences pane (touch alternatives only), not the app's
     /// settings (TestFlight build 7).
-    public static let nativeOnMac: [MenuCommand] = [.openVault, .find, .showSettings]
+    public static let nativeOnMac: [MenuCommand] = [.openVault, .find, .askYourNotes, .showSettings]
     /// Commands that replace UIKit's own items without a shortcut: Sempere >
     /// About Sempere (UIKit's opens the standard about panel) and the Help menu
     /// (UIKit's "Sempere Help" has no help book to open). `MacMenus` builds them.
@@ -130,6 +136,26 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         }
     }
 
+    /// 1 to 9 for `savedTool1` ... `savedTool9`, nil for every other command.
+    public var savedToolNumber: Int? {
+        switch self {
+        case .savedTool1: return 1
+        case .savedTool2: return 2
+        case .savedTool3: return 3
+        case .savedTool4: return 4
+        case .savedTool5: return 5
+        case .savedTool6: return 6
+        case .savedTool7: return 7
+        case .savedTool8: return 8
+        case .savedTool9: return 9
+        default: return nil
+        }
+    }
+
+    /// The commands of Tools ▸ Saved Tools that pick a saved tool, in order.
+    public static let savedToolCommands: [MenuCommand] = [.savedTool1, .savedTool2, .savedTool3, .savedTool4, .savedTool5,
+                                                          .savedTool6, .savedTool7, .savedTool8, .savedTool9]
+
     /// The keyboard shortcut, if any. Plain keys are never used: they would
     /// take typing away from the title and tag fields.
     public var shortcut: Shortcut? {
@@ -185,6 +211,8 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         // ⇧⌘M is File > Start Voice Note; ⌃⌘M sits next to the note's Recordings (⌃⌘R).
         case .toggleRecording: return Shortcut("m", control)
         case .find: return Shortcut("f", cmd)
+        // ⌥⌘F is free (⇧⌥⌘F is Bring Item to Front), next to ⌘F: checked in `MenuCommandTests`.
+        case .askYourNotes: return Shortcut("f", option)
         case .undo: return Shortcut("z", cmd)
         case .redo: return Shortcut("z", shift)
         case .toolPen: return Shortcut("1", option)
@@ -199,6 +227,11 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         case .eraserSmaller: return Shortcut("[", option)
         case .eraserLarger: return Shortcut("]", option)
         case .toggleCompactPalette: return Shortcut("p", shiftOption)
+        // ⌃⌘1 to ⌃⌘9: not ⌥⌘digits (the built-in tools) and not plain ⌃digits (macOS's Switch to Desktop N).
+        case .savedTool1, .savedTool2, .savedTool3, .savedTool4, .savedTool5, .savedTool6, .savedTool7, .savedTool8,
+             .savedTool9:
+            return savedToolNumber.flatMap { Character(String($0)) }.map { Shortcut($0, control) }
+        case .saveCurrentTool, .manageSavedTools: return nil
         case .zoomIn: return Shortcut("=", cmd)
         case .zoomOut: return Shortcut("-", cmd)
         case .fitWidth: return Shortcut("0", cmd)
@@ -266,6 +299,11 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         /// ⌘⌫ there means "delete to the start of the line", and a menu key
         /// equivalent would win over it on the Mac.
         public var editingText = false
+        /// While the note list is in select mode, what the ticked notes allow (`AppModel.bulkActions`): Move to
+        /// Recently Deleted and Restore Note then act on the ticked notes. Nil when not selecting.
+        public var bulkSelection: BulkNoteActions?
+        /// The names of the palette's saved tools, in order (Tools ▸ Saved Tools shows the first nine).
+        public var savedToolNames: [String] = []
 
         /// A context; every field defaults to nothing shown.
         public init(window: Window = .library, vault: Vault = .none, hasNote: Bool = false,
@@ -276,7 +314,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
                     noteListHidden: Bool = false, voiceNote: VoiceNote = VoiceNote.idle, hasPage: Bool = false,
                     hasItemSelection: Bool = false, isRecording: Bool = false, pageIndex: Int = 0,
                     pageCount: Int = 0, hasRecents: Bool = false, libraryWindowOpen: Bool = true,
-                    editingText: Bool = false) {
+                    editingText: Bool = false, savedToolNames: [String] = []) {
             self.window = window
             self.vault = vault
             self.hasNote = hasNote
@@ -302,6 +340,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
             self.hasRecents = hasRecents
             self.libraryWindowOpen = libraryWindowOpen
             self.editingText = editingText
+            self.savedToolNames = savedToolNames
         }
 
         /// The note list is in the window (library windows only).
@@ -330,8 +369,12 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         case .versionHistory: return unlocked && context.hasNote
         // Needs no vault: the capture profile is all a voice note needs (it opens the setup when missing).
         case .toggleVoiceNote: return context.voiceNote != .busy
-        case .deleteNote: return unlocked && context.hasNote && !context.noteDeleted && !context.editingText
-        case .restoreNote: return unlocked && context.hasNote && context.noteDeleted
+        case .deleteNote:
+            if let bulk = context.bulkSelection { return unlocked && bulk.contains(.delete) && !context.editingText }
+            return unlocked && context.hasNote && !context.noteDeleted && !context.editingText
+        case .restoreNote:
+            if let bulk = context.bulkSelection { return unlocked && bulk.contains(.restore) }
+            return unlocked && context.hasNote && context.noteDeleted
         // The importers and their sheets are per window (`WindowSheets`): any window with a vault.
         case .importPDF: return unlocked && !context.vaultReadOnly && context.window != .other
         case .importFromApp: return BuiltInImporters.primary != nil && unlocked && !context.vaultReadOnly && context.window != .other
@@ -359,13 +402,19 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         case .toggleRecording: return context.isRecording || (context.canEditNote && context.hasPage)
         case .previousPage: return context.hasPage && context.pageIndex > 0
         case .nextPage: return context.hasPage && context.pageIndex + 1 < context.pageCount
-        case .find, .toggleNoteList: return unlocked && context.hasNoteList
+        case .find, .askYourNotes, .toggleNoteList: return unlocked && context.hasNoteList
         case .undo, .redo: return context.canEditNote
         case .toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso, .toggleRuler,
              .eraserSmaller, .eraserLarger, .toggleCompactPalette:
             return context.canEditNote
         // As the top bar's buttons (`NoteToolbar`): an editable note with a page.
         case .toggleAnnotate, .toggleHand, .toolText: return context.canEditNote && context.hasPage
+        // A saved tool that exists, on an editable note; saving the current tool needs the palette's tool state, so the same.
+        case .savedTool1, .savedTool2, .savedTool3, .savedTool4, .savedTool5, .savedTool6, .savedTool7, .savedTool8,
+             .savedTool9:
+            return context.canEditNote && context.hasPage && (savedToolNumber ?? Int.max) <= context.savedToolNames.count
+        case .saveCurrentTool: return context.canEditNote && context.hasPage
+        case .manageSavedTools: return true
         case .zoomIn, .zoomOut, .fitWidth, .actualSize: return context.hasPage
         case .showLibrary: return !context.libraryWindowOpen
         case .showKeys: return unlocked
@@ -406,6 +455,8 @@ public enum MenuLayout {
         [.eraserSmaller, .eraserLarger],
         [.toggleRuler, .toggleCompactPalette],
     ]
+    /// Tools ▸ Saved Tools (a submenu: the names come from the palette's list).
+    public static let savedTools: [[MenuCommand]] = [MenuCommand.savedToolCommands, [.saveCurrentTool, .manageSavedTools]]
     public static let view: [[MenuCommand]] = [
         [.zoomIn, .zoomOut, .fitWidth, .actualSize],
         [.togglePageStrip],
@@ -417,10 +468,10 @@ public enum MenuLayout {
     /// Help (`MacMenus`).
     public static let help: [[MenuCommand]] = [[.showTour, .showKeyNotice]]
     /// Edit > Find (the system's Undo and Redo stay where UIKit puts them).
-    static let edit: [[MenuCommand]] = [[.find]]
+    static let edit: [[MenuCommand]] = [[.find, .askYourNotes]]
 
     /// Every command a menu shows, in order.
     public static var all: [MenuCommand] {
-        (app + file + edit + note + tools + view + window + help).flatMap { $0 }
+        (app + file + edit + note + tools + savedTools + view + window + help).flatMap { $0 }
     }
 }

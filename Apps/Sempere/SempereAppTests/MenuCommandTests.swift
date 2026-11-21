@@ -33,6 +33,17 @@ struct MenuCommandAppTests {
         #expect(MenuCommand.undo.title(in: nil) == MenuCommand.undo.title)
     }
 
+    /// Tools > Saved Tools names each entry by the saved tool (user text), "Saved Tool N" when there is none.
+    @Test func savedToolsAreNamedByTheirOwnNames() {
+        var c = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true, canEditNote: true, hasPage: true)
+        c.savedToolNames = ["Fine red pen", "Yellow marker"]
+        #expect(MenuCommand.savedTool1.title(in: c) == "Fine red pen")
+        #expect(MenuCommand.savedTool2.title(in: c) == "Yellow marker")
+        #expect(MenuCommand.savedTool3.title(in: c) == MenuCommand.savedTool3.title)
+        #expect(MenuCommand.savedTool3.title.contains("3"))
+        #expect(MenuCommand.savedTool1.title(in: nil) == MenuCommand.savedTool1.title)
+    }
+
     @Test func theMenusAddPageMatchesTheToolbars() {
         // The toolbar's Add Page adds after the page on the canvas; the end has an entry of its own.
         #expect(MenuCommand.addPage.title.contains("After"))

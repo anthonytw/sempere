@@ -34,7 +34,7 @@ targets per vault in the store's registry (`SyncTargetRegistry`, `<store>/.sync/
 folder", Sync Targets…, the store in the App Group container on iPhone and iPad (the Mac keeps Application
 Support: it has no App Group entitlement), quick capture into the in-app inbox by vault id, and WebDAV vaults as
 store vaults with a WebDAV target (earlier copies carried over with their sync state and quarantine). Not in P6:
-an iCloud Drive default folder (`iCloud Drive/Sempere/<name>.sempere` needs an iCloud container entitlement; the
+an iCloud Drive default folder (`iCloud Drive/Sempere/<name>.sempere-vault` needs an iCloud container entitlement; the
 user picks a folder in iCloud Drive instead), adding a WebDAV target to an existing vault from the app (connecting
 to a server whose vault is already on the device does it), provider change hints (`changes()`; folder targets run
 every minute instead), and one status bar per vault rather than per target.
@@ -257,6 +257,17 @@ Placed vaults also add two cases that today's code does not have:
   the same files over WebDAV from a NAS that mirrors that Drive folder. Each route is one target, and
   the union rules converge. Stamps are per target, so a file that changes under a second route is seen
   as changed, never assumed unchanged.
+
+**A placed folder held as a package (2026-11-19).** A provider that records a vault folder as a package syncs it as one
+item, and its conflict versions are of the whole folder, which §5.1's per-file rules never see: files only the losing side
+had are missing until merged back. The engine does not merge them (no automatic whole-vault merge in the app): the app
+warns on the target's row (`folderTargetPackageRecord`, resource values only), and `sempere vault conflicts --merge` is
+the recovery path, with the union rule of format.md §1.3 for write-once files and the existing rules for mutable ones. The
+lasting fix is a new folder that the provider records as a plain one; docs/io.md "A vault folder held as a package".
+A new `….sempere` folder in the owner's iCloud Drive was held as a package again (2026-11-20), so from 1.3 every new folder
+target is `<vault>.sempere-vault` (`SyncFolderName`, `FolderTargetPlacement.location`; an extension no build ever
+declared a package, exported as `public.folder` only), readers accept `.sempere`, `.sempere-vault` and any folder holding
+the vault's `vault.json`, and existing `….sempere` targets keep working.
 
 ### 3.4 Extension points for later providers
 
@@ -653,7 +664,8 @@ they are not.
 ### 8.1 Vault setup and targets
 
 - **New Vault**: a name, then "Keep a copy in: None / iCloud Drive / A Folder… / WebDAV Server…".
-  iCloud Drive defaults to `iCloud Drive/Sempere/<name>.sempere`.
+  iCloud Drive defaults to `iCloud Drive/Sempere/<name>.sempere-vault` (never a `….sempere`: docs/io.md
+  "A vault folder held as a package").
 - **Open Vault…** (welcome screen and File menu) **copies an existing vault into the app**. The user
   picks a vault folder (an export, a backup, a folder in iCloud Drive or another provider, a USB
   drive) or connects to a WebDAV server. The sheet says "Sempere will copy this vault onto this
@@ -685,7 +697,22 @@ they are not.
 | syncing | "Syncing: ↑ 3 ↓ 12 notes" (and "Uploading to iCloud: n") |
 | offline | "Offline. Changes are kept on this device and sync when you are back online." Not an error |
 | waiting | "Waiting for unlock: 4 changes from other devices" |
+| uploading (iCloud) | "4 changes waiting for iCloud to upload": never "Synced" until iCloud has uploaded what this device wrote (see below) |
 | problem | per target: wrong password, certificate changed, folder not found ("choose it again"), server or iCloud full, quarantined files (n), late files from before a key change (n), device-list conflict |
+
+The note list's bar shows only the problem row (`SyncStatus.needsAttention`; owner 2026-11-20: "I don't need it unless
+something is definitely wrong"), and a target unreachable for a week while the device is online (`unreachableDays`,
+`staleAfter`); the other states are each target's line in Sync Targets… and Vault Details.
+
+**iCloud uploads.** A run into an iCloud Drive folder only writes local files; iCloud uploads them later, so "Synced"
+needs two things: the run confirmed the target, and iCloud has uploaded what the run wrote (owner decision 2026-11-19, an
+iPad delete read "synced" while the phone saw nothing for minutes). The session keeps a bounded record of the files this
+device wrote (`ProviderUploads`, every file the folder remote placed, capped at 20,000), asks `ubiquitousItemIsUploaded` /
+`isUploading` / `ubiquitousItemUploadingError` after each run and again on a timer with backoff (15 s up to 5 min) while any
+wait, and shows an upload error as a problem once it lasted (10 minutes and 3 looks, `ProviderUploads.Persistence`),
+called a full storage only when the error says so (`isStorageFull`). What iCloud has delivered to another device is out of scope: the receiving side
+cannot know more than what has arrived. WebDAV and non-provider folders are unchanged. `sempere sync folder` prints the same
+count after a run (docs/cli.md).
 
 The menu has Sync Now, Show Details (per target: the last report), Sync Targets…, and Repair….
 

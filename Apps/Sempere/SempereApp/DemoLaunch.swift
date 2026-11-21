@@ -34,6 +34,13 @@ import UIKit
 /// - `SEMPERE_DEMO_STORE`: copy the built vault into the in-app store (`VaultStore`, replacing an earlier
 ///   launch's demo copy) and open that copy, so store-only controls show (Sync Targets ▸ Add WebDAV Server…,
 ///   Details and Repair; `LaunchSmokeUITests`). The demo data is the same.
+/// - `SEMPERE_DEMO_STORE_EXTRA`: with `SEMPERE_DEMO_STORE` and `SEMPERE_DEBUG_MEMORY_KEYS` (so no Keychain items pile
+///   up), a count (1 or 2): also creates that many small empty vaults in the store, "Sempere Demo B" and "Sempere Demo
+///   C", through New Vault's path (`AppModel.createVault`, this device's keys saved first), before the demo opens, with
+///   no recent entries, so the welcome list shows "Sempere Demo", "Sempere Demo B", "Sempere Demo C" in that order
+///   (`storedVaultsByUse`: by name, none of them recorded as opened; `VaultListSwipeUITests`).
+/// - `SEMPERE_DEMO_SYNC_FOLDER`: with `SEMPERE_DEMO_STORE`, also syncs the store copy with a folder in the temporary
+///   directory, idle runs every that many seconds (`addSyncFolder`).
 /// - `SEMPERE_DEMO_APPEARANCE`: `light` (the default) or `dark`: what the demo's windows are forced to
 ///   (`forceAppearance`), for the website's dark twins; the canvas's paper stays light (CLAUDE.md, `PKCanvasView`).
 /// - `SEMPERE_DEMO_INSIGHTS`: `note`, `map` or `on` (unset: no insights providers at all, so no offer card; `on`: only the
@@ -41,12 +48,33 @@ import UIKit
 ///   simulator has no Apple model: it is never called), gives the demo's notes recognized text
 ///   (`DemoVault.insightsTexts`), runs the passes and opens the note's Note Insights sheet (`note`, over the
 ///   `SEMPERE_DEMO_NOTE` note) or the Map of Related Notes (`map`): `WindowSheets`.
+/// - `SEMPERE_DEMO_RECORDING`: the "thoughts" note also gets a recording with no transcript (`DemoVault.recordingOps`),
+///   and the model transcribes with `DemoTranscriber` (no speech engine): Transcribe Again in a UI test.
 /// - `SEMPERE_DEMO_NEARBY_JOIN`: lists one synthetic join request as having come nearby (`Demo iPhone`) for Add
 ///   Device, and, on a locked demo's join screen, shows the nearby link as connected.
 /// - `SEMPERE_DEBUG_COLUMNS`: `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the
 ///   stored (with `SEMPERE_DEBUG_FRESH`, the default) layout (`DebugLaunch`).
 /// - `SEMPERE_DEBUG_PENCIL_ONLY`: the canvases draw with the Pencil only, as on an iPad with a
 ///   paired Pencil, so a simulated finger taps, holds and scrolls (`IPadCanvasUITests`).
+/// `SEMPERE_DEMO_RECORDING`'s transcriber: no speech engine, the file is not read. The transcript says the language it
+/// was asked for ("Demo transcript es-ES"; the note's language, else "en-US", when none was chosen), so a UI test sees
+/// which choice of a Transcribe menu ran.
+struct DemoTranscriber: RecordingTranscribing {
+    func transcribe(file: URL, recording: UUID, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript {
+        try await transcribe(file: file, recording: recording, language: nil, noteLanguage: noteLanguage,
+                             allowModelDownload: allowModelDownload)
+    }
+
+    func transcribe(file: URL, recording: UUID, language: String?, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript {
+        let tag = language ?? noteLanguage ?? "en-US"
+        return TranscriptBuilder.transcript(recording: recording, engine: "demo-1", language: tag,
+                                            segments: TranscriptBuilder.segments(fromWords: [
+                                                RecognizedSpan(text: "Demo", start: 0.2, end: 0.6, confidence: 0.9),
+                                                RecognizedSpan(text: "transcript", start: 0.6, end: 1.2, confidence: 0.9),
+                                                RecognizedSpan(text: tag, start: 1.2, end: 1.8, confidence: 0.9)]))
+    }
+}
+
 enum DemoLaunch {
     static var isActive: Bool { DebugLaunch.environment["SEMPERE_DEMO"] != nil }
 
@@ -63,7 +91,7 @@ enum DemoLaunch {
     }
 
     @MainActor
-    static func run(_ model: AppModel, keys: RememberedKeys? = nil) async {
+    static func run(_ model: AppModel, library: VaultLibrary, keys: RememberedKeys? = nil) async {
         let env = DebugLaunch.environment
         forceAppearance(sceneWindows, env["SEMPERE_DEMO_APPEARANCE"])
         applyWindowSize(env["SEMPERE_DEMO_MAC_WINDOW"])
@@ -80,16 +108,19 @@ enum DemoLaunch {
             // No providers: the demo never calls Apple's model, and the note list shows no Note Insights offer.
             model.insightsServices = .none
         }
+        if env["SEMPERE_DEMO_RECORDING"] != nil { model.transcriber = DemoTranscriber() }
         await model.report {
             let dir = directory
             let png = env["SEMPERE_DEMO_ITEMS"] != nil ? demoImage() : nil
             let dense = env["SEMPERE_DEMO_DENSE"].flatMap { Int($0) }
             let search = env["SEMPERE_DEMO_SEARCH"] != nil
+            let recording = env["SEMPERE_DEMO_RECORDING"] != nil
             let trust = model.trust
             let device = try env["SEMPERE_DEMO_DEVICE_KEY"].map(DeviceKeys.parse)
+            try await createExtraStoreVaults(model, library: library, keys: keys, env: env)
             let built = try await Task.detached {
                 try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense,
-                                          searchNotes: search, insightsText: insights != nil, trust: trust, device: device, app: NoteWriter.appName,
+                                          searchNotes: search, insightsText: insights != nil, recording: recording, trust: trust, device: device, app: NoteWriter.appName,
                                           perf: AppPerfSink())
             }.value
             try await model.openVault(at: try await storeCopy(of: built.url, model: model, env: env))
@@ -100,6 +131,7 @@ enum DemoLaunch {
             }
             if env["SEMPERE_DEMO_LOCKED"] == nil { try await model.unlock(identityText: built.identityText) }
             select(model, built: built, env: env)
+            if let pace = env["SEMPERE_DEMO_SYNC_FOLDER"] { try addSyncFolder(model, pace: pace) }
             if env["SEMPERE_DEMO_NEARBY_JOIN"] != nil { try model.debugSeedNearbyRequest(name: "Demo iPhone", kind: "iphone") }
         }
         if insights == "note" || insights == "map", env["SEMPERE_DEMO_LOCKED"] == nil, passphrase == nil { await prepareInsights(model) }
@@ -149,6 +181,59 @@ enum DemoLaunch {
             for old in store.list() where old.name == storeName { try? store.remove(old.vaultId) }
             return try store.importVault(from: url, options: VaultStore.ImportOptions(name: storeName)).url
         }.value
+    }
+
+    /// The names of `SEMPERE_DEMO_STORE_EXTRA`'s vaults, in list order (after the demo's).
+    static let extraStoreNames = ["Sempere Demo B", "Sempere Demo C"]
+
+    /// `SEMPERE_DEMO_STORE_EXTRA` (with `SEMPERE_DEMO_STORE` and `SEMPERE_DEBUG_MEMORY_KEYS`): creates the first that
+    /// many of `extraStoreNames` as New Vault does (keys saved first, then `createVault`, which opens each), and drops
+    /// their recent entries, so the list orders them by name after the demo's ("Sempere Demo"). On a simulator an
+    /// earlier launch's vaults of these names are removed first.
+    @MainActor
+    static func createExtraStoreVaults(_ model: AppModel, library: VaultLibrary, keys: RememberedKeys?,
+                                       env: [String: String]) async throws {
+        guard env["SEMPERE_DEMO_STORE"] != nil, env["SEMPERE_DEBUG_MEMORY_KEYS"] != nil, let keys, let count = env["SEMPERE_DEMO_STORE_EXTRA"].flatMap({ Int($0) }),
+              count > 0 else { return }
+        let names = Array(extraStoreNames.prefix(count))
+        #if targetEnvironment(simulator)
+        let store = library.vaultStore
+        await Task.detached {
+            for old in store.list() where names.contains(old.name) { try? store.remove(old.vaultId) }
+        }.value
+        await library.refreshStoredVaults()
+        #endif
+        var created: [UUID] = []
+        for name in names {
+            var request = NewVaultRequest(name: name, keySource: .generate, passphrase: nil, deviceName: "Demo Device",
+                                          deviceKind: UIDevice.current.userInterfaceIdiom == .phone ? "iphone" : "ipad")
+            let device = try keys.store.generate()
+            request.device = device
+            try await keys.saveCreatedVaultKeys(device, vaultID: request.vaultId, vaultName: name)
+            created.append(try await model.createVault(request, library: library).vaultID)
+        }
+        // Never opened, as far as the list goes: the list orders vaults with no recent entry by name, after the opened
+        // ones, and the demo opened next (`openVault`) records none either, so the order is the names'.
+        for recent in library.recents where recent.storeID.map(created.contains) == true { library.forget(recent) }
+    }
+
+    /// `SEMPERE_DEMO_SYNC_FOLDER` (with `SEMPERE_DEMO_STORE`): adds a folder in the app's temporary directory as a sync
+    /// target of the demo's store copy, its idle runs every `pace` seconds (a number; else the app's 60), so UI tests see
+    /// the list while runs go (`VaultListSwipeUITests`). Replaced on every launch.
+    @MainActor
+    static func addSyncFolder(_ model: AppModel, pace: String) throws {
+        guard let vaultID = model.vault?.vaultId else { return }
+        let drive = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("DemoSync", isDirectory: true)
+        try? FileManager.default.removeItem(at: drive)
+        try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+        try model.addPickedFolderTarget(drive, to: vaultID)
+        if let seconds = TimeInterval(pace), seconds > 0 {
+            for session in model.syncSessions {
+                session.schedule.idleInterval = seconds
+                session.schedule.maxIdleInterval = seconds
+                session.schedule.arrivingInterval = seconds   // the first run copies the vault: "active" after it
+            }
+        }
     }
 
     /// The `SEMPERE_DEMO_SIDEBAR` and `SEMPERE_DEMO_NOTE` choices.

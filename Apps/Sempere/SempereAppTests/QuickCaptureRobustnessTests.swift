@@ -33,6 +33,7 @@ enum TestAudio {
         buffer.frameLength = frames
         for i in 0..<Int(frames) { samples[i] = Float(sin(Double(i) * 2 * .pi * 440 / 44_100)) * 0.3 }
         try file.write(from: buffer)
+        file.close()   // finalize the encoder now (an open AAC writer holds a coreaudiod client)
     }
 
     /// The first `fraction` of `source`'s bytes in `url`: what a recorder killed mid-file leaves (the cut falls

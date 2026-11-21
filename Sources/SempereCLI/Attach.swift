@@ -309,7 +309,7 @@ struct AttachImage: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let data = try readInput(file, limit: ImageLimits.maxBlobBytes, what: "image (exports draw larger ones as placeholders)")
         let image = try translating { try ImageIngest.prepare(data, privacy: !keepMetadata, converter: nil) }
         let ref = BlobRef(content: image.data, type: image.mediaType)
@@ -383,7 +383,7 @@ struct AttachPDF: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let data = try readInput(file, limit: 1 << 30, what: "PDF")
         let summary = try translating { try PDFIngest.inspect(data) }
         var selected = try translating { try pages.map { try summary.pages(numbered: try $0.resolve(total: summary.pages.count)) } ?? summary.pages }
@@ -520,7 +520,7 @@ struct AttachText: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let string = try text ?? readText()
         let style = TextStyle(font: font.font, size: size, color: color?.color ?? .black, align: align?.alignment,
                               bold: bold, italic: italic, lang: lang)
@@ -661,7 +661,7 @@ struct AttachRecording: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let url = URL(fileURLWithPath: file)
         var info: AudioInfo
         let mediaType = type ?? "audio/mp4"
@@ -742,7 +742,7 @@ struct AttachTranscript: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let content = try readInput(file, limit: Transcript.maxSize, what: "transcript")
         let before = try liveState(vault, id)
         let target = try resolveRecording(recording, in: before)
@@ -875,7 +875,7 @@ struct AttachMath: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let latex = try source.read() ?? ""
         var content = try translating { try NoteOps.math(latex, display: !inline, size: size, color: color?.color ?? .black) }
         let rendering = try render.map { try MathRenderInput(path: $0) }

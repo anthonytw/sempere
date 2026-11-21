@@ -1,3 +1,4 @@
+import Sempere
 import SempereRender
 import SwiftUI
 import UIKit
@@ -12,6 +13,10 @@ struct ExportSheet: View {
     @State private var job = ExportJob()
     @State private var options: ShareOptions
     @State private var handOff = ExportHandOffState()
+    /// A web page's passphrase: generated for this sheet, never stored (design §3.4); the user may type their own.
+    @State private var generatedPassphrase = GeneratedPassphrase.make()
+    @State private var useOwnPassphrase = false
+    @State private var ownPassphrase = ""
 
     init(request: ExportRequest) {
         self.request = request
@@ -73,8 +78,13 @@ struct ExportSheet: View {
             .pickerStyle(.inline)
             .labelsHidden()
         }
+        if options.format == .webPage { passphraseSection }
         Section {
-            if options.format != .media {
+            if options.format == .webPage {
+                if recordingCount > 0 { Toggle("Include Recordings", isOn: $options.webShare.includeAudio) }
+                Toggle("Include Recognized Text", isOn: $options.webShare.includeText)
+            }
+            if options.format != .media && options.format != .webPage {
                 Toggle("Paper Background and Ruling", isOn: $options.paper)
             }
             if options.format == .png || (options.format == .markdown && options.markdownImages == .png) {
@@ -104,16 +114,92 @@ struct ExportSheet: View {
         }
         Section {
             Button("Export", systemImage: ExportCommand.menuImage) {
-                job.start(model: model, ids: request.noteIDs, options: options)
+                var run = options
+                if run.format == .webPage { run.webSharePassphrase = passphrase }
+                job.start(model: model, ids: request.noteIDs, options: run)
             }
+            .disabled(options.format == .webPage && passphrase.isEmpty)
         } footer: {
-            Label("Exports are not encrypted. Anyone who receives the files can read the notes.", systemImage: "lock.open")
-                .font(.footnote)
+            if options.format == .webPage {
+                Label("Anyone who has the file and the passphrase can read the note. Send them in different ways.", systemImage: "lock")
+                    .font(.footnote)
+            } else {
+                Label("Exports are not encrypted. Anyone who receives the files can read the notes.", systemImage: "lock.open")
+                    .font(.footnote)
+            }
         }
+    }
+
+    /// The passphrase the page is encrypted with: seven generated words, or the user's own.
+    private var passphrase: String { useOwnPassphrase ? ownPassphrase : generatedPassphrase }
+
+    /// The page's passphrase: generated, with Copy (this device only, gone after two minutes) and "Use my own".
+    @ViewBuilder
+    private var passphraseSection: some View {
+        Section {
+            if useOwnPassphrase {
+                SecureField("Your Passphrase", text: $ownPassphrase)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            } else {
+                Text(verbatim: generatedPassphrase).font(.body.monospaced()).accessibilityIdentifier("sharePassphrase")
+                CopyPassphraseButton(passphrase: generatedPassphrase)
+            }
+            Toggle("Use My Own Passphrase", isOn: $useOwnPassphrase)
+        } header: {
+            Text("Passphrase for the Page")
+        } footer: {
+            if useOwnPassphrase && Self.isShort(ownPassphrase) {
+                Text("A short passphrase can be guessed. Use the generated one if you can.")
+            }
+        }
+    }
+
+    /// A copied passphrase stays on this device's pasteboard for two minutes.
+    static let passphraseLifetime: TimeInterval = 120
+
+    /// Under 12 characters or four words: a warning, never a refusal (design §3.4).
+    static func isShort(_ passphrase: String) -> Bool {
+        guard !passphrase.isEmpty else { return false }
+        let words = passphrase.split(whereSeparator: { " -_".contains($0) }).count
+        return passphrase.count < 12 || words < 4
+    }
+
+    /// A web page made: its size line, and the passphrase until the sheet closes (the app keeps it nowhere else).
+    @ViewBuilder
+    private func webPageResult(_ outcome: ExportJob.Outcome, _ sections: WebShareSections) -> some View {
+        Section {
+            Label("Web page made", systemImage: "checkmark.circle").foregroundStyle(.green)
+            ForEach(outcome.items, id: \.self) { Text($0.lastPathComponent).font(.callout) }
+            Text(verbatim: Self.sizeLine(sections)).font(.callout).foregroundStyle(.secondary)
+        } footer: {
+            Text("The page opens in a web browser. Mail's preview and most chat apps' previews do not open it: send the file as an attachment.")
+        }
+        // Right under the file, not at the bottom of the sheet: the share sheet opens by itself and these stay as the way back.
+        handOffSection(outcome)
+        Section {
+            Text(verbatim: passphrase).font(.body.monospaced())
+            CopyPassphraseButton(passphrase: passphrase)
+        } header: {
+            Text("Passphrase for the Page")
+        } footer: {
+            Text("Send the passphrase in a different way than the file. The app keeps it nowhere: it is gone when you close this sheet.")
+        }
+    }
+
+    /// "4.2 MB in all: ink 0.9 MB, pictures 2.6 MB, audio 0 KB, viewer 0.7 MB".
+    static func sizeLine(_ s: WebShareSections) -> String {
+        func size(_ n: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file) }
+        return String(localized: "\(size(s.total)) in all: ink \(size(s.ink)), pictures \(size(s.images)), audio \(size(s.audio)), viewer \(size(s.template))",
+                      comment: "Export web page: where the file's bytes went, the sizes already worded")
     }
 
     @ViewBuilder
     private func result(_ outcome: ExportJob.Outcome) -> some View {
+        if options.format == .webPage, let sections = outcome.webShareSections {
+            webPageResult(outcome, sections)
+        } else {
         Section {
             Label("\(outcome.exported) notes exported", systemImage: "checkmark.circle").foregroundStyle(.green)
             if outcome.recordingsAttached > 0 {
@@ -134,6 +220,7 @@ struct ExportSheet: View {
             }
             ForEach(outcome.items, id: \.self) { Text($0.lastPathComponent).font(.callout) }
         }
+        }
         if !outcome.failures.isEmpty {
             Section("Not exported") {
                 ForEach(outcome.failures, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
@@ -144,8 +231,15 @@ struct ExportSheet: View {
                 ForEach(outcome.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
             }
         }
+        if !(options.format == .webPage && outcome.webShareSections != nil) { handOffSection(outcome) }
+    }
+
+    /// Share… and Save…; the share sheet is up as soon as the files are made (`ExportHandOffButtons.autoShare`),
+    /// unless something was left out or not exported: the sheet would cover what the sections above say.
+    private func handOffSection(_ outcome: ExportJob.Outcome) -> some View {
         Section {
-            ExportHandOffButtons(state: $handOff, items: outcome.items)
+            ExportHandOffButtons(state: $handOff, items: outcome.items,
+                                 autoShare: outcome.failures.isEmpty && outcome.warnings.isEmpty)
         } footer: {
             Text("The files are deleted from the app when you close this sheet.")
         }
@@ -162,7 +256,10 @@ struct ExportSheet: View {
         guard count > 0 else { return "" }
         // A leading space: the sentence follows `shape(of:)` in the same footer.
         let sentence: String
-        if options.format == .media {
+        if options.format == .webPage && options.webShare.includeAudio {
+            sentence = String(localized: "\(count) recordings and their transcripts included, as far as they fit.",
+                              comment: "Export web page: recordings included while they fit in the size limit")
+        } else if options.format == .media {
             sentence = String(localized: "\(count) recordings and their transcripts included.")
         } else if options.format == .pdf && options.pdfAttachments {
             sentence = String(localized: "\(count) recordings and their transcripts attached to the PDF.")
@@ -196,6 +293,9 @@ struct ExportSheet: View {
         case .html:
             return many ? String(localized: "A folder with one self-contained HTML file per note and an index.")
                 : String(localized: "One self-contained HTML file.")
+        case .webPage:
+            return String(localized: "One page that opens in any web browser, encrypted with a passphrase.",
+                          comment: "Export web page: what the export contains")
         case .media:
             return many ? String(localized: "A folder per note with its recordings, transcripts, videos, images and PDFs as files.")
                 : String(localized: "A folder with the note's recordings, transcripts, videos, images and PDFs as files.")
@@ -212,22 +312,24 @@ extension ShareFormat {
         case .markdown: return String(localized: "Text (Markdown)", comment: "Export format: Markdown text")
         case .html: return String(localized: "HTML", comment: "Export format: HTML page")
         case .media: return String(localized: "Media", comment: "Export format: recordings, videos, images and PDFs as files")
+        case .webPage: return String(localized: "Web Page (Encrypted)", comment: "Export format: one note as an encrypted web page")
         }
     }
 }
 
 /// The system share sheet (AirDrop, Messages, Mail, Save to Files, ...) for files and folders.
-/// `secret` (a vault key): without Copy, which would put it on the general pasteboard with no
-/// expiry and send it to the user's other devices (`SecretSharing`).
+/// `secret` (a vault key): without the system's Copy, which would put it on the general pasteboard with no
+/// expiry and send it to the user's other devices; a Copy that still shows (iOS 27 and the Mac's share menu list
+/// one whatever `excludedActivityTypes` says) copies through `SecretPasteboard` instead (`SecretSharing`).
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     var secret = false
     let done: () -> Void
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = secret ? SecretSharing.controller(items: items)
-            : UIActivityViewController(activityItems: items, applicationActivities: nil)
         let callback = MainCallback(done)
+        if secret { return SecretSharing.controller(items: items) { callback.run() } }
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
         controller.completionWithItemsHandler = ExportHandOff.completion { callback.run() }
         return controller
     }
@@ -235,9 +337,10 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// Sharing a secret key (its text or its key file): the share sheet offers no Copy (the Mac's share
-/// menu still lists one, which is handed nothing: `SecretItem`). Copying goes
-/// through `SecretPasteboard` alone (local only, expiring), and the key's text is never selectable.
+/// Sharing a secret key (its text or its key file): the share sheet is asked to leave Copy out, and a Copy that is
+/// listed anyway is handed nothing (`SecretItem`) and answered by `SecretPasteboard` (local only, expiring) when
+/// it finishes, so it works instead of copying nothing (TestFlight 1.3.0 build 111). The key's text is never
+/// selectable: a selection's ⌘C would be the system's copy, with no expiry and open to Universal Clipboard.
 @MainActor
 enum SecretSharing {
     /// Activities a secret is never handed to.
@@ -245,11 +348,54 @@ enum SecretSharing {
 
     /// A share sheet for `items` without the `excluded` activities. On a Mac the share menu
     /// (macOS 27) lists Copy whatever `excludedActivityTypes` says, so each item is also handed
-    /// out through `SecretItem`, which gives a copy activity nothing.
-    static func controller(items: [Any]) -> UIActivityViewController {
+    /// out through `SecretItem`, which gives a copy activity nothing. When a copy activity completes, the text
+    /// items go to `SecretPasteboard`. `done` runs on the main actor when the sheet finishes (shared, copied or
+    /// canceled); it must only close the share sheet, never the screen under it.
+    static func controller(items: [Any], done: @escaping @MainActor @Sendable () -> Void = {})
+        -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: items.map(SecretItem.init), applicationActivities: nil)
         controller.excludedActivityTypes = excluded
+        let texts = items.compactMap { $0 as? String }
+        controller.completionWithItemsHandler = { @Sendable type, completed, _, _ in
+            ExportHandOff.onMain {
+                if completed, copies(type), let text = texts.first { SecretPasteboard.copy(text) }
+                done()
+            }
+        }
         return controller
+    }
+
+    /// The share sheet for a secret, presented by UIKit over the topmost screen of `view` (a popover from it on an
+    /// iPad or a Mac): finishing it dismisses only itself. Hosted as the root of a second SwiftUI sheet it took the
+    /// new-vault sheet with it when its Copy finished (owner, build 111), so the receipt is never left.
+    /// Returns false when `view` has no screen yet, or its screen is busy presenting or dismissing (`isBusy`): UIKit
+    /// would refuse the presentation and never run `done`, so the caller shows `ShareSheet` in a sheet instead and
+    /// its dismissal unstages what was staged.
+    @discardableResult
+    static func present(_ items: [Any], from view: UIView, done: @escaping () -> Void) -> Bool {
+        guard let presenter = ExportHandOff.presenter(of: view), !isBusy(presenter) else { return false }
+        let callback = MainCallback(done)
+        let controller = controller(items: items) { callback.run() }
+        if view.traitCollection.userInterfaceIdiom != .phone { controller.modalPresentationStyle = .popover }
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = view.bounds
+        }
+        presenter.present(controller, animated: true)
+        return true
+    }
+
+    /// Whether a share sheet is already up over `view`'s screen, or a presentation is on its way in or out there (a
+    /// second tap on Share… while the first sheet appears). Callers ignore such a tap before staging anything: a
+    /// second `KeyShareFile.stage` would remove the file the first sheet is sharing.
+    static func isBusy(_ view: UIView) -> Bool {
+        guard let presenter = ExportHandOff.presenter(of: view) else { return false }
+        return isBusy(presenter)
+    }
+
+    private static func isBusy(_ presenter: UIViewController) -> Bool {
+        presenter is UIActivityViewController || presenter.isBeingPresented || presenter.isBeingDismissed
+            || presenter.presentedViewController != nil
     }
 
     /// Whether `type` copies to the pasteboard: UIKit's own, or a Mac sharing service named so.
@@ -325,6 +471,10 @@ struct ExportHandOffState {
     var items: [URL] = []
     var sharing = false
     var saving = false
+    /// The files last shared on their own (`ExportHandOffButtons.autoShare`): each export's files are shared
+    /// once, however often the buttons reappear (a Form row scrolled out and back reruns its `.task`, and a
+    /// Mac's picker is presented from the anchor without `sharing`, so it is no guard).
+    var autoShared: [URL]?
     /// Why the last Save to Files was undone (a folder inside a vault or a backup), shown as an alert.
     var refusal: String?
     /// The view the Mac's share picker and save panel are presented from.
@@ -363,11 +513,23 @@ extension View {
 struct ExportHandOffButtons: View {
     @Binding var state: ExportHandOffState
     let items: [URL]
+    /// Present the share sheet (which offers Save to Files) as soon as the buttons appear, once per set of files
+    /// (`ExportHandOffState.autoShared`); the buttons stay as
+    /// the way back after it is dismissed (owner, build 112: the file was made at the top and Share was below).
+    var autoShare = false
 
     // help-lint: titled (placed in a Form section, where the titles show)
     var body: some View {
         Button("Share…", systemImage: "square.and.arrow.up") { deliver(save: false) }
             .background(PresentationAnchor(box: state.anchor))
+            .task(id: items) {
+                guard autoShare, !items.isEmpty, state.autoShared != items else { return }
+                // The anchor needs a moment to be in a window (a Mac presents from it).
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, !state.sharing, !state.saving, state.autoShared != items else { return }
+                state.autoShared = items
+                deliver(save: false)
+            }
         Button(Platform.isMac ? LocalizedStringKey("Save…") : LocalizedStringKey("Save to Files…"),
                systemImage: "folder") { deliver(save: true) }
     }
@@ -377,6 +539,24 @@ struct ExportHandOffButtons: View {
         ExportHandOff.deliver(items, save: save, anchor: state.anchor) { save in
             if save { state.saving = true } else { state.sharing = true }
         }
+    }
+}
+
+/// Copy for a web page's passphrase: "Copied" after a tap, until the passphrase changes.
+struct CopyPassphraseButton: View {
+    let passphrase: String
+    @State private var copiedPassphrase: String?
+
+    var body: some View {
+        let copied = copiedPassphrase == passphrase
+        Button(copied ? String(localized: "Copied", comment: "Button after the secret key was copied")
+                      : String(localized: "Copy Passphrase"),
+               systemImage: copied ? "checkmark" : "doc.on.doc") {
+            SecretPasteboard.copy(passphrase, lifetime: ExportSheet.passphraseLifetime)
+            copiedPassphrase = passphrase
+        }
+        .help("Copy the passphrase to the clipboard")
+        .accessibilityIdentifier("copyPassphrase")
     }
 }
 

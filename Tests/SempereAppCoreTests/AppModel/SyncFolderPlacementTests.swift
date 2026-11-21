@@ -80,8 +80,10 @@ extension AppModelSuites {
             let (device, picked) = try await Self.setUp()
             defer { device.model.close() }
             let name = device.folder.lastPathComponent
-            let copy = picked.appendingPathComponent(name)
             let added = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
+            // The copy Add Folder… made in the picked folder (a `….sempere-vault` folder since 1.3).
+            let copy = picked.appendingPathComponent(try #require(added.subfolder))
+            #expect(copy.lastPathComponent == SyncFolderName.name(forVault: name))
             await device.model.syncAllTargetsNow()
             try await device.model.removeSyncTarget(added.id, of: device.vaultID)
             let itself = try device.model.addPickedFolderTarget(copy, to: device.vaultID)

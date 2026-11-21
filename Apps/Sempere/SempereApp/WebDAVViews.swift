@@ -328,8 +328,10 @@ private struct CertificateWarning: View {
     }
 }
 
-/// The note list's bar for a WebDAV vault (`SyncStatus`): syncing, synced, offline, waiting for the
-/// unlock, or what went wrong, with Sync Now and Server Settings….
+/// The note list's bar for one sync target (`SyncStatus`), shown only while something is definitely wrong
+/// (`SyncSession.needsAttention`, owner 2026-11-20): what went wrong, with Sync Now, Sync Targets… and Server Settings….
+/// Syncing, synced, waiting and offline show no bar; each target's status line stays in Sync Targets… (the sidebar's More
+/// menu, File ▸ Sync Targets…, Settings) and Vault Details.
 struct WebDAVStatusBar: View {
     @AppModelEnvironment private var model
     let session: SyncSession
@@ -343,7 +345,7 @@ struct WebDAVStatusBar: View {
                 if model.syncSessions.count > 1 {
                     Text(session.targetName).font(.caption2.weight(.semibold))
                 }
-                Text(session.headline).font(.caption)
+                Text(session.attentionHeadline).font(.caption)
                 if let last = session.lastSuccess, !session.isSyncing {
                     if session.status.lastSuccessIsSync {
                         Text("Last sync \(last, format: .relative(presentation: .named))")
@@ -386,7 +388,7 @@ struct WebDAVStatusBar: View {
     }
 
     private var icon: String {
-        switch session.status.kind {
+        switch session.status.settledKind {
         case .syncing: return "arrow.triangle.2.circlepath"
         case .offline: return "wifi.slash"
         case .problem: return "exclamationmark.triangle.fill"
@@ -412,10 +414,10 @@ struct JoiningWebDAVRows: View {
     @AppEnvironmentObject private var library: VaultLibrary
     @AppEnvironmentObject private var keys: RememberedKeys
     let locations: [WebDAVLocation]
-    @State private var removing: WebDAVLocation?
-    @State private var removingUnconfirmed = 0
-    /// What removing it does to this device's key (`KeyRemoval`, the same check as Delete from This Device).
-    @State private var removal = KeyRemoval()
+    /// The welcome list's confirmations (`WelcomeRemovalDialogs`, on the list): a dialog on a row or on the section
+    /// closed again when the list redrew its cells (several rows presenting at once on Mac Catalyst 27; a sync run or a
+    /// closing swipe on the iPhone and iPad).
+    let removals: WelcomeRemovals
 
     var body: some View {
                 ForEach(locations) { location in
@@ -429,49 +431,16 @@ struct JoiningWebDAVRows: View {
                         }
                     }
                     .swipeActions {
-                        Button("Remove", role: .destructive) {
+                        // Asks first: no destructive role, or SwiftUI removes the row before the confirmation
+                        // (`StoredVaultsSection`).
+                        Button("Remove") {
                             Task { await prepareRemoval(location) }
                         }
+                        .tint(.red)
                     }
                     .contextMenu {
                         Button("Remove from This Device…", systemImage: "trash", role: .destructive) {
                             Task { await prepareRemoval(location) }
-                        }
-                    }
-                    // On this location's row, shown for it only: on the section the dialog was on
-                    // each of its rows, and several rows presenting at once can close it again on
-                    // Mac Catalyst 27.
-                    .confirmationDialog("Remove this vault from this device?",
-                                        isPresented: Binding(get: { removing?.id == location.id }, set: { if !$0 { removing = nil } }),
-                                        titleVisibility: .visible, presenting: removing) { removed in
-                        Button("Remove", role: .destructive) {
-                            Task {
-                                await model.report {
-                                    try await model.removeWebDAVLocation(removed.id, library: library)
-                                    // The same rule as Delete from This Device: this device's keys for it go too,
-                                    // unless another local copy opens with them.
-                                    if let id = UUID(uuidString: removed.vaultId) {
-                                        try? await keys.store.delete(for: id)
-                                    }
-                                }
-                            }
-                        }
-                        if removal.offersMakeHome {
-                            Button("Open to Make Another Device Home") {
-                                removing = nil
-                                Task { await model.report { try await model.openWebDAV(location.id, library: library) } }
-                            }
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: { _ in
-                        if removingUnconfirmed > 0 {
-                            let fileCount = removingUnconfirmed
-                            Text("\(fileCount) changes on this device have not reached the server and will be lost. Open the vault and sync first to keep them.")
-                        } else if let warning = removal.removalWarning() {
-                            Text("\(warning) The vault on the server is not changed.",
-                                 comment: "Remove a WebDAV vault from this device: the warning about this device's key, then this")
-                        } else {
-                            Text("The copy on this device, this device's key for it and the saved password are deleted. The vault on the server is not changed.")
                         }
                     }
                 }
@@ -480,14 +449,14 @@ struct JoiningWebDAVRows: View {
     /// Counts the changes the server has not confirmed and runs the key check (home, other local copies) on the
     /// location's copy, then asks.
     private func prepareRemoval(_ location: WebDAVLocation) async {
-        removingUnconfirmed = await model.unconfirmedWebDAVChanges(location.id)
+        let ask = removals.newAsk()
+        let unconfirmed = await model.unconfirmedWebDAVChanges(location.id)
+        var removal = KeyRemoval()
         if let id = UUID(uuidString: location.vaultId) {
             let folder = model.webdavLocations.copy(of: location).folder
             removal = await KeyRemoval.check(vaultID: id, at: folder, store: keys.store)
-        } else {
-            removal = KeyRemoval()
         }
-        removing = location
+        removals.askToRemove(location, unconfirmed: unconfirmed, removal: removal, ask: ask)
     }
 }
 

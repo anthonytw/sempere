@@ -447,7 +447,7 @@ final class ImageStore {
     let decoder: (any ImageDecoding)?
     let maxPixels: Int
     private var loaded: [String: Result<LoadedImage, PlaceholderReason>] = [:]
-    private var decoded: [String: Result<RGBAImage, PlaceholderReason>] = [:]
+    private(set) var decoded: [String: Result<RGBAImage, PlaceholderReason>] = [:]
     private var reduced: [String: Result<RGBAImage, PlaceholderReason>] = [:]
     /// The successful `reduced` keys, least recently used first.
     private var reducedOrder: [String] = []

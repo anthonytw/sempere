@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every XCTestCase class in Apps/Sempere/SempereAppUITests is in one of scripts/app.sh's UI lists (ui_mac, ui_mac_smoke,
-# ui_ipad, ui_phone, ui_pseudo, ui_tooling), and every name in those lists is such a class (or Class/test of one): a new
+# ui_ipad, ui_phone, ui_pseudo, ui_tooling, ui_manual), and every name in those lists is such a class (or Class/test of one): a new
 # UI test class cannot silently never run, and a renamed or deleted one cannot linger in a list (`KeyShareMacUITests`
 # did). Run by local-ci.sh's `help` step.
 set -euo pipefail
@@ -12,7 +12,7 @@ classes=$(grep -hoE '^(final )?class [A-Za-z0-9_]+: XCTestCase' "$dir"/*.swift |
 
 # The lists, as app.sh defines them (between its ui-lists markers).
 eval "$(sed -n '/^# ui-lists:begin/,/^# ui-lists:end/p' scripts/app.sh)"
-listed=$(printf '%s\n' "${ui_mac[@]}" "${ui_mac_smoke[@]}" "${ui_ipad[@]}" "${ui_phone[@]}" "${ui_pseudo[@]}" "${ui_tooling[@]}" \
+listed=$(printf '%s\n' "${ui_mac[@]}" "${ui_mac_smoke[@]}" "${ui_ipad[@]}" "${ui_phone[@]}" "${ui_pseudo[@]}" "${ui_tooling[@]}" "${ui_manual[@]}" \
   | sed -E 's|/.*||' | sort -u)
 
 status=0

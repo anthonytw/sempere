@@ -25,6 +25,7 @@ extension AppModelCore {
         guard let vault else { return }
         settingsSync = Self.loadSettingsSyncState(services.settings, vaultId: vault.vaultId)
         settingsSyncProblem = nil
+        if !settingsSync.enabled { refreshSavedTools() }
         if settingsSyncObserver == nil {
             settingsSyncObserver = services.settings.observeChanges { [weak self] in
                 Task { @MainActor [weak self] in self?.settingsDefaultsChanged() }
@@ -42,6 +43,7 @@ extension AppModelCore {
         settingsSync = SettingsSyncState()
         settingsSyncProblem = nil
         settingsSyncPrompt = nil
+        savedTools = localSavedTools
     }
 
     nonisolated static func loadSettingsSyncState(_ defaults: any KeyValueStore, vaultId: UUID) -> SettingsSyncState {
@@ -104,6 +106,7 @@ extension AppModelCore {
             settingsSync.disable()
             settingsSyncProblem = nil
             saveSettingsSyncState()
+            refreshSavedTools()
             return
         }
         guard !settingsSync.enabled else { return }
@@ -116,6 +119,7 @@ extension AppModelCore {
                 return try state.enable(.useVault, local: local, file: file, type: type, now: now)
             }
         }
+        await adoptSavedToolsAfterEnabling()
     }
 
     /// The answer to `settingsSyncPrompt` (nil: cancel, sync stays off).
@@ -125,6 +129,7 @@ extension AppModelCore {
         await runSettingsStep(enabling: true) { state, local, file, type, now in
             try state.enable(choice, local: local, file: file, type: type, now: now)
         }
+        await adoptSavedToolsAfterEnabling()
     }
 
     /// "Only on This Device" (docs/settings-sync.md §4.3).
@@ -211,6 +216,7 @@ extension AppModelCore {
         guard (try? ensureCurrent(gen)) != nil else { return }
         guard let pass = decided else { return }   // the step asked the user first
         settingsSync = state
+        refreshSavedTools(file: file)
         if !pass.warnings.isEmpty {
             log.log(.error, "settings", "settings.age: \(pass.warnings.count) invalid values skipped")
         }

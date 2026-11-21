@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereRender
+import SempereShareViewer
 
 /// A request whose sheet shows in the window that asked for it.
 public protocol WindowTargeted {
@@ -66,6 +67,8 @@ extension ShareFormat {
         switch self {
         case .markdown: return notes.contains { $0.recognizedPages > 0 }
         case .media: return notes.contains(where: MediaExport.mayHaveMedia)
+        // A page holds one note.
+        case .webPage: return notes.count == 1
         default: return true
         }
     }
@@ -107,9 +110,12 @@ extension AppModelCore {
     ///
     /// - Throws: `CancellationError` (also when the vault is closed meanwhile),
     ///   `ModelError.noVaultOpen`, or a file error for `scratch`.
-    public func exportNotes(_ ids: [UUID], options: ShareOptions, into scratch: URL,
+    public func exportNotes(_ ids: [UUID], options requested: ShareOptions, into scratch: URL,
                      progress: @escaping @MainActor @Sendable (ExportProgress) -> Void) async throws -> ShareResult {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
+        var options = requested
+        // The viewer page of a web page share is this build's (SempereShareViewer), never the caller's.
+        if options.format == .webPage { options.webShareTemplate = ShareTemplate(html: Data(ShareViewerTemplate.data)) }
         let gen = generation
         let unsaved = await flushEditors(for: Set(ids))
         try ensureCurrent(gen)
@@ -123,7 +129,13 @@ extension AppModelCore {
                 if unsaved.contains(id) { throw UnsavedChangesError() }
                 let item = try await loadNoteForExport(id, vault: vault, withSummary: true)
                 try ensureCurrent(gen)
-                if let summary = item.summary { loaded.append((summary, item.state)) }
+                if let summary = item.summary {
+                    // A voice note with no title of its own is named and headed by the title the list shows for it; a web
+                    // page share leaves the capture's date and time out of it unless it includes dates.
+                    let shown = options.format == .webPage
+                        ? shareTitle(summary, includeDates: options.webShare.includeDates, vault: vault) : displayTitle(summary)
+                    loaded.append((summary.showing(title: shown), item.state.showing(title: shown)))
+                }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -135,6 +147,15 @@ extension AppModelCore {
             // "PDF + attachments": iCloud fetches audio only when it is used (docs/attachments.md §4).
             // One that cannot be fetched is left out and reported by the export.
             for (summary, state) in loaded { await ensurePDFAttachmentsLocal(state, of: summary.id) }
+            try ensureCurrent(gen)
+        } else if options.format == .webPage && options.webShare.includeAudio {
+            // "Include recordings": fetched now; one that cannot be is left out and reported by the export.
+            for (summary, state) in loaded {
+                for r in state.recordings {
+                    try? await ensureBlobLocal(r.blob, of: summary.id)
+                    if let t = r.transcript { try? await ensureBlobLocal(t, of: summary.id) }
+                }
+            }
             try ensureCurrent(gen)
         } else if options.format == .media {
             // "Media": every file the export writes, fetched now; one that cannot be is left out and reported.

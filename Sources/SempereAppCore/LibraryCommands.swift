@@ -55,12 +55,20 @@ public enum LibraryCommands {
         case .editTags: ui.tagsNoteID = selected
         case .saveVersion: ui.saveVersionNoteID = selected
         case .versionHistory: ui.historyNoteID = selected
+        case .deleteNote where model.isSelectingNotes:
+            let ids = model.bulkTargetIDs(for: .delete)
+            if !ids.isEmpty { ui.bulkNoteAction = .delete(ids) }
+        case .restoreNote where model.isSelectingNotes:
+            let ids = model.bulkTargetIDs(for: .restore)
+            if !ids.isEmpty { ui.bulkNoteAction = .restore(ids) }
         case .deleteNote:
             if let selected { Task { await model.report { try await model.deleteNote(selected) } } }
         case .restoreNote:
             if let selected { Task { await model.report { try await model.restoreNote(selected) } } }
-        case .find:
+        case .find, .askYourNotes:
             if ColumnChoice(stored: storedColumns) == .detailOnly { outcome.columns = ColumnChoice.doubleColumn.stored }
+            // Find goes back to Search; Ask Your Notes… is the same field in Ask mode (its text is not the search text).
+            model.askTarget = command == .askYourNotes ? .ask : .search
             ui.searchPresented = true
         case .toggleNoteList: outcome.columns = ColumnChoice.toggled(storedColumns)
         default: break

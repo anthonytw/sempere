@@ -16,6 +16,7 @@
     "history.thinAfterDays",
     "insights.embeddingRevision",
     "insights.enabled",
+    "insights.language",
     "insights.voiceNoteTitle",
     "insights.workDevice",
     "math.recognize",
@@ -32,5 +33,9 @@
     "search.transcripts",
     "transcription.enabled",
     "transcription.language"
+  ],
+  "families": [
+    "palette.tool.",
+    "palette.toolOrder"
   ]
 }

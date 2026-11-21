@@ -39,8 +39,16 @@
 /scripts/run-tmp.sh             @anthonytw
 /justfile                       @anthonytw
 
-# The resolved dependency pins.
+# The resolved dependency pins (the web viewer's ship inside the CLI and the app through the share page).
 /Package.resolved               @anthonytw
+/web/package.json               @anthonytw
+/web/package-lock.json          @anthonytw
+
+# The share page's build inputs and the template the CLI and the app embed (docs/web-viewer.md "Share files").
+/web/src/share/                 @anthonytw
+/web/scripts/build-share.ts     @anthonytw
+/scripts/build-share-template.sh @anthonytw
+/Sources/SempereShareViewer/    @anthonytw
 
 # The workflows, composite actions, PR template and this file.
 /.github/                       @anthonytw

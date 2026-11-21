@@ -48,7 +48,7 @@ struct NoteWindowView: View {
             content
                 // The title only while the vault is unlocked: the system keeps window titles in its
                 // saved state (Mac), so a locked vault's windows show the generic one.
-                .navigationTitle((ready ? note : nil).map { NoteTitle.display($0.title) }
+                .navigationTitle((ready ? note : nil).map { NoteTitle.display(model.displayTitle($0)) }
                                  ?? String(localized: "Note", comment: "Window title while its note is not loaded"))
                 .toolbar {
                     // With the note open, its actions are the editor's toolbar (`NoteToolbar`, one order on every
@@ -97,6 +97,7 @@ struct NoteWindowView: View {
             }
         }
         .openedVaultAlert($openedVaultToConfirm)
+        .spotlightActivity()
         .task(id: LoadKey(ready: ready, epoch: model.keyEpoch)) { await load() }
         .task {
             // Restored without the library window: bring it up to open and unlock the vault.
@@ -184,7 +185,7 @@ struct NoteWindowView: View {
         context.pageStripVisible = pageStripVisible
         return CommandRouter(context: context, recents: library.recents.map { RecentItem(id: $0.id, name: $0.name) },
                              exportIDs: exportIDs, windowID: ui.id) { command in
-            guard !EditorCommands.perform(command, editor: editor, ui: ui) else { return }
+            guard !EditorCommands.perform(command, editor: editor, ui: ui, savedTools: model.savedTools.tools) else { return }
             guard !WindowCommands.perform(command, model: model, ui: ui, exportIDs: exportIDs) else { return }
             switch command {
             case .renameNote: ui.renameNoteID = value.noteID

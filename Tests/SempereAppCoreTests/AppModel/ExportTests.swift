@@ -1,7 +1,8 @@
 import Foundation
 import Sempere
 @testable import SempereAppCore
-import SempereRender
+@testable import SempereRender
+import SempereShareViewer
 import TempDirSupport
 import Testing
 
@@ -71,6 +72,46 @@ extension AppModelSuites {
             for url in r.items {
                 #expect(try Data(contentsOf: url).prefix(8) == Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
             }
+        }
+
+        // MARK: Web page (docs/design/1.3-share.md)
+
+        /// One note as an encrypted page: the file's name and title never carry the note's, the page is this build's
+        /// viewer (what `sempere share --verify` checks), and the sections tell where the bytes went.
+        @Test func webPageOfOneNoteIsEncryptedAndNamedWithoutItsTitle() async throws {
+            let model = try await Self.model()
+            defer { model.close() }
+            var options = ShareOptions(format: .webPage)
+            options.webSharePassphrase = "a passphrase for the test"
+            options.webShare.testScryptLog2N = 10
+            let r = try await export(model, [Self.lecture], options, into: try scratch())
+            #expect(r.items.map(\.lastPathComponent) == ["Shared note.html"])
+            #expect(r.exported == 1 && r.failures.isEmpty)
+            let file = try Data(contentsOf: r.items[0])
+            let html = String(decoding: file, as: UTF8.self)
+            #expect(!html.contains("Fixture lecture"))
+            #expect(html.contains("<title>Shared note</title>"))
+            let template = try #require(ShareTemplate(html: Data(ShareViewerTemplate.data)))
+            let verified = template.verify(file: file, minLog2N: 10)   // the tests write fast scrypt (2^10)
+            #expect(verified.ok && verified.scryptLog2N == 10)
+            #expect((r.webShareSections?.template ?? 0) > 100_000)
+            #expect((r.webShareSections?.ink ?? 0) > 0)
+        }
+
+        @Test func aWebPageHoldsOneNoteAndNeedsAPassphrase() async throws {
+            let model = try await Self.model()
+            defer { model.close() }
+            #expect(ShareFormat.webPage.isAvailable(for: Array(model.notes.prefix(1))))
+            #expect(!ShareFormat.webPage.isAvailable(for: model.notes))
+            #expect(model.canExport(.webPage, ids: [Self.lecture]))
+            #expect(!model.canExport(.webPage, ids: [Self.lecture, Self.deleted]))
+            await #expect(throws: ShareExportError.webPageNeedsOneNote) {
+                _ = try await export(model, [Self.lecture, Self.deleted], ShareOptions(format: .webPage), into: try scratch())
+            }
+            // No passphrase: reported as the note's failure, nothing written.
+            let r = try await export(model, [Self.lecture], ShareOptions(format: .webPage), into: try scratch())
+            #expect(r.items.isEmpty && r.failures.count == 1)
+            #expect(r.failures[0].contains("passphrase"))
         }
 
         @Test func markdownOfOneNoteIsOneFileByDefault() async throws {

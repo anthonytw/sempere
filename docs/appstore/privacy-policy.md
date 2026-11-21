@@ -1,6 +1,6 @@
 # Sempere Privacy Policy
 
-*Effective: 2026-10-06. Last updated: 2026-11-14.*
+*Effective: 2026-10-06. Last updated: 2026-11-21.*
 
 This page is the Privacy Policy URL's text. The URL is `https://sempere.anthonywertz.com/privacy`: the app's
 About screen links it (`SempereAbout.privacyPolicyURL`) and App Store Connect must name it. The website builds
@@ -56,6 +56,15 @@ your key, nobody can decrypt your notes.**
 
 ## On-device features
 
+- **Spotlight** is optional and off by default, per vault and per device (Settings ▸ Spotlight). If you turn it on,
+  your note titles, notebook names, tags and dates (and the vault's name, when two or more vaults use Spotlight on
+  the device; and, only if you also turn on Include Note Text, the text of
+  your notes: recognized handwriting, typed text, PDF text and recording transcripts) are copied into the index
+  that iOS or macOS keeps for Spotlight on that device. That index belongs to the system, not to Sempere's
+  vault, so it is not protected by your vault's encryption, and the system can use what is in it, for example
+  for Siri and Apple Intelligence. Nothing is sent to us or anyone else. Sempere removes the items when you turn
+  the switch off, delete the note, change the vault's keys, remove the device or remove the vault from the device;
+  any that remain expire 30 days after you last opened the vault, which renews them.
 - **Handwriting search** reads your handwriting with Apple's Vision framework on your device.
 - **Transcription** of recordings uses Apple's on-device speech recognition. Audio is never
   sent to a server. The system may download a speech model for your language from Apple; that
@@ -74,6 +83,12 @@ your key, nobody can decrypt your notes.**
   are saved in your vault, encrypted like your notes, and sync with it; turning Note Insights off deletes them.
   Summaries need Apple Intelligence on the device that makes them; the system downloads and manages Apple's models,
   and that download contains none of your data.
+- **Ask your notes** answers a question using Apple's on-device model; your question and the answer never leave your
+  device and are not saved.
+- **Share as Web Page** (File ▸ Export ▸ Web Page (Encrypted)…) makes one note into a single file on your device,
+  encrypted with a passphrase, that opens in any web browser. The file is made on your device, nothing is uploaded by
+  Sempere, and the passphrase is not kept by the app. You send the file yourself, by any means you choose; whoever
+  has the file and the passphrase can read the note.
 
 ## Network connections
 

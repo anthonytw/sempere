@@ -69,6 +69,17 @@ public protocol FolderProvider: Sendable {
     func versionFile(of url: URL, id: String) -> URL?
     /// Marks the versions `ids` of the file at `url` resolved and removes them.
     func resolveConflicts(of url: URL, ids: Set<String>) throws
+    /// Marks the versions `ids` of the item at `url` (a file or a folder) resolved and keeps them: the system's
+    /// version browser still has them (`sempere vault conflicts --merge` without `--remove-versions`).
+    func markConflictsResolved(of url: URL, ids: Set<String>) throws
+    /// `resolveConflicts` (`remove`) or `markConflictsResolved`, for a caller that already holds a coordinated write of
+    /// `url` or of a folder above it (`VaultFolderConflicts.merge`): never coordinates again, since a nested
+    /// coordination of one item waits for the first for ever.
+    func settleConflictVersions(of url: URL, ids: Set<String>, remove: Bool) throws
+    /// What the provider records about the item at `url` (a vault or sync folder): held as a package, its type, whether
+    /// it has unresolved conflict versions. Resource values only, no walk: cheap enough for every run. Nil when the
+    /// provider records nothing of the kind (a plain folder, Linux).
+    func itemRecord(of url: URL) -> ProviderItemRecord?
     /// Hints that something below `root` changed; nil when the provider cannot give any (poll).
     func changes(below root: URL) -> AsyncStream<RemoteChange>?
 }
@@ -82,7 +93,57 @@ extension FolderProvider {
     public func conflictVersions(of url: URL) -> [RemoteVersion] { [] }
     public func versionFile(of url: URL, id: String) -> URL? { nil }
     public func resolveConflicts(of url: URL, ids: Set<String>) throws {}
+    public func markConflictsResolved(of url: URL, ids: Set<String>) throws {}
+    public func settleConflictVersions(of url: URL, ids: Set<String>, remove: Bool) throws {
+        if remove { try resolveConflicts(of: url, ids: ids) } else { try markConflictsResolved(of: url, ids: ids) }
+    }
+    public func itemRecord(of url: URL) -> ProviderItemRecord? { nil }
     public func changes(below root: URL) -> AsyncStream<RemoteChange>? { nil }
+}
+
+/// What a provider records about one item (`FolderProvider.itemRecord`; docs/io.md "A vault folder held as a package").
+///
+/// iCloud Drive decides when it first records a folder whether it is a package (its type conformed to
+/// `com.apple.package`, or the Finder's `kHasBundle` flag was set) and keeps that record: a package is synced as ONE
+/// item, so two devices writing into it make whole-vault conflict versions (`NSFileVersion`), and a file only the
+/// losing side had is missing from the folder until it is merged back (`sempere vault conflicts --merge`).
+public struct ProviderItemRecord: Codable, Hashable, Sendable {
+    /// The provider's `isPackage` for the item; nil when it says nothing.
+    public var isPackage: Bool?
+    /// The item's content type identifier as the provider reports it (`dyn.…` for a type made up from the extension).
+    public var contentType: String?
+    /// Whether that type conforms to `com.apple.package`; nil when unknown.
+    public var typeIsPackage: Bool?
+    /// The Finder's `kHasBundle` flag on the folder (`FinderBundleBit`); nil when it cannot be read.
+    public var finderBundleBit: Bool?
+    /// The item is in iCloud Drive or another provider that syncs it.
+    public var ubiquitous: Bool
+    /// The provider's `ubiquitousItemHasUnresolvedConflicts` for the item itself; nil when it says nothing.
+    public var hasUnresolvedConflicts: Bool?
+
+    public init(isPackage: Bool? = nil, contentType: String? = nil, typeIsPackage: Bool? = nil, finderBundleBit: Bool? = nil,
+                ubiquitous: Bool = false, hasUnresolvedConflicts: Bool? = nil) {
+        self.isPackage = isPackage; self.contentType = contentType; self.typeIsPackage = typeIsPackage
+        self.finderBundleBit = finderBundleBit; self.ubiquitous = ubiquitous; self.hasUnresolvedConflicts = hasUnresolvedConflicts
+    }
+
+    /// The provider syncs the folder as one item: it says so, or its type is a package, or the Finder flag is set.
+    public var heldAsPackage: Bool { isPackage == true || typeIsPackage == true || finderBundleBit == true }
+
+    /// Why it is held as a package, for people: the Finder flag (which the app and the CLI clear at each run), or the
+    /// provider's own record (which clearing nothing changes: the folder must be made again).
+    public var packageCause: PackageCause? {
+        guard heldAsPackage else { return nil }
+        return finderBundleBit == true ? .finderBundleBit : .providerRecord
+    }
+
+    /// See `packageCause`.
+    public enum PackageCause: String, Codable, Hashable, Sendable {
+        /// `kHasBundle` in `com.apple.FinderInfo`: cleared by `BundleBitRepair` / `clearBundleBits`.
+        case finderBundleBit
+        /// The provider's (iCloud Drive's) own record of the item, or its type: only a new folder is plain.
+        case providerRecord
+    }
 }
 
 /// A folder no provider manages (a local folder, a USB drive, a network share):

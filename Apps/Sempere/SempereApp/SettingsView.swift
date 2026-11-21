@@ -149,11 +149,13 @@ struct SettingsGroupPage: View {
             AppearanceSettingsSection().id(model.settingsAppliedRevision)
             GeneralSettings()
             AppIconSettingsSection().id(model.settingsAppliedRevision)
+            SpotlightSettingsSection()
             if Platform.isMac {
                 DragToFinderSettingsSection().id(model.settingsAppliedRevision)
             }
         case .writing:
             EditorSettingsSection()
+            SavedToolsSettingsSection()
             NewNoteSettingsSection().id(model.settingsAppliedRevision)
             HandwritingSettingsSection()
             MathRecognitionSettingsSection()

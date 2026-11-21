@@ -22,6 +22,14 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
         public var overflowAbove: Int?
         /// Languages it does not support (BCP 47 primary tags).
         public var unsupportedLanguages: Set<String> = []
+        /// How many words of the transcript a title takes (a test makes two devices disagree by giving them different counts).
+        public var titleWords = 4
+        /// Answers questions (`answer`): given the question and the sources, what the model returns. Nil: the default,
+        /// the best-matching passage sentence of the first two sources, each citing its own source.
+        public var answer: (@Sendable (_ question: String, _ sources: [AskSource]) -> ModelAnswer)?
+        /// Translates (`translate`, `translateQuestion`, each sentence of `translateSentences`): given the text and the
+        /// target language, the translation. Nil: the default, the text tagged with the language (`[es] text`).
+        public var translation: (@Sendable (_ text: String, _ language: String) -> String)?
         public var identity = GenerationIdentity(model: "fake-model", os: "1.0", prompt: InsightsGenerator.promptRevision)
         public init() {}
     }
@@ -29,8 +37,11 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
     private let lock = NSLock()
     private var script: Script
     private var calls = 0
-    /// Every call made, in order: `extract`, `merge`, `summarize`, `title`.
+    /// Every call made, in order: `extract`, `merge`, `summarize`, `title`, `translate`, `answer`, `translateQuestion`,
+    /// `translateSentences`.
     public private(set) var log: [String] = []
+    /// Every `answer` request: the question and the sources the model was sent.
+    public private(set) var askRequests: [(question: String, sources: [AskSource])] = []
 
     public init(_ script: Script = Script()) { self.script = script }
 
@@ -78,10 +89,50 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
         return (summaries.compactMap { InsightsChunker.sentences($0).first }.prefix(5) + invented).joined(separator: " ")
     }
 
+    public func answer(question: String, sources: [AskSource], language: String?) async throws -> ModelAnswer {
+        try begin("answer", tokens: sources.reduce(0) { $0 + InsightsChunker.tokens(String(repeating: "x", count: $1.characters)) })
+        lock.withLock { askRequests.append((question, sources)) }
+        if let scripted = lock.withLock({ script.answer }) { return scripted(question, sources) }
+        let forms = Set(AskText.terms(question).map(AskText.form))
+        var sentences: [ModelSentence] = []
+        for s in sources.prefix(2) {
+            let candidates = s.passages.flatMap { InsightsChunker.sentences($0.text) }
+            let best = candidates.max { a, b in
+                Set(InsightsWords.words(a).map(AskText.form)).intersection(forms).count
+                    < Set(InsightsWords.words(b).map(AskText.form)).intersection(forms).count
+            }
+            if let best { sentences.append(ModelSentence(text: best, sources: [s.id])) }
+        }
+        return ModelAnswer(enough: !sentences.isEmpty, sentences: sentences)
+    }
+
     public func title(transcript: String, language: String?) async throws -> String {
         try begin("title", tokens: InsightsChunker.tokens(transcript))
-        return InsightsWords.words(transcript).filter { !InsightsStoplist.generic.contains($0) }.prefix(4)
+        let n = lock.withLock { script.titleWords }
+        return InsightsWords.words(transcript).filter { !InsightsStoplist.generic.contains($0) }.prefix(n)
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+    }
+
+    /// A fake translation: the text tagged with the language (`[es] text`), unchanged when it already carries the tag.
+    public func translate(_ text: String, to language: String) async throws -> String {
+        try begin("translate", tokens: InsightsChunker.tokens(text))
+        return fakeTranslation(text, to: language)
+    }
+
+    public func translateQuestion(_ question: String, from source: String, to language: String) async throws -> String {
+        try begin("translateQuestion", tokens: InsightsChunker.tokens(question))
+        return fakeTranslation(question, to: language)
+    }
+
+    public func translateSentences(_ sentences: [String], from source: String, to language: String) async throws -> [String] {
+        try begin("translateSentences", tokens: sentences.map(InsightsChunker.tokens).reduce(0, +))
+        return sentences.map { fakeTranslation($0, to: language) }
+    }
+
+    private func fakeTranslation(_ text: String, to language: String) -> String {
+        if let scripted = lock.withLock({ script.translation }) { return scripted(text, language) }
+        let tag = "[\(InsightsLanguage.primary(language))] "
+        return text.hasPrefix(tag) ? text : tag + text
     }
 
     /// The `count` most frequent content words (at least 5 letters, not stop words), ties alphabetical.
@@ -150,6 +201,10 @@ public enum InsightsLanguage {
         let lower = p.lowercased()
         return (1...8).contains(lower.utf8.count) && lower.utf8.allSatisfy({ (0x61...0x7a).contains($0) }) ? lower : fallback
     }
+
+    /// The languages the settings picker offers for generated summaries and titles (the on-device model's, as listed by Apple);
+    /// the setting itself takes any language tag.
+    public static let choices = ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh-Hans"]
 
     /// The language of a note: its `lang`, else the fallback.
     public static func of(_ lang: String?) -> String { lang.map(primary) ?? fallback }

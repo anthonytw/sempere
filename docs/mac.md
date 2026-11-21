@@ -103,6 +103,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | File | Start / Stop Voice Note | ⇧⌘M |
 | Edit | Undo, Redo | ⌘Z, ⇧⌘Z (the system's: the canvas's undo manager, or the text field being edited; the note toolbar's Undo and Redo buttons, after Annotate and Hand, act on the same manager, are disabled when it has nothing to undo or redo, and show the step in their tooltip, "Undo Move") |
 | Edit | Find Notes (focuses the title search) | ⌘F |
+| Edit | Ask Your Notes… (the same field in Ask mode: a question answered from your notes on this Mac, `docs/design/1.3-ask.md`; off without an unlocked vault) | ⌥⌘F |
 | Note | Rename Note… | ⇧⌘R |
 | Note | Edit Tags… | ⌥⌘T |
 | Note | Paper… | ⌥⌘P |
@@ -123,6 +124,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | Tools | Annotate, Hand (the top bar's mode buttons; "Back to Reading" while that mode is on) | ⇧⌘P, ⌥⌘7 |
 | Tools | Pen, Marker, Pencil, Eraser, Lasso (switch to Annotate) | ⌥⌘1 … ⌥⌘5 |
 | Tools | Text (the toolbar's toggle; switches to Annotate) | ⌥⌘6 |
+| Tools ▸ Saved Tools | the first nine saved tools (⌃⌘1 … ⌃⌘9); Save Current Tool as Preset…; Manage Saved Tools… (Settings) | ⌃⌘1 … ⌃⌘9 |
 | Tools | Smaller / Larger Object Eraser (steps through the presets) | ⌥⌘[, ⌥⌘] |
 | Tools | Ruler (straight lines with a mouse) | ⌥⌘R |
 | Tools | Use Compact / Full Palette | ⌥⇧⌘P |
@@ -416,6 +418,12 @@ on a double-click, and a package is what iCloud Drive syncs as one item (a whole
 lost a note in TestFlight 1.0.0), so that stays off. A Mac with TestFlight 1.0.0 still installed
 keeps that build's package declaration in LaunchServices: there a vault still shows as a package
 and opens in Sempere on a double-click, until the newer build replaces it.
+
+If Sync Targets warns that iCloud Drive syncs a sync folder "as one package", your notes on this Mac are safe (they live
+in the app), but devices writing at once make conflicting copies of the whole folder, and a file only one copy has can go
+missing from it. Pause Sempere on every device, then merge those back with the `sempere` tool (`sempere vault conflicts
+"<folder>" --merge --dry-run`, then without `--dry-run`), let this Mac's app sync once with the old folder, then move the sync folder to a new one: How to Fix… lists the steps, and docs/io.md "Moving to a
+plain folder" has them in full.
 
 What opens a vault in Sempere: File ▸ Open Vault… (⌘O) or Open Recent, the Library window, and
 `open -a Sempere /path/Notes.sempere` in Terminal; the app handles a vault URL it is handed
@@ -736,6 +744,16 @@ be checked.
     mode, delete it; Note > Recordings… lists the recording, Place on This Page
     puts it back. Export the note as "PDF + attachments", then Share… and
     Save…: no crash, the PDF lists the audio in Preview's attachments.
+
+## Spotlight
+
+Opt-in (Settings ▸ Spotlight, docs/design/1.3-spotlight.md): note titles, notebooks, tags and dates (with the vault's name
+in each item's description when two or more vaults use Spotlight), and with Include Note Text the notes' text, go into Core Spotlight's named index `sempere`. A Mac has no data protection classes, so
+the app makes the plain named index there (`CSSearchableIndex(name:)`; the `protectionClass:` initializer exists on
+Catalyst 27, but `.complete` means nothing without a lock screen) and the index is readable whenever the user's
+account is; Spotlight can show the items in system search. The opt-in sheet says so. A result opens the note in the
+window that received it. To try by hand: turn it on, search the title in Spotlight, open the result (with the vault
+locked: the unlock follows, then the note); turn it off and search again.
 
 ## Menu parity and the voice note item
 

@@ -118,6 +118,9 @@ enum CLIError: Error {
                 + "folder that holds it, or an empty folder"
         case .notDownloaded(let name):
             return "\(name) is a cloud placeholder, not on this machine yet: download it first"
+        case .severalCopies(let names):
+            return "the folder holds more than one copy of this vault (\(names.joined(separator: ", "))): give the one "
+                + "to sync with as --folder (sempere store target add NAME --folder FOLDER/COPY)"
         }
     }
 }
@@ -137,6 +140,15 @@ func clearBundleBits(_ urls: [URL]) {
     for url in FinderBundleBit.clearFolders(urls) {
         printStderr("Cleared the Finder's bundle flag on \(url.lastPathComponent): it is a folder, not a package.")
     }
+}
+
+/// One stderr line when the provider syncs the folder target `folder` as one item (a package: docs/io.md "A vault
+/// folder held as a package"); `sempere vault conflicts` says more. Resource values only.
+func warnIfHeldAsPackage(_ folder: URL) {
+    guard let record = FolderProviders.detect(folder).itemRecord(of: folder), record.heldAsPackage else { return }
+    let cause = record.packageCause == .finderBundleBit ? "the Finder's bundle flag" : "the provider's own record"
+    printStderr("Warning: \(folder.lastPathComponent) is synced as one item (a package, from \(cause)): devices that write "
+        + "at once make whole-vault conflict versions. Check with: sempere vault conflicts \"\(folder.path)\"")
 }
 
 // MARK: - Shared options

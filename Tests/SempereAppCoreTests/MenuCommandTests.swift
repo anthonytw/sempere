@@ -13,6 +13,40 @@ struct MenuCommandTests {
         }
     }
 
+    /// Saved tools (docs/design/1.3-custom-tools.md §3.5): ⌃⌘1 to ⌃⌘9, which no built-in tool (⌥⌘1 to ⌥⌘7, ⌘1 actual size)
+    /// and no system shortcut (plain ⌃digits switch desktops) uses.
+    @Test func savedToolsTakeControlCommandDigits() {
+        #expect(MenuCommand.savedToolCommands.count == 9)
+        for (i, command) in MenuCommand.savedToolCommands.enumerated() {
+            #expect(command.savedToolNumber == i + 1)
+            #expect(command.shortcut == MenuCommand.Shortcut(Character(String(i + 1)), [.command, .control]), "\(command)")
+        }
+        #expect(MenuCommand.toolPen.savedToolNumber == nil)
+        #expect(MenuCommand.saveCurrentTool.shortcut == nil && MenuCommand.manageSavedTools.shortcut == nil)
+        for command in MenuCommand.savedToolCommands {
+            let s = command.shortcut
+            #expect(s?.modifiers == [.command, .control])
+            #expect(MenuCommand.allCases.filter { $0.shortcut == s }.count == 1, "\(command) clashes")
+        }
+        // In the menu layout, once each.
+        for command in MenuCommand.savedToolCommands + [.saveCurrentTool, .manageSavedTools] {
+            #expect(MenuLayout.all.filter { $0 == command }.count == 1, "\(command)")
+        }
+    }
+
+    @Test func savedToolCommandsNeedAToolAndAnEditablePage() {
+        var c = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true, canEditNote: true, hasPage: true,
+                                    savedToolNames: ["Fine red pen", "Yellow marker"])
+        #expect(MenuCommand.savedTool1.isEnabled(in: c) && MenuCommand.savedTool2.isEnabled(in: c))
+        #expect(!MenuCommand.savedTool3.isEnabled(in: c), "no third tool")
+        #expect(MenuCommand.saveCurrentTool.isEnabled(in: c))
+        #expect(MenuCommand.manageSavedTools.isEnabled(in: c))
+        c.canEditNote = false
+        #expect(!MenuCommand.savedTool1.isEnabled(in: c), "a read-only note")
+        #expect(!MenuCommand.saveCurrentTool.isEnabled(in: c))
+        #expect(MenuCommand.manageSavedTools.isEnabled(in: MenuCommand.Context()), "Settings need no vault")
+    }
+
     @Test func shortcutsAlwaysUseAModifierSoTypingIsNeverTaken() {
         for command in MenuCommand.allCases {
             guard let shortcut = command.shortcut else { continue }
@@ -71,6 +105,22 @@ struct MenuCommandTests {
         #expect(!MenuCommand.renameNote.isEnabled(in: c))
         #expect(!MenuCommand.deleteNote.isEnabled(in: c))
         #expect(MenuCommand.restoreNote.isEnabled(in: c))
+    }
+
+    /// While the note list is selecting, Delete and Restore follow the ticked notes (`AppModel.bulkActions`), not the open note.
+    @Test func deleteAndRestoreFollowTheTickedNotesWhileSelecting() {
+        var c = MenuCommand.Context(window: .library, vault: .unlocked, hasNote: true)
+        c.bulkSelection = []
+        #expect(!MenuCommand.deleteNote.isEnabled(in: c), "nothing ticked, though a note is open")
+        c.bulkSelection = [.move, .delete]
+        #expect(MenuCommand.deleteNote.isEnabled(in: c))
+        #expect(!MenuCommand.restoreNote.isEnabled(in: c))
+        c.bulkSelection = [.restore]
+        #expect(!MenuCommand.deleteNote.isEnabled(in: c))
+        #expect(MenuCommand.restoreNote.isEnabled(in: c))
+        c.bulkSelection = [.move, .delete]
+        c.editingText = true
+        #expect(!MenuCommand.deleteNote.isEnabled(in: c), "⌘⌫ in a text field stays the field's")
     }
 
     /// ⌘⌫ in the search field (or a rename or tag field) deletes text, never the note.
@@ -153,6 +203,22 @@ struct MenuCommandTests {
         for command in [MenuCommand.duplicateItem, .bringItemToFront, .deleteItem, .toggleRecording] {
             #expect(!uikit.contains(try #require(command.shortcut)), "\(command)")
         }
+    }
+
+    /// ⌥⌘F: free in the app's menu bar (⇧⌥⌘F is Bring Item to Front; UIKit's own ⌥⌘F, Find and Replace, is dropped), in the Edit menu with Find.
+    @Test func askYourNotesIsOptionCommandFInTheEditMenu() throws {
+        let shortcut = try #require(MenuCommand.askYourNotes.shortcut)
+        #expect(shortcut == MenuCommand.Shortcut("f", [.command, .option]))
+        #expect(MenuCommand.allCases.filter { $0.shortcut == shortcut } == [.askYourNotes])
+        #expect(MenuCommand.bringItemToFront.shortcut != shortcut)
+        #expect(MenuCommand.nativeOnMac.contains(.askYourNotes), "UIKit's ⌥⌘F is Find and Replace: its item becomes this one (`MacMenus`)")
+        #expect(MenuLayout.edit.flatMap { $0 }.contains(.askYourNotes))
+        let none = MenuCommand.Context(window: .library, vault: .none)
+        #expect(!MenuCommand.askYourNotes.isEnabled(in: none))
+        var c = MenuCommand.Context(window: .library, vault: .unlocked)
+        #expect(MenuCommand.askYourNotes.isEnabled(in: c))
+        c.window = .note
+        #expect(!MenuCommand.askYourNotes.isEnabled(in: c), "the library window's field")
     }
 
     @Test func libraryOnlyCommandsAreOffInANoteWindow() {

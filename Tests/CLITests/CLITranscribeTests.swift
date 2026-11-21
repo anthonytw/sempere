@@ -83,6 +83,76 @@ final class CLITranscribeTests: CLITestCase {
         XCTAssertEqual(after, before + 1)
     }
 
+    /// 1.3 "Transcribe Again": `--again` replaces the transcripts the note's recordings have (a plain run, and `--force`'s
+    /// absence, would skip them), `--insights` says the note's insights are made again afterwards.
+    func testAgainSelectsEveryRecordingEvenWithATranscriptAndInsightsIsReported() throws {
+        let (vault, args, ids) = try setUp(recordings: ["One", "Two"])
+        let transcript = path("t.json")
+        try Transcript(recording: UUID(uuidString: ids[0])!, engine: "test", language: "en", created: Date(),
+                       segments: [.init(start: 0, end: 1, text: "hello")]).encoded().write(to: URL(fileURLWithPath: transcript))
+        XCTAssertEqual(try cli(["attach", "transcript", physics, ids[0], transcript] + args).status, 0)
+        let before = try revisionCount(vault)
+        XCTAssertEqual(try listed(try cli(["transcribe", physics, "--dry-run", "--json"] + args)), [ids[1]], "a plain run skips One")
+        let again = try cli(["transcribe", physics, "--again", "--language", "es-ES", "--dry-run", "--json"] + args)
+        XCTAssertEqual(again.status, 0, again.err)
+        XCTAssertEqual(Set(try listed(again)), Set(ids), "again reads every recording")
+        XCTAssertEqual(try listed(try cli(["transcribe", physics, "One", "--again", "--dry-run", "--json"] + args)), [ids[0]],
+                       "or the one named")
+        let withInsights = try cli(["transcribe", physics, "--again", "--insights", "--dry-run", "--json"] + args)
+        XCTAssertEqual(withInsights.status, 0, withInsights.err)
+        let insights = try XCTUnwrap((withInsights.json as? [String: Any])?["insights"] as? [String: Any])
+        XCTAssertEqual(insights["dryRun"] as? Bool, true)
+        XCTAssertEqual(insights["redone"] as? Bool, false)
+        XCTAssertTrue(try cli(["transcribe", physics, "--again", "--insights", "--dry-run"] + args).out.contains("insights would be made again"))
+        XCTAssertNil((try cli(["transcribe", physics, "--again", "--dry-run", "--json"] + args).json as? [String: Any])?["insights"],
+                     "no --insights, nothing said about them")
+        XCTAssertEqual(try revisionCount(vault), before, "a dry run writes nothing")
+    }
+
+    /// The real `--again --insights` path (fake transcription and fake model, debug builds): the insights step reads the
+    /// vault's notes through `InsightsCLI.inputs`. It once built an unparsed `CacheOptions()` there and died with
+    /// ArgumentParser's "Can't read a value from a parsable argument definition" after storing the transcript.
+    func testAgainWithInsightsRunsTheRealInsightsStep() throws {
+        let (_, args, _) = try setUp(recordings: ["One"])
+        let env = ["SEMPERE_TRANSCRIBE_FAKE": "1", "SEMPERE_INSIGHTS_FAKE": "1"]
+        XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)
+        let r = try cli(["transcribe", physics, "--again", "--language", "es-ES", "--insights", "--json"] + args, env: env)
+        XCTAssertEqual(r.status, 0, r.err + r.out)
+        let json = try XCTUnwrap(r.json as? [String: Any])
+        let insights = try XCTUnwrap(json["insights"] as? [String: Any])
+        XCTAssertEqual(insights["redone"] as? Bool, true, r.out + r.err)
+        XCTAssertNil(insights["error"], r.out)
+        XCTAssertEqual((insights["generated"] as? [String])?.count, 1, "the note's summary is made again")
+        let again = try cli(["transcribe", physics, "--again", "--insights", "--no-cache"] + args, env: env)
+        XCTAssertEqual(again.status, 0, again.err)
+    }
+
+    func testAgainAndInsightsAreForOneNote() throws {
+        let (_, args, _) = try setUp(recordings: ["One"])
+        for bad in [["transcribe", "--all", "--again"], ["transcribe", "--all", "--insights"],
+                    ["transcribe", "--languages", physics], ["transcribe", "--languages", "--again"],
+                    ["transcribe", "--languages", "--check"]] {
+            XCTAssertEqual(try cli(bad + args).status, 2, "\(bad)")
+        }
+    }
+
+    /// `--languages` needs no vault: the recognizers' languages as BCP 47 tags (none without the Speech framework).
+    func testLanguagesListsWhatTheRecognizersSupport() throws {
+        let r = try cli(["transcribe", "--languages", "--json"])
+        XCTAssertEqual(r.status, 0, r.err)
+        let o = try XCTUnwrap(r.json as? [String: Any])
+        let tags = try XCTUnwrap(o["languages"] as? [String])
+        #if canImport(Speech)
+        XCTAssertEqual(o["supported"] as? Bool, true)
+        XCTAssertTrue(tags.contains { $0.hasPrefix("en") }, "\(tags)")
+        XCTAssertEqual(tags, tags.sorted())
+        XCTAssertTrue(tags.allSatisfy { TranscriptionLanguage.tag($0) == $0 })
+        #else
+        XCTAssertEqual(o["supported"] as? Bool, false)
+        XCTAssertEqual(tags, [])
+        #endif
+    }
+
     func testUsageErrors() throws {
         let (_, args, _) = try setUp(recordings: [])
         for bad in [["transcribe"], ["transcribe", "--all", physics], ["transcribe", "--all", "x", "y"],

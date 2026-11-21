@@ -136,7 +136,7 @@ struct RecognizeMathCommand: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let state = try liveState(vault, id)
         let target = try targetPage(state, page)
         let ids: [UUID]

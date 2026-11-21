@@ -32,7 +32,9 @@ Do not use features newer than Swift 6.0 in `Sources/`.
 - `Sources/*` and `Tests/*` must build on Linux: Foundation (plus FoundationNetworking in `SempereWebDAV` only, and
   Observation in `SempereAppCore` only), swift-crypto (`import Crypto`), `CZlib` and swift-argument-parser only. No UIKit,
   AppKit, PencilKit, CoreGraphics, Compression, CommonCrypto, Security, `os` (log through `PerfSink`).
-  Apple-only code goes under `Apps/`. Apple-only *tests* (e.g. comparing
+  Apple-only code goes under `Apps/`. One provider exception: `UniformTypeIdentifiers` in
+  `Sources/SempereSync/UbiquitousFolderHooks.swift` only, behind `#if canImport`, to read whether an item's type conforms
+  to `com.apple.package` beside `isPackage` (`check-portability.sh`). Apple-only *tests* (e.g. comparing
   against PencilKit) are allowed behind `#if canImport(PencilKit)`.
 - Files under a vault's `notes/` (revisions and each note's `att/` blobs), `notebooks/` and `epochs/`
   are write-once. Never add code that modifies them in place; re-encrypting everything (key hierarchy
@@ -325,7 +327,8 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   `PageColorInversion` (never pictures, PDF pages, video), and exports never do.
 - Vaults are plain folders: `SempereInfo.plist` (referenced by `INFOPLIST_FILE`,
   outside the synchronized group so it is not copied as a resource) exports the
-  `.sempere` UTType as `public.folder`, NEVER `com.apple.package`: iCloud Drive syncs a
+  `.sempere` and `.sempere-vault` (sync folders, `io.github.anthonytw.sempere.syncvault`) UTTypes as `public.folder`,
+  NEVER `com.apple.package`: iCloud Drive syncs a
   package as one item, and a whole-vault conflict lost a note in TestFlight 1.0.0
   (`theVaultTypeIsAFolderNeverAPackage`, docs/io.md "Vaults are folders"). The Finder's `kHasBundle` flag in `com.apple.FinderInfo` makes a folder a package too:
   the app clears it on every vault, sync folder and backup it uses (`FinderBundleBit`, `BundleBitRepair`, both in `Sempere`). `VaultLocator.resolve` maps whatever was picked
@@ -920,8 +923,10 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   (vault, target), every vault open or not, at most two runs at once; only the open, unlocked vault's runs are
   two-way, every other run is upload-only (nothing unverified is placed in a vault nobody unlocked). Folder runs
   go through `FolderTargetRun` (the CLI's `store sync`); never open a target folder in place. Where a folder target's
-  copy goes for a folder the user named is `FolderTargetPlacement.location` (SempereSync: a `….sempere` folder is the
-  copy, any other gets `<name>.sempere` in it), for the app's pickers and `sempere store target add --folder` /
+  copy goes for a folder the user named is `FolderTargetPlacement.location` (SempereSync: a folder holding this vault, any
+  name, or a `….sempere-vault` / `….sempere` one is the copy; any other gets a `<name>.sempere-vault` in it,
+  `SyncFolderName`: never make a new sync folder named `….sempere`, iCloud Drive kept those as packages; the store's own
+  vaults stay `<name>.sempere`), for the app's pickers and `sempere store target add --folder` /
   `store import --keep-syncing` alike; never decide it in the app or the CLI alone. What a two-way run
   wrote locally (`SyncReport.changed`, `LocalChanges`) goes through `applySyncChanges`: `reconcile(scope:)` for the
   notes (open editors merge in place, RemoteMerge), the settings pass, inbox adoption, notebooks; a changed `vault.json`
@@ -957,6 +962,12 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   (`web/src/i18n/catalog.ts`, English keys, Spanish complete, typed `t` / `tn`; `docs/web-viewer.md`
   "Languages"): every string `src/ui` shows goes through `t`, counts are plural entries, vault data
   (titles, notebook and tag names) is never translated, and `i18n.test.ts` fails on a key without Spanish.
+  The note view and renderers are also the **share file's** page (`npm run build:share`, `sempere share`, `docs/web-viewer.md`
+  "Share files"): the built page is committed as `Sources/SempereShareViewer/ShareViewerTemplate.swift`, so a change under
+  `web/src` that the share build includes needs `scripts/build-share-template.sh` (the `Web viewer` job runs it with `--check`)
+  and the hashes of the table in `docs/web-viewer.md` updated (`web/test/share.test.ts` fails otherwise). The share payload is a
+  Swift/TypeScript contract pinned by `Tests/SempereRenderTests/Fixtures/share/` (`SEMPERE_WRITE_SHARE_FIXTURE=1 swift test
+  --filter WebPageShareTests/testFixture`); never add a vault key, id, device name or history to it.
 - `RenderOutputVersion.current` (SempereRender) must be bumped in the same change whenever the
   bytes an exporter writes for the same note change (the moment you regenerate goldens or
   fixtures). Tree exports key each note's files on it (and on a hash of the program itself in the

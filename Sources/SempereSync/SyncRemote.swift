@@ -167,9 +167,12 @@ public struct RemoteVersion: Sendable, Hashable {
     public var modified: Date?
     /// The device the store says wrote it, if it knows (display only).
     public var device: String?
+    /// Whether the version's bytes are on this device (`NSFileVersion.hasLocalContents`); nil when the store does not
+    /// say. A version without them reads as empty or partial: never judged from what it lists.
+    public var hasLocalContents: Bool?
 
-    public init(id: String, modified: Date? = nil, device: String? = nil) {
-        self.id = id; self.modified = modified; self.device = device
+    public init(id: String, modified: Date? = nil, device: String? = nil, hasLocalContents: Bool? = nil) {
+        self.id = id; self.modified = modified; self.device = device; self.hasLocalContents = hasLocalContents
     }
 }
 

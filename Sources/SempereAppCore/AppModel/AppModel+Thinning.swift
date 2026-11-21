@@ -84,16 +84,20 @@ public struct ThinningReport: Hashable, Sendable {
 }
 
 /// How far a thinning preview (`dryRun`) or run has got, per note; the app words it ("Checking notes: 120 of 640",
-/// "Thinning notes: …").
+/// "Thinning notes: …"). A run has two phases, each counted on its own: it checks every note (`checking`, of all
+/// the notes), then thins those with something to remove (of those).
 public struct ThinningProgress: Equatable, Sendable {
     public var done = 0
     public var total = 0
     public var dryRun = true
+    /// The notes are being checked (all of a preview; a run's first phase).
+    public var checking = true
 
-    public init(done: Int = 0, total: Int = 0, dryRun: Bool = true) {
+    public init(done: Int = 0, total: Int = 0, dryRun: Bool = true, checking: Bool? = nil) {
         self.done = done
         self.total = total
         self.dryRun = dryRun
+        self.checking = checking ?? dryRun
     }
 
     public var fractionCompleted: Double { total == 0 ? 1 : min(1, Double(done) / Double(total)) }
@@ -141,28 +145,46 @@ extension AppModelCore {
         var report = ThinningReport(rule: rule, now: now)
         let work = ids.filter { !(skipOpen && open.contains($0)) }
         for id in ids where skipOpen && open.contains(id) { report.skipped[id] = "open" }
-        thinningProgress = ThinningProgress(done: 0, total: work.count, dryRun: dryRun)
+        thinningProgress = ThinningProgress(done: 0, total: work.count, dryRun: dryRun, checking: true)
         defer { if generation == gen { thinningProgress = nil } }
         let perf = services.perf
         let interval = perf.begin("thin")
         var readInFull = 0
         defer { perf.end(interval, "notes=\(work.count) read=\(readInFull) dryRun=\(dryRun)") }
         var changed: [UUID] = []
-        // A real run holds the edit gate throughout (as browser edits and key changes do), so it
-        // never interleaves with them; a preview writes nothing and takes no gate.
-        if !dryRun { await editGate.acquire() }
-        defer { if !dryRun { editGate.release() } }
         try ensureCurrent(gen)
-        let tasks = work.map { id in
+        let willRead = thinningWillRead
+        // The keys the pass writes under: a device change or re-encryption (`adoptReopened`) changes them without a new
+        // `generation`, and the pass, which holds the gate only per note, must not write under the old ones after it.
+        let epoch = keyEpoch
+        // Every note is checked first, a few at once, writing nothing and holding no gate: a pass over a large vault at
+        // background priority can take minutes, and the user's edits (a delete, a rename, an adoption) must never
+        // wait for all of it. Before, a real run held the edit gate from its first note to its last, so a note swiped
+        // away meanwhile was deleted only when the pass ended, and never when the app was suspended and ended first
+        // (an owner report, 2026-11-19: a notebook cleared one swipe at a time came back).
+        // A preview plans each note in full here (its report states sizes); a run asks only whether anything may go,
+        // from the revisions' metadata (`Vault.mayCompact`), and plans, encodes and writes those notes once, below.
+        // nil: something may go (a run thins it below).
+        typealias Checked = (UUID, Result<PreparedCompaction?, any Error>)
+        func isOpenCheck(_ id: UUID) -> (@Sendable () async -> Bool)? {
             // A note opened since the run started is left alone too (asked again before anything is written).
-            let isOpen: (@Sendable () async -> Bool)? = skipOpen
-                ? { @Sendable [weak self] in await self?.isNoteOpen(id) ?? true } : nil
-            return { @Sendable () async throws -> (UUID, Result<PreparedCompaction, any Error>) in
+            skipOpen ? { @Sendable [weak self] in await self?.isNoteOpen(id) ?? true } : nil
+        }
+        func check(_ id: UUID) -> @Sendable () async throws -> Checked {
+            let isOpen = isOpenCheck(id)
+            return { @Sendable () async throws -> Checked in
                 do {
+                    await willRead?(id)
                     if let isOpen, await isOpen() { throw ThinningSkippedOpen() }
-                    return (id, .success(try await NoteWriter.thin(id, mode: mode, vault: vault, clock: clock, cache: cache,
-                                                                  coordinated: false, verify: nil, dryRun: dryRun, now: now,
-                                                                  perf: perf, isOpen: isOpen)))
+                    if dryRun {
+                        return (id, .success(try await NoteWriter.thin(id, mode: mode, vault: vault, clock: clock, cache: cache,
+                                                                      coordinated: false, verify: nil, dryRun: true, now: now,
+                                                                      perf: perf, isOpen: isOpen)))
+                    }
+                    let may = try await Task.detached(priority: .utility) {
+                        try vault.mayCompact(id, mode: mode, now: now, cache: cache)
+                    }.value
+                    return (id, .success(may ? nil : PreparedCompaction.nothing(id)))
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -170,21 +192,70 @@ extension AppModelCore {
                 }
             }
         }
+        let tasks = work.map { check($0) }
         let width = max(1, thinningConcurrency)
-        var results: [(UUID, Result<PreparedCompaction, any Error>)] = []
-        try await withThrowingTaskGroup(of: (UUID, Result<PreparedCompaction, any Error>).self) { group in
+        var checked: [Checked] = []
+        try await withThrowingTaskGroup(of: Checked.self) { group in
             var next = 0
             while next < min(width, tasks.count) {
                 group.addTask(operation: tasks[next])
                 next += 1
             }
             while let done = try await group.next() {
-                results.append(done)
-                thinningProgress?.done = results.count
+                checked.append(done)
+                thinningProgress?.done = checked.count
                 if next < tasks.count {
                     group.addTask(operation: tasks[next])
                     next += 1
                 }
+            }
+        }
+        var results: [(UUID, Result<PreparedCompaction, any Error>)] = []
+        var toThin: [UUID] = []
+        var keysChanged = false
+        for (id, result) in checked {
+            switch result {
+            case .success(let p?): results.append((id, .success(p)))
+            case .success(nil): toThin.append(id)
+            case .failure(let error): results.append((id, .failure(error)))
+            }
+        }
+        if !toThin.isEmpty {
+            // Then each note that may have something to delete, one at a time, under the edit gate for that note only (so
+            // it never interleaves with an edit of the note: both would take the next `seq`), planned from disk.
+            thinningProgress = ThinningProgress(done: 0, total: toThin.count, dryRun: false, checking: false)
+            writing: for id in toThin {
+                await editGate.acquire()
+                let written: Result<PreparedCompaction, any Error>
+                do {
+                    try ensureCurrent(gen)
+                    // A key change landed since the pass began (it takes the gate, so not while a note is written): stop
+                    // here, writing nothing more under the old keys; the notes done are refreshed, then the pass ends
+                    // cancelled and the next automatic run thins the rest (`thinIfDue` makes it due again).
+                    guard keyEpoch == epoch, !isChangingKeys, let current = self.vault, current.vaultId == vault.vaultId,
+                          current.manifest.epochId == vault.manifest.epochId else {
+                        editGate.release()
+                        keysChanged = true
+                        break writing
+                    }
+                    let isOpen = isOpenCheck(id)
+                    do {
+                        if let isOpen, await isOpen() { throw ThinningSkippedOpen() }
+                        written = .success(try await NoteWriter.thin(id, mode: mode, vault: vault, clock: clock, cache: cache,
+                                                                    coordinated: false, verify: nil, dryRun: false, now: now,
+                                                                    perf: perf, isOpen: isOpen))
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        written = .failure(error)
+                    }
+                } catch {
+                    editGate.release()
+                    throw error
+                }
+                editGate.release()
+                results.append((id, written))
+                thinningProgress?.done += 1
             }
         }
         report.checked = results.count
@@ -209,6 +280,7 @@ extension AppModelCore {
             try? await refresh(changed)
             for id in changed where open.contains(id) && !skipOpen { try? await reopenEditor(ifShowing: id) }
         }
+        if keysChanged { throw CancellationError() }
         return report
     }
 
@@ -230,11 +302,17 @@ extension AppModelCore {
         let key = ThinningPreference.lastRunKey(id)
         guard ThinningPreference.isDue(days: days, lastRun: settings.object(forKey: key) as? Date, now: now)
         else { return }
+        let previous = settings.object(forKey: key) as? Date
         settings.set(now, forKey: key)
         let gen = generation
         automaticThinningRun = Task(priority: .background) { [weak self] in
             guard let self, self.generation == gen else { return }
-            _ = try? await self.thinVault(rule: .olderThan(days: days), dryRun: false, skipOpen: true, now: now)
+            do {
+                _ = try await self.thinVault(rule: .olderThan(days: days), dryRun: false, skipOpen: true, now: now)
+            } catch is CancellationError {
+                // Stopped part way (a key change, the vault closed): not a completed run, so the next listing runs it again.
+                if settings.object(forKey: key) as? Date == now { settings.set(previous, forKey: key) }
+            } catch {}
         }
     }
 }

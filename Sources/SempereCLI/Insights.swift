@@ -5,7 +5,7 @@ import SempereInsights
 import SempereInsightsApple
 
 // `sempere insights` (docs/cli.md "Note insights"; docs/design/1.2-note-insights.md §7, §11): summaries, keywords,
-// related notes, the map, topic summaries, voice-note titles and the work device. Model work needs Apple's on-device
+// related notes, the map, topic summaries, voice-note titles. Model work needs Apple's on-device
 // model (macOS 26 with Apple Intelligence, D18); everything else reads the vault's files and works on Linux too. Writes
 // go through `InsightsStore` (and titles through `Vault.apply`) and obey the read-only rule (format.md §7.3).
 
@@ -16,14 +16,14 @@ struct InsightsCommand: ParsableCommand {
         discussion: """
             Insights are made on the vault's devices only (Apple's on-device model and language framework; never a \
             server) and stored encrypted in the vault's insights/ folder (format.md §16). Turn them on with \
-            'sempere settings set insights.enabled true'. Every device with the model makes summaries and keywords; one \
-            work device (insights.workDevice) embeds every note, builds the map and titles voice notes; 'insights \
-            work-device' shows or sets it. update, topic --generate, \
-            map --rebuild and work-device --claim need macOS 26 (exit 3 elsewhere, or without Apple Intelligence); \
+            'sempere settings set insights.enabled true'. Any capable device does the work (no device is designated): one \
+            with the model makes the summaries and keywords no device has, one that embeds at the pinned revision makes \
+            the vectors no device has and rebuilds the map, and any may title voice notes. update, topic --generate \
+            and map --rebuild need macOS 26 (exit 3 elsewhere, or without Apple Intelligence); \
             show, related, search, status, map and title read what is there on any system.
             """,
         subcommands: [InsightsUpdate.self, InsightsShow.self, InsightsRelated.self, InsightsSearch.self, InsightsStatus.self,
-                      InsightsTopic.self, InsightsMap.self, InsightsTitle.self, InsightsWorkDevice.self, InsightsPurge.self]
+                      InsightsTopic.self, InsightsMap.self, InsightsTitle.self, InsightsPurge.self]
     )
 }
 
@@ -58,9 +58,20 @@ enum InsightsCLI {
     }
 
     static func input(_ query: String, in inputs: [InsightsNoteInput], vault: Vault) throws -> InsightsNoteInput {
-        let id = try vault.resolveNote(query)
+        let id = try vault.resolveShownNote(query)
         guard let n = inputs.first(where: { $0.id == id }) else { throw CLIError.failure("note \(id.uuidString.lowercased()) cannot be read") }
         return n
+    }
+
+    /// The options of an update on this machine: its failure memo and the settings of a Mac (the top level elsewhere).
+    static func updateOptions(for vault: Vault) -> InsightsUpdateOptions {
+        var o = InsightsUpdateOptions()
+        o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
+        #if os(macOS)
+        o.deviceType = .mac   // the settings as a Mac reads them; elsewhere the top level only
+        o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
+        #endif
+        return o
     }
 
     static func shortId(_ id: String) -> String { String(id.prefix(8)) }
@@ -75,12 +86,12 @@ struct InsightsUpdate: ParsableCommand {
         commandName: "update",
         abstract: "Make this device's insights now: summaries, keywords, vectors, the map, titles, topics.",
         discussion: """
-            Does what the scheduling policy gives this device (design §3.7): every device with the model summarizes \
-            each eligible note (text unchanged for 10 minutes; --force: now) that no device has a current summary of, \
-            and makes the topic summaries due; the work device also embeds every note, rebuilds the map when more than \
-            10% changed or weekly, and titles voice notes whose title is still the capture default \
-            (insights.voiceNoteTitle). The first capable device to run it claims the work device when none is set, or \
-            when the work device has not been seen for 14 days. Needs Apple Intelligence (macOS 26), else exit 3 and \
+            Does what the scheduling policy gives this device (design §3.7): a device with the model \
+            summarizes each eligible note (text unchanged for 10 minutes; --force: now) that no device has a current \
+            summary of, and makes the topic summaries due; one that embeds at the pinned revision embeds each note no \
+            device has a current vector of and rebuilds the map when more than 10% changed or weekly; any device derives \
+            titles for voice notes whose own title is blank or a default (insights.voiceNoteTitle), in the insights.language setting's \
+            language when it names one. Needs Apple Intelligence (macOS 26), else exit 3 and \
             nothing is written; --embeddings-only needs only the embedder.
             """
     )
@@ -105,14 +116,9 @@ struct InsightsUpdate: ParsableCommand {
         let vault = try access.openVault(.required)
         if !dryRun { try vault.requireWritable() }
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
-        var o = InsightsUpdateOptions()
-        if let note { o.note = try vault.resolveNote(note) }
+        var o = InsightsCLI.updateOptions(for: vault)
+        if let note { o.note = try vault.resolveShownNote(note) }
         o.force = force; o.limit = limit; o.embeddingsOnly = embeddingsOnly; o.dryRun = dryRun
-        o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
-        #if os(macOS)
-        o.deviceType = .mac   // the settings as a Mac reads them; elsewhere the top level only
-        o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
-        #endif
         let updater = InsightsUpdater(vault: vault, model: embeddingsOnly ? nil : p.model, embedder: p.embedder,
                                       deviceState: DeviceState.defaultURL(), app: appName)
         let options = o
@@ -124,9 +130,8 @@ struct InsightsUpdate: ParsableCommand {
         }
         if output.json { return try output.emitJSON(report) }
         let verb = dryRun ? "would " : ""
-        if report.claimedWorkDevice { output.info("\(verb)claim the work device: \(report.device)") }
         for (label, list) in [("generated", report.generated), ("embedded", report.embedded), ("tombstoned", report.tombstoned),
-                              ("dropped stale", report.dropped), ("titled", report.titled), ("restored title", report.restoredTitles)]
+                              ("dropped stale", report.dropped), ("titled", report.titled)]
         where !list.isEmpty {
             output.info("\(dryRun ? "would be " : "")\(label): \(list.count)  " + list.map(InsightsCLI.shortId).joined(separator: " "))
         }
@@ -180,7 +185,7 @@ struct InsightsRelated: ParsableCommand {
         commandName: "related",
         abstract: "Notes related to a note, with why (shared keywords, or similar wording) and their scores.",
         discussion: """
-            From the work device's vectors when they are compatible with this device (canaries, design §3.8), with \
+            From the vault's synced vectors when they are compatible with this device (canaries, design §3.8), with \
             this device's own vectors for notes not embedded yet (placed); a device that fails the canaries uses a \
             local set; without vectors (no map yet, Linux without one), keyword overlap alone.
             """)
@@ -235,7 +240,7 @@ struct InsightsSearch: ParsableCommand {
 struct InsightsStatus: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "status",
-        abstract: "Processed, stale and missing notes; the work device; the pin; each device's model, revisions and compatibility.")
+        abstract: "Processed, stale and missing notes; the capable devices; the pin; each device's model, revisions and compatibility.")
 
     @OptionGroup var access: AccessOptions
     @OptionGroup var cache: CacheOptions
@@ -248,12 +253,8 @@ struct InsightsStatus: ParsableCommand {
         if output.json { return try output.emitJSON(s) }
         print("Note Insights: \(s.enabled ? "on" : "off")")
         print("processed \(s.processed) of \(s.notes) notes (\(s.stale) stale, \(s.missing) missing)")
-        if let w = s.workDevice {
-            print("work device: \(s.workDeviceName ?? w) (\(w)), last seen \(s.workDeviceLastSeen == nil ? "- (nothing written yet)" : InsightsCLI.ms(s.workDeviceLastSeen))"
-                  + (s.workDeviceNotSeen ? ": work device not seen for 14 days (sempere insights work-device --claim to use this device)" : ""))
-        } else {
-            print("work device: none (sempere insights work-device --claim)")
-        }
+        print("can embed and build the map: " + (s.capableDevices.isEmpty ? "none yet"
+              : s.capableDevices.map { id in s.devices.first { $0.device == id }?.name.map { "\($0) (\(id))" } ?? id }.joined(separator: ", ")))
         print("embedding: \(s.language), pinned revision \(s.pin.map(String.init) ?? "not set yet")"
               + (s.upgradeOffer.map { "; a newer revision \($0) is available (sempere insights map --pin \($0))"
                   + (s.leftOutByUpgrade.isEmpty ? "" : ", leaving out \(s.leftOutByUpgrade.joined(separator: ", "))") } ?? ""))
@@ -263,7 +264,7 @@ struct InsightsStatus: ParsableCommand {
             print("map: none yet; this device: \(s.compatibility)")
         }
         let rows = s.devices.map { d -> [String] in
-            [d.device + (d.isWorkDevice ? "*" : ""), d.name ?? (d.listed ? "" : "(not listed)"), "\(d.current) current, \(d.stale) stale",
+            [d.device, d.name ?? (d.listed ? "" : "(not listed)"), "\(d.current) current, \(d.stale) stale",
              d.modelAvailable.map { $0 ? "model" : "no model (\(d.modelReason ?? "?"))" } ?? "no record",
              d.supported.map { $0.map { "\($0.key) r\($0.value.map(String.init).joined(separator: ","))" }.sorted().joined(separator: " ") } ?? "",
              d.compatibility ?? "", InsightsCLI.ms(d.lastSeen)]
@@ -317,7 +318,8 @@ struct InsightsTopic: ParsableCommand {
             guard notebook == nil, tag == nil, !generate else { throw CLIError.usage("--list takes no --notebook, --tag or --generate") }
             let vault = try access.openVault(.required)
             let inputs = try InsightsCLI.inputs(vault, cache: cache)
-            let all = TopicSummaries.shownAll(inputs: inputs, snapshot: InsightsStore(vault: vault).snapshot()).map(Out.init)
+            let all = TopicSummaries.shownAll(inputs: inputs, snapshot: InsightsStore(vault: vault).snapshot(),
+                                             language: InsightsSettings.read(vault).language).map(Out.init)
             if output.json { return try output.emitJSON(all) }
             if all.isEmpty { print("no notebook or tag has \(TopicSummaries.minMembers) summarized notes yet") }
             for t in all {
@@ -351,7 +353,7 @@ struct InsightsTopic: ParsableCommand {
             }
         } else {
             let snapshot = InsightsStore(vault: vault).snapshot()
-            let members = TopicScopes.members(inputs: inputs, snapshot: snapshot).first { $0.0 == scope }?.1 ?? []
+            let members = TopicScopes.members(inputs: inputs, snapshot: snapshot, language: InsightsSettings.read(vault).language).first { $0.0 == scope }?.1 ?? []
             shown = TopicSummaries.shown(scope, members: members, snapshot: snapshot)
         }
         let out = Out(shown)
@@ -370,10 +372,11 @@ struct InsightsMap: ParsableCommand {
         commandName: "map",
         abstract: "The note map: clusters and positions, as JSON or SVG; rebuild it, or move the pinned embedding revision.",
         discussion: """
-            --rebuild (needs the embedder, macOS 26): on the work device, embed what is missing and rebuild the shared \
-            map; elsewhere, show a map built here (not written). --pin REV moves the vault's pinned embedding revision \
+            --rebuild (needs the embedder, macOS 26): embed what is missing and rebuild the shared map on this device \
+            (any device that supports the pinned revision may; the build is deterministic, so a rebuild elsewhere at the \
+            same time gives the same map). --pin REV moves the vault's pinned embedding revision \
             (the Settings path, D12): it lists the devices that do not support REV (they become vector readers) and \
-            needs --yes; when the work device lacks REV the role moves to a device that has it.
+            needs --yes.
             """)
 
     @Option(name: .long, help: ArgumentHelp("json (default) or svg.", valueName: "format")) var format = "json"
@@ -392,16 +395,11 @@ struct InsightsMap: ParsableCommand {
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
         if let pin { return try movePin(pin, vault: vault, inputs: inputs) }
         if rebuild {
-            let settings = InsightsSettings.read(vault)
-            if settings.workDevice == vault.writerDevice, settings.workDevice != nil {
-                var o = InsightsUpdateOptions()
-                o.embeddingsOnly = true; o.rebuildMap = true; o.titles = false; o.topics = false
-                let options = o
-                let updater = InsightsUpdater(vault: vault, model: nil, embedder: p.embedder, deviceState: DeviceState.defaultURL(), app: appName)
-                _ = try blockingThrowing { try await updater.run(options, notes: inputs) }
-            } else {
-                printStderr("note: this device is not the work device; the map below is built here and not written")
-            }
+            var o = InsightsUpdateOptions()
+            o.embeddingsOnly = true; o.rebuildMap = true; o.titles = false; o.topics = false
+            let options = o
+            let updater = InsightsUpdater(vault: vault, model: nil, embedder: p.embedder, deviceState: DeviceState.defaultURL(), app: appName)
+            _ = try blockingThrowing { try await updater.run(options, notes: inputs) }
         }
         let view = InsightsReader(vault: vault).mapView(inputs: inputs, me: vault.writerDevice, embedder: p.embedder)
         if format == "svg" { print(InsightsReader.svg(view), terminator: "") } else { try output.emitJSON(view) }
@@ -413,17 +411,16 @@ struct InsightsMap: ParsableCommand {
         let settings = InsightsSettings.read(vault)
         let language = InsightsLanguage.of(inputs.first { !$0.deleted }?.language)
         let move = InsightsSettingsWrite.planPinMove(to: rev, language: language, vault: vault, snapshot: snapshot, settings: settings)
-        let leftOut = move.leftOut, newWork = move.workDevice
+        let leftOut = move.leftOut
         if !yes {
             let names = leftOut.map(\.rawValue).joined(separator: ", ")
             throw CLIError.usage("moving the \(language) embedding revision to \(rev) "
                 + (leftOut.isEmpty ? "leaves no recently seen device out" : "leaves out \(names): they stop making vectors and cannot place new notes")
-                + (newWork != settings.workDevice ? "; the work device moves to \(newWork?.rawValue ?? "none")" : "")
                 + "; run again with --yes")
         }
         try InsightsSettingsWrite.apply(move, vault: vault)
-        struct Out: Encodable { var language: String; var revision: Int; var leftOut: [String]; var workDevice: String? }
-        let out = Out(language: language, revision: rev, leftOut: leftOut.map(\.rawValue), workDevice: newWork?.rawValue)
+        struct Out: Encodable { var language: String; var revision: Int; var leftOut: [String] }
+        let out = Out(language: language, revision: rev, leftOut: leftOut.map(\.rawValue))
         if output.json { return try output.emitJSON(out) }
         output.info("pinned \(language) embedding revision \(rev)" + (leftOut.isEmpty ? "" : "; vector readers now: \(out.leftOut.joined(separator: ", "))"))
     }
@@ -434,12 +431,13 @@ struct InsightsMap: ParsableCommand {
 struct InsightsTitle: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "title",
-        abstract: "Title a voice note from its insights (D14), while its title is still the capture default.",
+        abstract: "Derive a voice note's title from its insights (D14); the note's own title is never changed.",
         discussion: """
             The title follows --format, else the vault's insights.voiceNoteTitle (default {date} {time} {slug}): \
             {date} YYYY-MM-DD and {time} HH.mm in the capture's time zone, {slug} the model's 2-6 word title, \
-            fact-checked against the transcript. A title the user set is never replaced; a rename made on another \
-            device that lost to this device's title is restored. Uses a stored slug; without one, makes it with \
+            fact-checked against the transcript. The title is kept in the note's insights file, not in the note: \
+            `notes list` and the app show it while the note has no title of its own (or a default one made before \
+            1.3). A title the user set is never replaced. Uses a stored slug; without one, makes it with \
             Apple's on-device model (exit 3 where there is none).
             """)
 
@@ -460,7 +458,8 @@ struct InsightsTitle: ParsableCommand {
         let n = try InsightsCLI.input(note, in: inputs, vault: vault)
         let fmt = format ?? InsightsSettings.read(vault).voiceNoteTitle
         let snapshot = InsightsStore(vault: vault).snapshot()
-        var slug = snapshot.bestGen(for: n.id, hash: n.hash).flatMap { $0.current ? $0.gen.slug : nil }
+        let language = InsightsSettings.read(vault).language
+        var slug = snapshot.bestGen(for: n.id, hash: n.hash, language: language).flatMap { $0.current ? $0.gen.slug : nil }
         if slug == nil, fmt.contains("{slug}"), !n.transcript.isEmpty {
             let p = InsightsCLI.providers()
             guard let model = p.model, model.availability.isAvailable else { throw InsightsCLI.unavailable(InsightsCLI.modelReason(p.model)) }
@@ -471,91 +470,17 @@ struct InsightsTitle: ParsableCommand {
             }
         }
         let updater = InsightsUpdater(vault: vault, model: nil, embedder: nil, deviceState: DeviceState.defaultURL(), app: appName)
-        let decision: VoiceNoteTitleState.Decision
-        let isVoice: Bool
-        if dryRun {
-            (decision, isVoice) = try updater.proposedTitle(n, format: fmt, slug: slug)
-        } else {
-            let p = try updater.proposedTitle(n, format: fmt, slug: slug)
-            isVoice = p.isVoice
-            decision = isVoice ? try updater.writeTitle(n, format: fmt, slug: slug) : .keep
-        }
-        let out: Out
-        switch decision {
-        case .apply(let t): out = Out(note: n.id.uuidString.lowercased(), action: "apply", title: t, dryRun: dryRun)
-        case .restore(let t): out = Out(note: n.id.uuidString.lowercased(), action: "restore", title: t, dryRun: dryRun)
-        case .keep: out = Out(note: n.id.uuidString.lowercased(), action: isVoice ? "keep" : "notVoiceNote", title: nil, dryRun: dryRun)
-        }
+        let isVoice = try vault.reconstruct(try vault.loadNote(n.id)).recordings.contains { $0.captured != nil }
+        let title = isVoice ? (dryRun ? try updater.proposedTitle(n, format: fmt, slug: slug, language: language)
+                                      : try updater.writeTitle(n, format: fmt, slug: slug, language: language)) : nil
+        let id = n.id.uuidString.lowercased()
+        let out = Out(note: id, action: title != nil ? "apply" : (isVoice ? "keep" : "notVoiceNote"), title: title, dryRun: dryRun)
         if output.json { return try output.emitJSON(out) }
         switch out.action {
         case "apply": output.info("\(dryRun ? "would title" : "titled") \(InsightsCLI.shortId(out.note)): \(out.title ?? "")")
-        case "restore": output.info("\(dryRun ? "would restore" : "restored") the user's title: \(out.title ?? "")")
         case "notVoiceNote": output.info("not a voice note: titles are only for quick voice notes")
         default: output.info("the title stays (\(n.title))")
         }
-    }
-}
-
-// MARK: - work-device
-
-struct InsightsWorkDevice: ParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "work-device",
-        abstract: "Show or set the work device (D13): the one device that embeds every note, builds the map and titles voice notes.",
-        discussion: """
-            Without arguments it shows the work device, when it was last seen and which devices can hold the role. \
-            ID (8 hex digits, sempere devices) sets it; --claim takes it for this device (needs the embedder, macOS 26). \
-            When the work device has not been seen for 14 days, the next capable device to run an update claims the role.
-            """)
-
-    @Argument(help: ArgumentHelp("The device id to make the work device.", valueName: "id")) var id: String?
-    @Flag(name: .long, help: "Make this device the work device.") var claim = false
-    @OptionGroup var access: AccessOptions
-    @OptionGroup var cache: CacheOptions
-    @OptionGroup var output: OutputOptions
-
-    struct Out: Encodable {
-        var workDevice: String?
-        var name: String?
-        var lastSeen: Date?
-        var notSeenFor14Days: Bool
-        var capable: [String]
-        var changed: Bool
-    }
-
-    func run() throws {
-        if id != nil && claim { throw CLIError.usage("give an ID or --claim, not both") }
-        if claim, InsightsCLI.providers().embedder == nil { throw InsightsCLI.unavailable("--claim needs macOS 26 (the sentence embedder)") }
-        let vault = try access.openVault(.required)
-        var changed = false
-        if claim || id != nil {
-            let target: DeviceID
-            if claim {
-                guard let me = vault.writerDevice else { throw CLIError.failure("this machine is not a device of the vault") }
-                target = me
-            } else {
-                guard let d = id.flatMap({ DeviceID($0.lowercased()) }) else { throw CLIError.usage("the id is 8 hex digits (sempere devices)") }
-                guard vault.manifest.devices.contains(where: { $0.id == d.rawValue }) else {
-                    throw CLIError.failure("no device \(d.rawValue) in the vault's list")
-                }
-                target = d
-            }
-            try InsightsSettingsWrite.setWorkDevice(target, vault: vault)
-            changed = true
-        }
-        let inputs = try InsightsCLI.inputs(vault, cache: cache)
-        let reader = InsightsReader(vault: vault)
-        let listed = Set(vault.manifest.devices.compactMap { $0.id.flatMap(DeviceID.init) })
-        let w = WorkDeviceStatus(settings: reader.settings, snapshot: reader.snapshot, listed: listed,
-                                 language: InsightsUpdater.mainLanguage(inputs), now: Date())
-        let out = Out(workDevice: w.workDevice?.rawValue, name: w.workDevice.flatMap { reader.deviceNames[$0.rawValue] },
-                      lastSeen: w.lastSeen, notSeenFor14Days: w.notSeen, capable: w.capable.map(\.rawValue), changed: changed)
-        if output.json { return try output.emitJSON(out) }
-        if let d = out.workDevice {
-            print("work device: \(out.name ?? d) (\(d)), last seen \(out.lastSeen == nil ? "- (nothing written yet)" : InsightsCLI.ms(out.lastSeen))"
-                  + (out.notSeenFor14Days ? "; not seen for 14 days: the next capable device to update takes the role" : ""))
-        } else { print("work device: none") }
-        if !out.capable.isEmpty { print("capable: " + out.capable.map { "\(reader.deviceNames[$0] ?? $0) (\($0))" }.joined(separator: ", ")) }
     }
 }
 

@@ -59,6 +59,15 @@ struct SempereApp: App {
         // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync
         // targets (folder and WebDAV) are in the store's registry.
         model.vaultStore = library.vaultStore
+        // Spotlight (opt-in, off by default): results say "Untitled note" and the date in the user's language, and a vault
+        // removed from this device takes its items with it (docs/design/1.3-spotlight.md §3.4).
+        model.spotlightUntitled = String(localized: "Untitled note")
+        // A voice note with no title shows "Voice note <date>" (a Watch note "Watch voice note <date>") in the user's language.
+        let voiceNote = String(localized: "Voice note", comment: "First words of the default title of a quick voice note, before its date")
+        let watchVoiceNote = String(localized: "Watch voice note", comment: "First words of the default title of a voice note recorded on the Apple Watch, before its date")
+        model.displayTitleWords = NoteDisplayTitle.Words { $0 == "watch" ? watchVoiceNote : voiceNote }
+        model.spotlightDateText = { $0.formatted(date: .abbreviated, time: .omitted) }
+        library.vaultRemoved = { [spotlight = model.spotlight] id in await spotlight.vaultRemoved(id) }
         // The write ledger and set-aside store (key-hierarchy design §5.4, §5.8), in the App Group beside the store.
         let writeStores = DeviceWriteStores.app(storeRoot: library.vaultStore.root)
         model.writeStores = writeStores

@@ -118,7 +118,7 @@ struct SettingsList: ParsableCommand {
         let vault = try access.openVault(.required)
         let s = try SettingsText.read(vault)
         var rows: [Row] = []
-        for spec in SharedSettingsCatalog.specs(for: deviceType) {
+        for spec in SharedSettingsCatalog.specs(for: deviceType) where !spec.deprecated {
             let r = s.resolve(spec, for: deviceType)
             for w in r.warnings { printError("warning: \(w)") }
             rows.append(Row(key: spec.name, value: r.value, source: r.source.rawValue, defaultValue: spec.defaultValue,
@@ -129,7 +129,8 @@ struct SettingsList: ParsableCommand {
             others = s.slots.keys.sorted()
                 .filter { $0.block != nil || SharedSettingsCatalog.spec(named: $0.key) == nil }
                 .map { Raw(key: $0.key, block: $0.block, value: s.slots[$0]?.value,
-                           known: SharedSettingsCatalog.spec(named: $0.key) != nil) }
+                           known: SharedSettingsCatalog.spec(named: $0.key) != nil
+                               || SharedSettingsCatalog.family(of: $0.key) != nil) }
         }
         if output.json {
             try output.emitJSON(Listing(schemaVersion: s.schemaVersion, minReaderVersion: s.minReaderVersion,

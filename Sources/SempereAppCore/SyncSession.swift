@@ -131,10 +131,31 @@ public final class SyncSession {
     /// Files the runs wrote into a provider's folder that it has not uploaded yet (`ProviderUploads`, offline audit
     /// P15): until they are, the target is not "synced", only written to.
     private(set) var providerPending = 0
-    /// The provider reported an upload error for them (a full iCloud storage): the bar says so, as a problem.
+    /// The provider's upload error for them once it lasted (`ProviderUploads.Persistence`): the bar says so, as a
+    /// problem. Nil while it has not lasted yet: the files are only waiting, as far as the user is told.
     private(set) var providerError: ProviderUploads.State?
+    /// The looks in a row that saw an upload error, and since when.
+    @ObservationIgnored private(set) var providerTrouble = ProviderUploads.Persistence()
     /// Reads them off the main actor (folder targets; nil: none).
     @ObservationIgnored var providerSummary: (@Sendable () async -> ProviderUploads.Summary)?
+    /// Asks the provider again about the files still waiting, off the main actor, and returns what remains (nil: could not
+    /// look, try later). The loop calls it between runs while files wait, with growing delays (`providerRecheckDelays`),
+    /// so the bar leaves "waiting" when the provider is done, not at the next run.
+    @ObservationIgnored var providerRecheck: (@Sendable () async -> ProviderUploads.Summary?)?
+    /// The delays between those looks (the last repeats).
+    @ObservationIgnored var providerRecheckDelays: [TimeInterval] = [15, 30, 60, 120, 300]
+    /// The most looks in a row that find no fewer files waiting (the provider offline): then the loop stops looking
+    /// until the next run's count (about 45 minutes with the delays above).
+    @ObservationIgnored var providerRecheckLimit = 12
+    @ObservationIgnored private var providerRecheckStep = 0
+    /// Looks in a row since the waiting count last went down (or since a run's count).
+    @ObservationIgnored private var providerRecheckIdle = 0
+    /// Runs started so far: a look that a run overlapped keeps its answer to itself (the run's count is newer).
+    @ObservationIgnored private var runsStarted = 0
+    /// When the loop looks at the waiting files next (`planProviderRecheck`); nil: no look planned.
+    @ObservationIgnored private(set) var providerRecheckDue: Date?
+    /// The count `start` makes, for tests to wait on (a later fresh count starts the provider's looks over).
+    @ObservationIgnored private(set) var startCount: Task<Void, Never>?
     /// The folder is in iCloud Drive (the wording names it).
     @ObservationIgnored var uploadsViaICloud = false
     /// A folder target's path as run errors may spell it (as stored, symbolic links resolved): a write refused there
@@ -216,6 +237,11 @@ public final class SyncSession {
                 if self.mayRunNow, self.schedule.isDue(now: self.now()) {
                     _ = await self.runOnce(interactive: self.mayMount(demanded: self.schedule.demanded))
                 }
+                if let due = self.providerRecheckDue, self.now() >= due {
+                    // A run the loop did not start is going: its count plans the next look; until then the look waits
+                    // a step, so the loop does not wake every tick for it.
+                    if self.isSyncing { self.postponeProviderRecheck() } else { await self.recheckProvider() }
+                }
                 guard !Task.isCancelled else { return }
                 let nap = Task { [delay = self.sleepDuration()] in _ = try? await Task.sleep(for: delay) }
                 self.sleeper = nap
@@ -223,7 +249,7 @@ public final class SyncSession {
                 if self.sleeper == nap { self.sleeper = nil }
             }
         }
-        Task { await recount() }
+        startCount = Task { await recount() }
     }
 
     /// A scheduled run may start now: runs are automatic, the pace is not paused (or a write or demand waits), and
@@ -237,9 +263,14 @@ public final class SyncSession {
     /// nothing may run (a wake ends it sooner).
     func sleepDuration() -> Duration {
         let floor = tick, ceiling = max(maxSleep ?? tick * 60, tick)
-        guard mayRunNow, let next = schedule.nextRun(now: now()) else { return ceiling }
-        let wait = Duration.milliseconds(Int64(max(0, next.timeIntervalSince(now())) * 1000))
-        return min(max(wait, floor), ceiling)
+        var wait = ceiling
+        if mayRunNow, let next = schedule.nextRun(now: now()) {
+            wait = min(max(.milliseconds(Int64(max(0, next.timeIntervalSince(now())) * 1000)), floor), ceiling)
+        }
+        if let due = providerRecheckDue {
+            wait = min(wait, max(.milliseconds(Int64(max(0, due.timeIntervalSince(now())) * 1000)), floor))
+        }
+        return wait
     }
 
     /// A demanded run (the unlock, the app becoming active, the network back) may mount a folder target's share, at
@@ -355,6 +386,7 @@ public final class SyncSession {
             await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
             isSyncing = true
+            runsStarted += 1
             schedule.started(at: now())
             defer {
                 if mode == .twoWay { afterTwoWayRun() }
@@ -423,12 +455,64 @@ public final class SyncSession {
     private func recount() async {
         unconfirmed = await countUnconfirmed()
         if let countStaged { staged = await countStaged() }
-        if let providerSummary {
-            let summary = await providerSummary()
-            providerPending = summary.count
-            // Only an upload error is a problem (`.failed`).
-            if case .failed? = summary.error { providerError = summary.error } else { providerError = nil }
+        if let providerSummary { apply(await providerSummary()) }
+        planProviderRecheck(fresh: true)
+    }
+
+    private func apply(_ summary: ProviderUploads.Summary) {
+        providerPending = summary.count
+        // Only an upload error is a problem (`.failed`), and only once it lasted (`ProviderUploads.Persistence`).
+        let at = now()
+        providerTrouble.observe(summary.error, at: at, networkDown: networkDown)
+        let shown = providerTrouble.problem(at: at)
+        if providerError != shown { providerError = shown }
+    }
+
+    /// While files wait for the provider (or it reports an error), looks at them again between runs, after growing delays;
+    /// a fresh count starts the delays over.
+    private func planProviderRecheck(fresh: Bool) {
+        guard providerRecheck != nil, providerPending > 0 || providerTrouble.isActive else {
+            providerRecheckDue = nil
+            providerRecheckStep = 0
+            return
         }
+        if fresh {
+            providerRecheckStep = 0
+            providerRecheckIdle = 0
+        }
+        let delays = providerRecheckDelays
+        guard !delays.isEmpty, providerRecheckIdle < providerRecheckLimit else {
+            providerRecheckDue = nil
+            return
+        }
+        providerRecheckDue = now().addingTimeInterval(delays[min(providerRecheckStep, delays.count - 1)])
+        providerRecheckStep += 1
+    }
+
+    /// The look fell due while a run is going: due again after the current step's delay (the run's count usually
+    /// plans it first).
+    private func postponeProviderRecheck() {
+        let delays = providerRecheckDelays
+        guard !delays.isEmpty else { providerRecheckDue = nil; return }
+        providerRecheckDue = now().addingTimeInterval(delays[min(max(providerRecheckStep - 1, 0), delays.count - 1)])
+    }
+
+    /// One look at the waiting files (`providerRecheck`); the status follows.
+    func recheckProvider() async {
+        providerRecheckDue = nil
+        guard let providerRecheck else { return }
+        let before = providerPending
+        let runs = runsStarted
+        let summary = await providerRecheck()
+        // A run started meanwhile counts again when it ends (`recount`), and plans the next look.
+        guard runs == runsStarted, !isSyncing else { return }
+        if let summary {
+            apply(summary)
+            providerRecheckIdle = providerPending < before ? 0 : providerRecheckIdle + 1
+        } else {
+            providerRecheckIdle += 1
+        }
+        planProviderRecheck(fresh: false)
     }
 
     // MARK: - Status
@@ -438,10 +522,11 @@ public final class SyncSession {
         SyncStatus(syncing: isSyncing, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
                    staged: staged, networkDown: networkDown && kind == .webdav, continuing: continuing,
-                   providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError)
+                   providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
+                   targetName: targetName, added: added == .distantPast ? nil : added, now: now())
     }
 
-    /// True when the bar has something to say beyond "synced".
+    /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
     public var needsAttention: Bool { status.needsAttention }
 }
 
@@ -491,11 +576,23 @@ public struct SyncStatus: Equatable, Sendable {
     public var viaICloud = false
     /// The provider's upload error for them (a `.failed` state; the app words it).
     var providerError: ProviderUploads.State?
+    /// The target's name (the folder's or the host), for the line of a target unreachable for long (`unreachableDays`).
+    public var targetName = ""
+    /// When the target was added (the registry's `SyncTarget.added`); nil when unknown. A target that never synced
+    /// has been unreachable since then (`unreachableDays`).
+    var added: Date?
+    /// The time the status was taken (the session's clock): `unreachableDays` counts to it.
+    var now: Date
+
+    /// How long a target may stay unreachable before it needs attention (`unreachableDays`): offline for an hour is
+    /// normal, for a week the user should look (a server gone, a renamed host, a share never mounted again).
+    public static let staleAfter: TimeInterval = 7 * 24 * 60 * 60
 
     public init(syncing: Bool, problems: [WebDAVSyncProblem], unconfirmed: Int, arriving: Int, twoWay: Bool, lastSuccess: Date?,
                 folder: Bool = false, deviceLocked: Bool = false, staged: Int = 0, networkDown: Bool = false,
                 continuing: Bool = false, providerPending: Int = 0, viaICloud: Bool = false,
-                providerError: ProviderUploads.State? = nil) {
+                providerError: ProviderUploads.State? = nil, targetName: String = "", added: Date? = nil,
+                now: Date = Date()) {
         self.syncing = syncing
         self.problems = problems
         self.unconfirmed = unconfirmed
@@ -510,6 +607,9 @@ public struct SyncStatus: Equatable, Sendable {
         self.providerPending = providerPending
         self.viaICloud = viaICloud
         self.providerError = providerError
+        self.targetName = targetName
+        self.added = added
+        self.now = now
     }
 
     /// The problem for a run that threw (`WebDAVSyncProblem.from(error:)`, the one classification the CLI reads too).
@@ -517,6 +617,12 @@ public struct SyncStatus: Equatable, Sendable {
 
     public var kind: Kind {
         if syncing { return .syncing }
+        return settledKind
+    }
+
+    /// What the status is apart from a run going: a problem the last run (or the provider) reported stays while the next
+    /// run goes, so the bar that shows it does not come and go with every run.
+    public var settledKind: Kind {
         if deviceLocked { return .waitingForUnlock }
         if networkDown || problems.contains(.offline) { return .offline }
         if let problem = problems.first { return .problem(problem) }
@@ -532,11 +638,30 @@ public struct SyncStatus: Equatable, Sendable {
     /// wrote them locally (offline audit P15).
     public var lastSuccessIsSync: Bool { providerPending == 0 && providerError == nil }
 
-    /// True when the user should look at it (offline and waiting are not problems).
+    /// True when something is definitely wrong and the user should look at it; the note list shows its bar only then
+    /// (owner 2026-11-20: the status ever present at the bottom of the notes was annoying). A problem a run reported
+    /// (a refused password or certificate, a folder gone or not writable, files that failed, a device-list conflict) and
+    /// a provider's upload error that lasted (`ProviderUploads.Persistence`) are; syncing, synced, changes not synced
+    /// yet, a run cut short, files waiting for the provider, waiting for the unlock and offline (changes are kept on this
+    /// device, and sync when it is back) are not, except a target the last runs could not reach for `staleAfter` while
+    /// the device had a network (`unreachableDays`). Judged on `settledKind`: a problem stays one while the next run goes.
     public var needsAttention: Bool {
-        switch kind {
+        switch settledKind {
         case .problem, .providerFailed: return true
-        default: return false
+        default: return unreachableDays != nil
         }
+    }
+
+    /// Whole days the target has not been reached, when that is at least `staleAfter` and the runs, not the device's
+    /// network, said so (`.offline` also covers a host not found or unreachable, timeouts and a folder that is not
+    /// there, `WebDAVSyncProblem.from(error:)`); nil otherwise. Counted from the last sync, or, for a target that never
+    /// synced, from when it was added (`added`, the registry's date: the first run is tried as soon as a target is
+    /// added); a target whose date is unknown is not counted.
+    public var unreachableDays: Int? {
+        guard settledKind == .offline, !networkDown, problems.contains(.offline),
+              let since = lastSuccess ?? added else { return nil }
+        let age = now.timeIntervalSince(since)
+        guard age >= Self.staleAfter else { return nil }
+        return Int(age / (24 * 60 * 60))
     }
 }

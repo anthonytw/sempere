@@ -159,6 +159,7 @@ extension Vault {
         // The ledger keeps the key of every epoch this device may write under, a profile's included: its captures
         // are caught up even if a takeover drops that epoch before this device writes anything else under it.
         try ledger?.rememberKey(epoch: manifest.epoch, key: secret)
+        if key == nil || key == deviceEntry?.key { rememberOwnDeviceKey(profileDevice: device.rawValue) }
         return CaptureProfile(vaultId: vaultId, recipients: [try vaultRecipient().string],
                               key: CaptureKey.derive(from: secret, device: fingerprint).bytes,
                               device: device.rawValue, notebook: nb, recipient: fingerprint,
@@ -229,13 +230,23 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
     public var sampleRate: Int?
     public var channels: Int?
     public var bitRate: Int?
+    /// The capturing device's time zone (`America/New_York`) and kind (`phone`, `watch`); absent in captures before 1.3.
+    public var tz: String?
+    public var source: String?
 
     public init(id: UUID, device: String, vault: UUID, created: Date, started: Date, title: String, notebook: String?,
-                audio: BlobRef, info: AudioInfo? = nil, recipient: String) {
+                audio: BlobRef, info: AudioInfo? = nil, recipient: String, captureInfo: CaptureInfo? = nil) {
+        tz = captureInfo?.tz; source = captureInfo?.source
         self.id = id; self.device = device; self.vault = vault; self.created = created; self.started = started
         self.title = title; self.notebook = notebook; self.audio = audio; self.recipient = recipient
         duration = info?.duration; codec = info?.codec; sampleRate = info?.sampleRate; channels = info?.channels
         bitRate = info?.bitRate
+    }
+
+    /// Where and how it was captured, as the note's recording records it.
+    public var captureInfo: CaptureInfo? {
+        let i = CaptureInfo(tz: tz, source: source)
+        return i.isEmpty ? nil : i
     }
 
     /// The recording's informational fields.
@@ -246,7 +257,7 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case format, id, device, vault, created, started, title, notebook, recipient, audio, duration, codec, sampleRate, channels, bitRate
+        case format, id, device, vault, created, started, title, notebook, recipient, audio, duration, codec, sampleRate, channels, bitRate, tz, source
     }
 
     public init(from decoder: Decoder) throws {
@@ -277,6 +288,9 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
         sampleRate = try c.decodeIfPresent(Int.self, forKey: .sampleRate).flatMap { $0 > 0 ? $0 : nil }
         channels = try c.decodeIfPresent(Int.self, forKey: .channels).flatMap { $0 > 0 ? $0 : nil }
         bitRate = try c.decodeIfPresent(Int.self, forKey: .bitRate).flatMap { $0 > 0 ? $0 : nil }
+        // Informational: a value of another shape reads as absent.
+        tz = (try? c.decodeIfPresent(String.self, forKey: .tz)).flatMap { $0 }.flatMap(CaptureInfo.validZone)
+        source = (try? c.decodeIfPresent(String.self, forKey: .source)).flatMap { $0 }.flatMap(CaptureInfo.validSource)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -296,6 +310,8 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
         try c.encodeIfPresent(sampleRate, forKey: .sampleRate)
         try c.encodeIfPresent(channels, forKey: .channels)
         try c.encodeIfPresent(bitRate, forKey: .bitRate)
+        try c.encodeIfPresent(tz, forKey: .tz)
+        try c.encodeIfPresent(source, forKey: .source)
     }
 }
 
@@ -404,9 +420,29 @@ public enum CaptureFile {
     /// The plaintext of inbox file `filename` tagged under `key` instead: the
     /// same bytes after the tag, once the old tag verifies under `old`
     /// (format.md §11.1, a recipient change). Nil when it does not.
-    static func retag(_ plaintext: Data, filename: String, verifiedBy old: CaptureKey, to key: CaptureKey) -> Data? {
+    ///
+    /// `recipient` (a capture of a device key this device no longer has, `VaultCatchUp`) also rewrites the recipient the
+    /// JSON line names, `from` to `to` (64 lowercase hex digits each, so the length is the same): the reader tries the keys of
+    /// the devices a line claims, and attributes the note to the one whose tag verifies. Nil unless `from` occurs in the line
+    /// exactly once; the payload is never touched.
+    static func retag(_ plaintext: Data, filename: String, verifiedBy old: CaptureKey, to key: CaptureKey,
+                      recipient: (from: String, to: String)? = nil) -> Data? {
         guard (try? unframe(plaintext, filename: filename, key: old)) != nil else { return nil }
-        let rest = plaintext[(plaintext.startIndex + headerSize)...]
+        var rest = Data(plaintext[(plaintext.startIndex + headerSize)...])
+        if let recipient {
+            let from = Array(recipient.from.utf8), to = Array(recipient.to.utf8)
+            guard from.count == 64, to.count == 64, Hex.decode(recipient.from) != nil, Hex.decode(recipient.to) != nil,
+                  let nl = rest.prefix(maxLineBytes + 1).firstIndex(of: 0x0A) else { return nil }
+            var line = Array(rest[rest.startIndex..<nl])
+            var hits: [Int] = []
+            var i = 0
+            while i + from.count <= line.count {
+                if line[i..<i + from.count].elementsEqual(from) { hits.append(i); i += from.count } else { i += 1 }
+            }
+            guard hits.count == 1, let at = hits.first else { return nil }
+            line.replaceSubrange(at..<at + from.count, with: to)
+            rest = Data(line) + rest[nl...]
+        }
         var out = Data(magic)
         out.append(version)
         out.append(tag(key, filename: filename, rest: rest))
@@ -496,8 +532,8 @@ public struct CaptureWriter: Sendable {
         guard !recipients.isEmpty, recipients.count == profile.recipients.count else { throw CaptureError.noRecipients }
     }
 
-    /// A title from the start time, e.g. `Voice note 2026-10-07 14:32`
-    /// (in `timeZone`); the app passes a localized one.
+    /// The title 1.0 through 1.2 stored for a voice note, e.g. `Voice note 2026-10-07 14:32` (in `timeZone`). Since 1.3 a
+    /// capture stores no title (`NoteDisplayTitle` shows a default); this stays for the shape of what older notes hold.
     public static func defaultTitle(_ started: Date, timeZone: TimeZone = .current) -> String {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timeZone
@@ -507,11 +543,15 @@ public struct CaptureWriter: Sendable {
 
     /// Seals `audio` (an `audio/mp4` recording by default) as capture `id`.
     public func seal(audio: Data, type: String = "audio/mp4", started: Date, info: AudioInfo? = nil, title: String? = nil,
+                     source: String? = nil, timeZone: TimeZone = .current,
                      id: UUID = UUID(), created: Date = Date()) throws -> SealedCapture {
+        // No title unless the user gave one: the note shows a default made at display time from its source and language
+        // (`NoteDisplayTitle`), and the capture's time zone and source travel in the manifest for it.
         let manifest = CaptureManifest(id: id, device: profile.device, vault: profile.vaultId, created: created, started: started,
-                                       title: title ?? Self.defaultTitle(started),
+                                       title: title ?? "",
                                        notebook: CaptureAdoption.boundedName(profile.notebook),
-                                       audio: BlobRef(content: audio, type: type), info: info, recipient: profile.recipient)
+                                       audio: BlobRef(content: audio, type: type), info: info, recipient: profile.recipient,
+                                       captureInfo: CaptureInfo(tz: timeZone.identifier, source: source))
         let name = CaptureFile.name(id, .capture)
         let plain = try CaptureFile.frame(line: try InkJSON.encoder().encode(manifest), payload: audio, filename: name, key: key)
         return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients), epoch: profile.epoch,
@@ -672,6 +712,7 @@ public enum CaptureAdoption {
         recording.transcript = transcript
         // Who captured it (format.md §8.3.1, §11.3): the adopter writes the delta.
         recording.captured = CaptureAttribution(device: m.device, recipient: m.recipient)
+        recording.captureInfo = m.captureInfo
         ops.append(.addRecording(recording))
         // The recording's card on the page (format.md §8.2.9), as a recording made in a note gets one:
         // it shows the title, the length and, once there is one, the transcript. Placed by the

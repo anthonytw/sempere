@@ -34,7 +34,7 @@ struct InsightsMapScreen: View {
             .padding(.vertical, 8)
             .accessibilityIdentifier("insightsMap.form")
             if map.isLocal {
-                banner(String(localized: "This device builds its own map: its numbers differ from the map and titles device's. Groups and places may differ from other devices."),
+                banner(String(localized: "This device builds its own map: its numbers differ from the shared map's. Groups and places may differ from other devices."),
                        systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("insightsMap.localBanner")
             } else if map.placedCount > 0, shown == .map {
@@ -43,7 +43,7 @@ struct InsightsMapScreen: View {
             }
             if map.isEmpty {
                 ContentUnavailableView("No Map Yet", systemImage: "point.3.connected.trianglepath.dotted",
-                                       description: Text("The map appears once the map and titles device has built it."))
+                                       description: Text("The map appears once a device has built it."))
                     .frame(maxHeight: .infinity)
             } else if shown == .map {
                 InsightsMapCanvas(map: map, onOpen: onOpen)
@@ -366,7 +366,7 @@ struct InsightsMapCanvas: View {
 }
 
 /// The map's groups as a list (design §6 item 5, D9's fallback; the accessible and compact form): each group's label
-/// and its notes; a tap opens one. Notes placed on this device (not in the work device's map yet) are marked.
+/// and its notes; a tap opens one. Notes placed on this device (not in the shared map yet) are marked.
 struct InsightsClustersList: View {
     @AppModelEnvironment private var model
     var onOpen: (UUID) -> Void
@@ -375,7 +375,7 @@ struct InsightsClustersList: View {
         List {
             let clusters = model.insightsClusters
             if clusters.isEmpty {
-                Text("No groups yet: they appear once the map and titles device has built the map.").foregroundStyle(.secondary)
+                Text("No groups yet: they appear once a device has built the map.").foregroundStyle(.secondary)
             }
             ForEach(clusters) { c in
                 Section {

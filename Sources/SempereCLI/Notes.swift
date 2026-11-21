@@ -1,20 +1,25 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 
 struct NotesCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "notes",
         abstract: "List, find, create and edit notes, switch page layout, show their history and restore earlier revisions.",
         subcommands: [NotesList.self, NotesShow.self, NotesNew.self, NotesDense.self, NotesRename.self, NotesTag.self, NotesMove.self,
-                      NotesPaper.self, NotesLanguage.self, NotesMarkers.self, NotesFavorite.self, NotesLayout.self, NotesSearch.self, NotesDelete.self, NotesUndelete.self, NotesHistory.self,
+                      NotesPaper.self, NotesLanguage.self, NotesMarkers.self, NotesFavorite.self, NotesLayout.self, NotesSearch.self, NotesDelete.self, NotesUndelete.self, NotesHistory.self, NotesRevisions.self,
                       NotesRestore.self, NotesCheckpoint.self, NotesDedupe.self]
     )
 }
 
 struct NoteJSON: Encodable {
     var id: String
+    /// The title stored in the note: empty for a voice note nobody titled (1.3 onward).
     var title: String
+    /// What a list shows: `title`, else for a voice note the title Note Insights derived or a default from its source and
+    /// the reader's language (`NoteDisplayTitle`); empty only for a note that is no voice note and has no title.
+    var displayTitle: String
     var tags: [String]
     var notebook: String?
     var deleted: Bool
@@ -41,7 +46,8 @@ struct NoteJSON: Encodable {
     /// What a newer version wrote and what could not be shown (format.md §7.4).
     var newer: NewerContent?
 
-    init(_ s: NoteSummary, vaultReadOnly: Bool = false) {
+    init(_ s: NoteSummary, vaultReadOnly: Bool = false, generatedTitle: String? = nil) {
+        displayTitle = NoteTitles.display(s, generated: generatedTitle)
         readOnly = vaultReadOnly || s.newer != nil
         newer = s.newer
         id = s.id.uuidString.lowercased(); title = s.title; tags = s.tags; notebook = s.notebook
@@ -50,6 +56,51 @@ struct NoteJSON: Encodable {
         attachments = s.attachments.names; created = s.created
         modified = s.modified; problem = s.problem
         lang = s.lang; markersBehindText = s.markersBehindText; favorite = s.favorite; recognized = s.recognized
+    }
+}
+
+/// The titles the CLI shows (`NoteDisplayTitle`): the note's own, else for a voice note the title Note Insights derived for
+/// its current text, else the default in English (the CLI's messages stay English, docs/localization.md) with dates in
+/// `en_US_POSIX`, the same on every machine.
+enum NoteTitles {
+    static let locale = Locale(identifier: "en_US_POSIX")
+    static let words = NoteDisplayTitle.Words.builtIn(locale: locale)
+
+    /// Reads the insights store only when some note needs it (a voice note whose title is blank or a default), and takes
+    /// the title derived for the note's current text (format.md §16.2: a title made for older text is not shown).
+    static func generated(for notes: [NoteSummary], in vault: Vault) -> [UUID: String] {
+        InsightsNotes.derivedTitles(vault, for: notes)
+    }
+
+    /// The notes whose title is no word of anyone's choosing (a voice note's default, made up or stored before 1.3, with
+    /// no derived title), which Ask leaves out of its label words.
+    static func defaultTitled(_ notes: [NoteSummary], in vault: Vault) -> Set<UUID> {
+        let generated = generated(for: notes, in: vault)
+        return Set(notes.filter { $0.hasUnchosenTitle(generated: generated[$0.id]) }.map(\.id))
+    }
+
+    /// What the CLI shows as `note`'s title (empty: no title and no voice note; callers say "(untitled)").
+    static func display(_ note: NoteSummary, generated: String?) -> String {
+        note.displayTitle(generated: generated, words: words, locale: locale)
+    }
+
+    /// The title `sempere share` puts in the page (`NoteDisplayTitle.shareTitle`): no capture time unless `includeDates`.
+    static func share(_ note: NoteSummary, includeDates: Bool, in vault: Vault) -> String {
+        note.shareTitle(generated: generated(for: [note], in: vault)[note.id], format: InsightsSettings.read(vault).voiceNoteTitle,
+                        includeDates: includeDates, words: words, locale: locale)
+    }
+
+    /// Every note's shown title, with the generated titles looked up once.
+    static func display(_ notes: [NoteSummary], in vault: Vault) -> [UUID: String] {
+        let generated = generated(for: notes, in: vault)
+        return Dictionary(notes.map { ($0.id, display($0, generated: generated[$0.id])) }, uniquingKeysWith: { a, _ in a })
+    }
+}
+
+extension Vault {
+    /// `resolveNote` that also takes the title a voice note is shown with (its derived or default title, as `notes list` prints it).
+    func resolveShownNote(_ query: String) throws -> UUID {
+        try resolveNote(query) { candidates in NoteTitles.display(candidates, in: self) }
     }
 }
 
@@ -89,15 +140,20 @@ struct NotesList: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         OpenedVaults.shared.markUnchanged(vault.url)
-        let notes = NoteOrder(sort, favoritesFirst: favoritesFirst).sorted(try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { n in
+        let listed = try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { n in
             (deleted || !n.deleted) && (!favorites || n.favorite) && (tag.map { t in n.tags.contains { NoteOps.tagKey($0) == NoteOps.tagKey(t) } } ?? true) && (notebook.map { NotebookPath.name(n.notebook, isWithin: $0) } ?? true)
-        })
+        }
         let readOnly = vault.isReadOnly
-        if output.json { try output.emitJSON(notes.map { NoteJSON($0, vaultReadOnly: readOnly) }); return }
+        let generated = NoteTitles.generated(for: listed, in: vault)
+        // Sorted by the title shown (the app's list does the same, `NoteOrder.title`).
+        let shownTitles = Dictionary(listed.map { ($0.id, NoteTitles.display($0, generated: generated[$0.id])) }, uniquingKeysWith: { a, _ in a })
+        let notes = NoteOrder(sort, favoritesFirst: favoritesFirst, title: { shownTitles[$0.id] ?? $0.title }).sorted(listed)
+        if output.json { try output.emitJSON(notes.map { NoteJSON($0, vaultReadOnly: readOnly, generatedTitle: generated[$0.id]) }); return }
         if notes.isEmpty { output.info("No notes."); return }
         var rows = output.quiet ? [] : [["ID", "TITLE", "PAGES", "STROKES", "MODIFIED"]]
         for n in notes {
-            let title = (n.title.isEmpty ? "(untitled)" : n.title) + (n.deleted ? " [deleted]" : "") + (n.favorite ? " [favorite]" : "")
+            let shown = shownTitles[n.id] ?? n.title
+            let title = (shown.isEmpty ? "(untitled)" : shown) + (n.deleted ? " [deleted]" : "") + (n.favorite ? " [favorite]" : "")
                 + (n.problem != nil ? " [!]" : "") + (n.newer != nil ? " [newer]" : "")
             rows.append([n.id.uuidString.lowercased(), title, String(n.pages), String(n.strokes), Format.local(n.modified)])
         }
@@ -124,7 +180,7 @@ struct NotesShow: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         OpenedVaults.shared.markUnchanged(vault.url)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let loaded = try vault.loadNote(id, detail: .withoutStrokePoints)
         let summary = vault.summary(of: id, loaded: loaded)
         let history = loaded.history
@@ -132,6 +188,7 @@ struct NotesShow: ParsableCommand {
         let state = try? NoteReducer.reconstruct(loaded.revisions)
         let placed = AttachmentListing.items(state)
         let recordings = AttachmentListing.recordings(state)
+        let shownGenerated = NoteTitles.generated(for: [summary], in: vault)[summary.id]
         if output.json {
             struct Rev: Encodable { var name: String; var kind: String; var wall: Date?; var app: String?; var error: String? }
             struct Out: Encodable {
@@ -139,7 +196,7 @@ struct NotesShow: ParsableCommand {
                 var readOnly: Bool; var readOnlyReasons: [String]; var revisions: [Rev]
             }
             let reasons = vault.readOnlyReasons
-            try output.emitJSON(Out(note: NoteJSON(summary, vaultReadOnly: !reasons.isEmpty), items: placed,
+            try output.emitJSON(Out(note: NoteJSON(summary, vaultReadOnly: !reasons.isEmpty, generatedTitle: shownGenerated), items: placed,
                                     recordings: recordings, readOnly: !reasons.isEmpty,
                                     readOnlyReasons: reasons.descriptions, revisions: history.map {
                 Rev(name: $0.name.filename, kind: $0.name.kind.rawValue, wall: $0.wall, app: $0.app,
@@ -148,7 +205,8 @@ struct NotesShow: ParsableCommand {
             return
         }
         print("Id:       \(summary.id.uuidString.lowercased())")
-        print("Title:    \(summary.title.isEmpty ? "(untitled)" : summary.title)")
+        let shownTitle = NoteTitles.display(summary, generated: shownGenerated)
+        print("Title:    \(shownTitle.isEmpty ? "(untitled)" : shownTitle)")
         print("Tags:     \(summary.tags.isEmpty ? "-" : summary.tags.joined(separator: ", "))")
         print("Notebook: \(summary.notebook ?? "-")")
         print("Deleted:  \(summary.deleted ? "yes" : "no")")
@@ -285,7 +343,7 @@ struct NotesLayout: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let layout = self.layout
         func switched(_ state: NoteState) -> LayoutEdit {
             layout == .paged

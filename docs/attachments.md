@@ -1686,7 +1686,7 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   returns nil until a reader keeps it), else the device's, matched to a
   supported locale. App: "Transcribe Recordings on This Device" (off by default)
   transcribes a recording when it is stopped, from its plaintext file before
-  that is deleted; Transcribe / Transcribe Again per recording; the job writes
+  that is deleted; Transcribe / Transcribe Again per recording (1.3: and "Transcribe Again" for a whole note, in a language chosen from the recognizers' supported ones, with an option to make its insights again; `sempere transcribe --again`); the job writes
   the blob then one `setRecording(transcript)` delta through the browser path
   (`AppModel.storeTranscript`), so it finishes if the note is closed, and an
   open editor takes the result. `TranscriptView`: segments with times, the

@@ -408,6 +408,56 @@ final class MergeTests: XCTestCase {
         XCTAssertTrue(try NoteReducer.reconstruct([snap, delAgain, delLater]).deleted)
     }
 
+    /// A delete on one device against a device that never saw it (an owner report, 2026-11-19: notes deleted on an
+    /// iPad came back): the stale device's later edits, its snapshot and the compaction of what that snapshot covers,
+    /// and a second snapshot merging both, in every order of arrival, never undo the delete. Only a later
+    /// `restoreNote` does. `randomLog` has no `deleted` ops, so the order property is checked here for that register.
+    func testADeleteSurvivesAStaleDevicesLaterEditsSnapshotsAndCompactionInAnyOrder() throws {
+        var log = LogBuilder()
+        let create = log.delta(devB, 0, [.addPage(Page(id: p1, order: "V")), .setMeta(.title("Voice note"))])
+        let del = log.delta(devA, 100, [.deleteNote])                          // the iPad
+        let rename = log.delta(devB, 5_000, [.setMeta(.title("Renamed"))])   // the phone, later, without the delete
+        let favorite = log.delta(devB, 5_100, [.setMeta(.favorite(true))])
+        let staleSnap = try log.snapshot(devB, 6_000, from: [create, rename, favorite])
+        guard case .snapshot(let inc, let st) = staleSnap.body else { return XCTFail("not a snapshot") }
+        XCTAssertFalse(st.deleted)
+        XCTAssertFalse(inc.covers(device: devA, seq: del.seq), "the stale snapshot does not cover the delete")
+        XCTAssertEqual(st.clocks?["deleted"], Stamp.zero.description)
+        // The phone compacts what its snapshot covers; the delete stays (no snapshot covers it).
+        let coverage = [try XCTUnwrap(SnapshotCoverage(staleSnap))]
+        let later = wallAt(baseMillis).addingTimeInterval(86_400 * 60)
+        let names = [create, rename, favorite, del].map(\.name)
+        let gone = CompactionPlanner.deletable(names: names, wall: Dictionary(uniqueKeysWithValues: [create, rename, favorite, del]
+            .map { ($0.name, $0.wall) }), snapshots: coverage, now: later)
+        XCTAssertFalse(gone.contains(del.name))
+        let merged = try log.snapshot(devA, 7_000, from: [staleSnap, del])
+        guard case .snapshot(_, let mst) = merged.body else { return XCTFail("not a snapshot") }
+        XCTAssertTrue(mst.deleted)
+        XCTAssertEqual(mst.clocks?["deleted"], Stamp(hlc: del.hlc, device: devA).description)
+
+        let sets: [[Revision]] = [
+            [create, del, rename, favorite],
+            [create, del, rename, favorite, staleSnap],
+            [del, staleSnap],                                  // after the phone's compaction
+            [staleSnap, merged],
+            [del, staleSnap, merged],
+            [merged],
+        ]
+        var rng = SplitMix64(seed: 19)
+        for revisions in sets {
+            for _ in 0..<12 {
+                let state = try NoteReducer.reconstruct(revisions.shuffled(using: &rng))
+                XCTAssertTrue(state.deleted, "\(revisions.map(\.name.filename))")
+                XCTAssertEqual(state.meta.title, "Renamed")
+                XCTAssertEqual(state.clocks?["deleted"], Stamp(hlc: del.hlc, device: devA).description)
+            }
+        }
+        // Only a restore after the delete brings it back.
+        let restore = log.delta(devB, 8_000, [.restoreNote])
+        XCTAssertFalse(try NoteReducer.reconstruct([merged, restore]).deleted)
+        XCTAssertFalse(try NoteReducer.reconstruct([restore, del, staleSnap]).deleted)
+    }
+
     func testCreatedIsEarliestWall() throws {
         var log = LogBuilder()
         let d1 = log.delta(devA, 500, [.setMeta(.title("x"))])

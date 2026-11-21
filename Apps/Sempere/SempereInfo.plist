@@ -37,6 +37,28 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
+			<string>io.github.anthonytw.sempere.syncvault</string>
+			<key>UTTypeDescription</key>
+			<string>Sempere Vault (sync folder)</string>
+			<!-- A folder sync target made by 1.3 or later (<vault>.sempere-vault, SyncFolderName): a vault folder like
+			     .sempere, conforming to public.folder ONLY, NEVER com.apple.package, for the reason above. A new
+			     extension because iCloud Drive kept .sempere sync folders as packages on an account where early builds
+			     declared .sempere one (docs/io.md "A vault folder held as a package"); .sempere-backup, never declared
+			     a package, never became one. -->
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sempere-vault</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
 			<string>io.github.anthonytw.sempere.backup</string>
 			<key>UTTypeDescription</key>
 			<string>Sempere Backup</string>
@@ -87,6 +109,7 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>io.github.anthonytw.sempere.vault</string>
+				<string>io.github.anthonytw.sempere.syncvault</string>
 			</array>
 		</dict>
 		<!-- PDFs: offered under Open With (Finder) and in the share sheet, never the default app.

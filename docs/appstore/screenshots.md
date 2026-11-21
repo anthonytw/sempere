@@ -135,6 +135,7 @@ All of it is `#if DEBUG` (the package's files and the app's `DemoLaunch` alike);
 | `SEMPERE_DEMO_PAPER_PICKER` | Open the paper picker over the note. |
 | `SEMPERE_DEMO_APPEARANCE` | `light` (default) or `dark`: what the demo's windows are forced to (`DemoLaunch.forceAppearance`; an unknown value is light). |
 | `SEMPERE_DEMO_INSIGHTS` | `note` or `map`: Note Insights on with fake providers, recognized demo text, passes run, then the note's sheet or the map opens (DEBUG, never an Apple model). `on`: only the fake providers and the text, Note Insights stays off until Settings turns it on (`LaunchSmokeUITests.testNoteInsightsSheetOpensFromTheNoteListMenu`). |
+| `SEMPERE_DEMO_RECORDING` | The "thoughts" note also gets one recording ("Demo Recording", stand-in bytes, no transcript), and the app transcribes with a fake that writes "Demo transcript" and the language asked for (`RecordingsTranscribeUITests`). |
 | `SEMPERE_DEMO_NEARBY_JOIN` | List one synthetic join request as nearby for Add Device; on the locked demo the join screen shows the nearby link connected. |
 | `SEMPERE_DEMO_MAC_WINDOW` | `WIDTHxHEIGHT` in points (Mac Catalyst). |
 | `SEMPERE_DEBUG_COLUMNS` | `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the stored layout (see `DebugLaunch.swift`). |

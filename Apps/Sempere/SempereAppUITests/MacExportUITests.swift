@@ -92,6 +92,14 @@ final class MacExportUITests: XCTestCase {
         XCTAssertTrue(sheet.waitForExistence(timeout: 20), "the export sheet opened")
         app.buttons["Export"].firstMatch.click()
         XCTAssertTrue(app.buttons["Save…"].firstMatch.waitForExistence(timeout: 60), "the export finished")
+        // The share picker opens by itself once the file is made (a popover from the Share… row); close it once it is
+        // up, so the buttons are the way on.
+        let picker = app.popovers["ShareSheet.Popover"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 20), "the share picker opened by itself")
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: picker)
+        wait(for: [closed], timeout: 10)
+        XCTAssertTrue(app.buttons["Save…"].firstMatch.waitForExistence(timeout: 10), "the sheet is still there")
     }
 
     @MainActor

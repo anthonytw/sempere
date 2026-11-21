@@ -13,6 +13,8 @@ final class SettingsCompatibilityTests: VaultTestCase {
     struct Reader {
         var version: Int
         var keys: Set<String>
+        /// The key families its registry named (none before 1.3).
+        var families: Set<String> = []
         var specs: [SharedSettingSpec] { SharedSettingsCatalog.specs.filter { keys.contains($0.name) } }
     }
 
@@ -21,7 +23,8 @@ final class SettingsCompatibilityTests: VaultTestCase {
             .filter { $0.hasPrefix("registry-v") && $0.hasSuffix(".json") }.sorted()
             .map { name in
                 let o = try JSONSerialization.jsonObject(with: Data(contentsOf: Self.fixtures.appendingPathComponent(name))) as! [String: Any]
-                return Reader(version: o["schemaVersion"] as! Int, keys: Set(o["keys"] as! [String]))
+                return Reader(version: o["schemaVersion"] as! Int, keys: Set(o["keys"] as! [String]),
+                              families: Set(o["families"] as? [String] ?? []))
             }
     }
 
@@ -40,6 +43,9 @@ final class SettingsCompatibilityTests: VaultTestCase {
         for r in rs {
             XCTAssertTrue(r.keys.isSubset(of: SharedSettingsCatalog.allKeyNames),
                           "registry v\(r.version) keys gone: \(r.keys.subtracting(SharedSettingsCatalog.allKeyNames).sorted())")
+            let families = Set(SharedSettingsCatalog.families.map(\.prefix))
+            XCTAssertTrue(r.families.isSubset(of: families),
+                          "registry v\(r.version) families gone: \(r.families.subtracting(families).sorted())")
         }
     }
 
@@ -48,6 +54,14 @@ final class SettingsCompatibilityTests: VaultTestCase {
                                     "add Fixtures/settings/registry-v\(SharedSettingsMigrations.current).json")
         XCTAssertEqual(current.keys, Set(SharedSettingsCatalog.specs.map(\.name)),
                        "registry-v\(SharedSettingsMigrations.current).json must list this version's keys")
+    }
+
+    /// The snapshot also names the key families (`palette.tool.<uuid>`, `palette.toolOrder`): added in 1.3, additively.
+    func testTheCurrentRegistrysFamiliesAreInItsSnapshot() throws {
+        let url = Self.fixtures.appendingPathComponent("registry-v\(SharedSettingsMigrations.current).json")
+        let o = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        XCTAssertEqual(Set(o["families"] as? [String] ?? []), Set(SharedSettingsCatalog.families.map(\.prefix)),
+                       "list this version's key families in the registry snapshot")
     }
 
     func testAFixtureForEveryVersionValidAtItsVersion() throws {

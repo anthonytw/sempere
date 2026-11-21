@@ -67,7 +67,7 @@ struct AttachVideo: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let url = URL(fileURLWithPath: file)
         let info: VideoInfo
         do { info = try VideoProbe.probe(file: url) } catch let e as VideoProbeError {
@@ -179,7 +179,7 @@ struct ItemsPoster: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let before = try liveState(vault, id)
         let (_, found) = try findItem(item, in: before)
         guard found.kind == .video, let clip = found.blob else { throw CLIError.failure("\(item) is a \(found.kind) item, not a video") }

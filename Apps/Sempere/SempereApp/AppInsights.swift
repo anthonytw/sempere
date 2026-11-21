@@ -10,12 +10,17 @@ import UIKit
 /// Note Insights' platform half (`AppModelServices.insights`, docs/design/1.2-note-insights.md §3.7, §4): Apple's
 /// on-device model (`SystemLanguageModel.default`, nothing else) and the sentence embedder from `SempereInsightsApple`,
 /// and when this device may process: on power (on an iPhone or iPad only while charging or full), not in Low Power
-/// Mode, thermal state below serious. Whether the device does the work is the vault's choice (the work device, D13),
+/// Mode, thermal state below serious. Which device does the work is nobody's choice (D21: any capable device does),
 /// never the platform's.
 enum AppInsights {
     @MainActor static var services: InsightsServices {
-        InsightsServices(model: { AppleInsightsProviders.model() }, embedder: { AppleInsightsProviders.embedder() },
-                         powerWindow: { powerWindow }, maxGraphNotes: maxGraphNotes)
+        var services = InsightsServices(model: { AppleInsightsProviders.model() }, embedder: { AppleInsightsProviders.embedder() },
+                                        powerWindow: { powerWindow }, maxGraphNotes: maxGraphNotes)
+        // Ask names the language of a question (docs/design/1.3-ask.md §3.1).
+        services.detectLanguage = { AppleInsightsProviders.detectLanguage($0, among: $1) }
+        services.languageHypotheses = { AppleInsightsProviders.languageHypotheses($0, among: $1, likely: $2) }
+        services.nameTagger = { AppleInsightsProviders.nameKeys($0, language: $1) }
+        return services
     }
 
     /// The most notes the related graph takes here (review of #50, L7): its three n x n matrices of doubles are about

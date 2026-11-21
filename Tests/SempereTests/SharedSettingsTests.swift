@@ -278,7 +278,8 @@ final class SharedSettingsTests: VaultTestCase {
                 shown[String(key), default: []].append((file, lines, i))
             }
         }
-        let catalog = SharedSettingsCatalog.allKeyNames
+        // A deprecated key is shown nowhere by design (a shipped key the registry keeps).
+        let catalog = Set(SharedSettingsCatalog.specs.filter { !$0.deprecated }.map(\.name))
         // Settings with no row of their own in these views: the eraser and palette are bound in the editor.
         XCTAssertEqual(Set(shown.keys).subtracting(catalog), [], "bound in the app but not in the catalog")
         XCTAssertEqual(catalog.subtracting(shown.keys), [], "in the catalog but shown nowhere")

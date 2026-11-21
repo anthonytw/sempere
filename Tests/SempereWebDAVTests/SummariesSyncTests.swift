@@ -10,9 +10,10 @@ import XCTest
 final class SummariesSyncTests: SyncTestCase {
     @discardableResult
     func syncSummaries(_ name: String, _ server: MockDAV, publish: Bool = false, locked: Bool = false,
-                       pushOnly: Bool = false) throws -> SyncReport {
+                       pushOnly: Bool = false, derivedTitles: PublishedSummaries.DerivedTitles? = nil) throws -> SyncReport {
         var options = SyncOptions(deviceLabel: name)
         options.publishForWebViewer = publish
+        options.derivedTitles = derivedTitles
         options.pushOnly = pushOnly
         let vault = locked ? try Vault.open(at: dir(name)) : try openVault(name)
         let s = SyncEngine(directory: dir(name), vault: vault, client: try client(server),
@@ -66,6 +67,44 @@ final class SummariesSyncTests: SyncTestCase {
         // The next unlocked run catches up.
         XCTAssertTrue(try syncSummaries("A", server).uploaded.contains(PublishedSummaries.fileName))
         XCTAssertEqual(try remote(server, a)?[n1]?.title, "Renamed")
+    }
+
+    /// A title Note Insights derives later changes no revision: with derived titles, a change of the insights files counts
+    /// as a change of the listing (format.md §12.4), so the server's file gets the voice note's `shown` title.
+    func testADerivedTitleThatArrivesLaterRefreshesTheServerFile() throws {
+        let server = MockDAV()
+        let a = try makeVault()
+        let note = UUID()
+        let blob = try a.writeBlob(note: note, Data("synthetic audio".utf8), type: "audio/mp4")
+        var ops = NoteOps.newNote(title: "", pageId: UUID())
+        ops.append(.addRecording(Recording(blob: blob, started: Date(timeIntervalSince1970: Double(baseMillis) / 1000),
+                                           captured: CaptureAttribution(device: devA.rawValue, recipient: String(repeating: "ab", count: 32)),
+                                           captureInfo: CaptureInfo(tz: "Europe/Madrid", source: "watch"))))
+        try a.write(Revision(noteId: note, device: devA, seq: 1, hlc: HLC(millis: baseMillis, counter: 0)!,
+                             wall: Date(timeIntervalSince1970: Double(baseMillis) / 1000), app: "test/0", body: .delta(ops: ops)))
+        try FileManager.default.createDirectory(at: a.insightsURL, withIntermediateDirectories: true)
+        let none: PublishedSummaries.DerivedTitles = { _, _ in [:] }
+        let derived: PublishedSummaries.DerivedTitles = { _, notes in Dictionary(uniqueKeysWithValues: notes.map { ($0.id, "Synthetic standup") }) }
+
+        XCTAssertTrue(try syncSummaries("A", server, publish: true, derivedTitles: none).uploaded.contains(PublishedSummaries.fileName))
+        let first = try XCTUnwrap(try remote(server, a)?[note])
+        XCTAssertEqual(first.voice?.source, "watch")
+        XCTAssertEqual(first.voice?.tz, "Europe/Madrid")
+        XCTAssertNil(first.shown)
+        // Nothing changed: not even read.
+        let before = server.requests.count
+        XCTAssertFalse(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))
+        XCTAssertFalse(server.requests[before...].contains { $0.path.hasSuffix(PublishedSummaries.fileName) })
+        // A map changes no title: not even read.
+        try Data("x".utf8).write(to: a.insightsURL.appendingPathComponent("map.\(devA.rawValue).insights.age"))
+        let beforeMap = server.requests.count
+        XCTAssertFalse(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))
+        XCTAssertFalse(server.requests[beforeMap...].contains { $0.path.hasSuffix(PublishedSummaries.fileName) })
+        // A derived title arrives (the note's insights file): rewritten with it.
+        try Data("x".utf8).write(to: a.insightsURL.appendingPathComponent("\(note.uuidString.lowercased()).\(devA.rawValue).insights.age"))
+        XCTAssertTrue(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))
+        XCTAssertEqual(try remote(server, a)?[note]?.shown, "Synthetic standup")
+        XCTAssertFalse(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))
     }
 
     func testServerFileIsNeverPulledAndADamagedOneIsReplaced() throws {
