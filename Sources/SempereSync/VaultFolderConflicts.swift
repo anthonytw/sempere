@@ -1,6 +1,14 @@
 import Foundation
 import Sempere
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 // MARK: - Conflict versions of a vault folder held as a package (docs/io.md "A vault folder held as a package")
 //
 // iCloud Drive syncs a folder it records as a package as ONE item. Two devices writing into such a vault folder make a
@@ -582,6 +590,12 @@ public enum VaultFolderConflicts {
         @discardableResult
         mutating func placeWriteOnce(_ path: String, _ kind: FileKind, from: Source, version: String) -> Bool {
             if placed.contains(path) { return false }   // an earlier version brought it
+            // A symbolic link in the folder above the file is never followed (docs/io.md "Folder targets"): the
+            // version stays unresolved, and nothing is written through it.
+            if let link = BoundedRead.firstLink(under: folder, path.split(separator: "/").dropLast().joined(separator: "/")) {
+                fail(version, path, "\(link) in the folder is a symbolic link: not followed")
+                return false
+            }
             let dest = folder.appendingPathComponent(path)
             let present = FolderRemote.lstatItem(dest)
             if present.stat != nil || present.isLink
@@ -627,7 +641,7 @@ public enum VaultFolderConflicts {
             }
             do {
                 try vault.requireWritable()
-                if try Self.placeNew(file, at: dest) {
+                if try Self.placeNew(file, under: folder, path) {
                     placed.insert(path)
                     return true
                 }
@@ -673,11 +687,21 @@ public enum VaultFolderConflicts {
             return to
         }
 
-        /// Places `file` (staged) at `dest` through a temporary name in its folder: never replaces anything. False when
-        /// something is there already.
-        static func placeNew(_ file: URL, at dest: URL) throws -> Bool {
-            let dir = dest.deletingLastPathComponent()
-            try FileIO.createDirectory(dir)
+        /// Places `file` (staged) at `path` below `folder` through a temporary name in its folder: never replaces
+        /// anything, and never follows a symbolic link below `folder` (missing folders are made one level at a time, each
+        /// checked to be a folder and not a link). False when something is there already.
+        static func placeNew(_ file: URL, under folder: URL, _ path: String) throws -> Bool {
+            let parts = path.split(separator: "/").map(String.init)
+            guard let name = parts.last, !parts.contains(where: { $0 == "." || $0 == ".." }) else {
+                throw VaultError.io("not a path below the folder: \(path)")
+            }
+            var dir = folder
+            for (i, part) in parts.dropLast().enumerated() {
+                dir = dir.appendingPathComponent(part, isDirectory: true)
+                try makeFolderNoFollow(dir, shown: parts[...i].joined(separator: "/"))
+            }
+            if let link = BoundedRead.firstLink(under: folder, path) { throw FolderRemoteError.symbolicLink(link) }
+            let dest = dir.appendingPathComponent(name)
             let tmp = FileIO.tempURL(in: dir)
             let input = try BoundedRead.openRegularFile(file)
             defer { try? input.close() }
@@ -689,6 +713,19 @@ public enum VaultFolderConflicts {
                 return false
             }
             return true
+        }
+
+        /// Makes the folder `url` itself (its parent is there) unless it is there; fails when what is there is a link or
+        /// not a folder. `mkdir(2)` never follows a link at its last component, and `lstat(2)` checks what is there.
+        static func makeFolderNoFollow(_ url: URL, shown: String) throws {
+            let rc = url.withUnsafeFileSystemRepresentation { p -> Int32 in
+                guard let p else { return EINVAL }
+                return mkdir(p, 0o755) == 0 ? 0 : errno
+            }
+            guard rc == 0 || rc == EEXIST else { throw VaultError.io("mkdir \(url.path): errno \(rc)") }
+            let item = FolderRemote.lstatItem(url)
+            if item.isLink { throw FolderRemoteError.symbolicLink(shown) }
+            guard item.stat?.isDirectory == true else { throw FolderRemoteError.notAFile(shown) }
         }
 
         /// The received-file check of its kind (format.md §9.1) on the staged copy; throws `IncomingFileProblem` (or
