@@ -82,6 +82,9 @@ public enum DemoVault {
     /// `insightsText` (`SEMPERE_DEMO_INSIGHTS`): every note's first page also gets recognized text
     /// (`insightsOps`), so Note Insights has words to work on.
     ///
+    /// `recording` (UI tests, `SEMPERE_DEMO_RECORDING`): the "thoughts" note also gets one recording with no
+    /// transcript (`recordingOps`), for the recordings list and Transcribe Again with the demo's fake transcriber.
+    ///
     /// `trust`: the trust records of the model that opens it (`AppModel.trust`): the vault's is saved
     /// there, as for any vault this device creates, so its list checks when it is unlocked.
     ///
@@ -93,7 +96,7 @@ public enum DemoVault {
     /// the writer's timings go.
     public static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
                              itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false,
-                             insightsText: Bool = false,
+                             insightsText: Bool = false, recording: Bool = false,
                              trust: (any EpochTrustStore)? = nil, device given: DeviceKeys? = nil,
                              app: String, perf: any PerfSink = NoPerfSink()) async throws -> Built {
         let fm = FileManager.default
@@ -121,6 +124,10 @@ public enum DemoVault {
                     try await NoteWriter.append(text, to: id, vault: vault, clock: clock,
                                                 wall: anchor.addingTimeInterval(-spec.daysAgo * 86_400 + 30))
                 }
+            }
+            if recording, spec.key == itemsNote {
+                try await NoteWriter.append(try recordingOps(vault: vault, note: id), to: id, vault: vault, clock: clock,
+                                            wall: anchor.addingTimeInterval(-spec.daysAgo * 86_400 + 45))
             }
             if let png = itemsImage, spec.key == itemsNote {
                 let ops = try itemOps(vault: vault, note: id, png: png)
@@ -182,6 +189,19 @@ public enum DemoVault {
             .audio(recording: UUID(), frame: Rect(x: 320, y: 440, w: 220, h: 56), z: "d"),
         ]
         return items.map { .addItem(page: page, item: $0) }
+    }
+
+    /// The id of `recordingOps`' recording: the same on every run.
+    static let recordingID = noteID("recording/" + itemsNote)
+
+    /// A recording of note `note` with no transcript, titled "Demo Recording": its blob is a few stand-in bytes typed
+    /// `audio/mp4` (no player reads them in a test; the demo's transcriber is a fake that ignores the file).
+    static func recordingOps(vault: Vault, note: UUID) throws -> [Op] {
+        let blob = try vault.writeBlob(note: note, Data("sempere demo recording".utf8), type: "audio/mp4")
+        let recording = NoteOps.recording(blob: blob, started: anchor.addingTimeInterval(-3_600),
+                                          info: AudioInfo(duration: 4, codec: "aac", sampleRate: 44_100, channels: 1),
+                                          title: "Demo Recording", id: recordingID)
+        return try NoteOps.addRecording(recording, to: [])
     }
 
     /// The ops that create `spec`'s note: its pages, metadata, tags and ink.

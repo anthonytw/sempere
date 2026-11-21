@@ -48,12 +48,33 @@ import UIKit
 ///   simulator has no Apple model: it is never called), gives the demo's notes recognized text
 ///   (`DemoVault.insightsTexts`), runs the passes and opens the note's Note Insights sheet (`note`, over the
 ///   `SEMPERE_DEMO_NOTE` note) or the Map of Related Notes (`map`): `WindowSheets`.
+/// - `SEMPERE_DEMO_RECORDING`: the "thoughts" note also gets a recording with no transcript (`DemoVault.recordingOps`),
+///   and the model transcribes with `DemoTranscriber` (no speech engine): Transcribe Again in a UI test.
 /// - `SEMPERE_DEMO_NEARBY_JOIN`: lists one synthetic join request as having come nearby (`Demo iPhone`) for Add
 ///   Device, and, on a locked demo's join screen, shows the nearby link as connected.
 /// - `SEMPERE_DEBUG_COLUMNS`: `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the
 ///   stored (with `SEMPERE_DEBUG_FRESH`, the default) layout (`DebugLaunch`).
 /// - `SEMPERE_DEBUG_PENCIL_ONLY`: the canvases draw with the Pencil only, as on an iPad with a
 ///   paired Pencil, so a simulated finger taps, holds and scrolls (`IPadCanvasUITests`).
+/// `SEMPERE_DEMO_RECORDING`'s transcriber: no speech engine, the file is not read. The transcript says the language it
+/// was asked for ("Demo transcript es-ES"; the note's language, else "en-US", when none was chosen), so a UI test sees
+/// which choice of a Transcribe menu ran.
+struct DemoTranscriber: RecordingTranscribing {
+    func transcribe(file: URL, recording: UUID, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript {
+        try await transcribe(file: file, recording: recording, language: nil, noteLanguage: noteLanguage,
+                             allowModelDownload: allowModelDownload)
+    }
+
+    func transcribe(file: URL, recording: UUID, language: String?, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript {
+        let tag = language ?? noteLanguage ?? "en-US"
+        return TranscriptBuilder.transcript(recording: recording, engine: "demo-1", language: tag,
+                                            segments: TranscriptBuilder.segments(fromWords: [
+                                                RecognizedSpan(text: "Demo", start: 0.2, end: 0.6, confidence: 0.9),
+                                                RecognizedSpan(text: "transcript", start: 0.6, end: 1.2, confidence: 0.9),
+                                                RecognizedSpan(text: tag, start: 1.2, end: 1.8, confidence: 0.9)]))
+    }
+}
+
 enum DemoLaunch {
     static var isActive: Bool { DebugLaunch.environment["SEMPERE_DEMO"] != nil }
 
@@ -87,17 +108,19 @@ enum DemoLaunch {
             // No providers: the demo never calls Apple's model, and the note list shows no Note Insights offer.
             model.insightsServices = .none
         }
+        if env["SEMPERE_DEMO_RECORDING"] != nil { model.transcriber = DemoTranscriber() }
         await model.report {
             let dir = directory
             let png = env["SEMPERE_DEMO_ITEMS"] != nil ? demoImage() : nil
             let dense = env["SEMPERE_DEMO_DENSE"].flatMap { Int($0) }
             let search = env["SEMPERE_DEMO_SEARCH"] != nil
+            let recording = env["SEMPERE_DEMO_RECORDING"] != nil
             let trust = model.trust
             let device = try env["SEMPERE_DEMO_DEVICE_KEY"].map(DeviceKeys.parse)
             try await createExtraStoreVaults(model, library: library, keys: keys, env: env)
             let built = try await Task.detached {
                 try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense,
-                                          searchNotes: search, insightsText: insights != nil, trust: trust, device: device, app: NoteWriter.appName,
+                                          searchNotes: search, insightsText: insights != nil, recording: recording, trust: trust, device: device, app: NoteWriter.appName,
                                           perf: AppPerfSink())
             }.value
             try await model.openVault(at: try await storeCopy(of: built.url, model: model, env: env))

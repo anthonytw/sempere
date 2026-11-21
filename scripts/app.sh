@@ -197,9 +197,11 @@ done
 # ui-lists:begin
 ui_mac=(MacWindowUITests MacItemUITests SidebarDropUITests MacFocusUITests QuitPurgeMacUITests NewVaultSheetUITests
         MacImportUITests MacExportUITests MacRealMouseUITests FolderPickerUITests MacNoteModeUITests NoteToolbarUITests
-        VaultStoreUITests CopyKeyExpiryMacUITests)
+        VaultStoreUITests CopyKeyExpiryMacUITests BulkNotesUITests SavedToolsUITests AskUITests InsightsSettingsUITests
+        RecordingsTranscribeUITests)
 ui_mac_smoke=(LaunchSmokeUITests)
 ui_ipad=(SidebarDropUITests BulkNotesUITests PadFocusUITests SearchHighlightUITests AskUITests PaletteButtonUITests SavedToolsUITests IPadCanvasUITests
+         InsightsSettingsUITests
          LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote
          LaunchSmokeUITests/testFreshLaunchDoubleColumn LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour
          NewVaultSheetUITests MacImportUITests MacExportUITests FolderPickerUITests PhoneCanvasModeUITests
