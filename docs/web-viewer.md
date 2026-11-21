@@ -922,8 +922,9 @@ connect-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'; objec
 manifest-src 'none'; require-trusted-types-for 'script'; trusted-types sempere-share-worker
 ```
 
-The page can send nothing anywhere (`connect-src 'none'`, no form, no frame), reads no storage and never puts the passphrase in the
-address. scrypt runs in a worker made from a `blob:` copy of the page's own script through the one Trusted Types policy
+The page can send nothing anywhere (`connect-src 'none'`, no form, no frame), stores nothing and never puts the passphrase in the
+address; the only storage it reads is the full viewer's language choice (`localStorage` key `sempere-viewer-language`, a language tag,
+which a browser may share between pages on the same origin, `file:` pages included). scrypt runs in a worker made from a `blob:` copy of the page's own script through the one Trusted Types policy
 `sempere-share-worker` (which admits only `blob:` URLs); where a browser refuses that worker on a `file:` page, it runs on the
 page's thread behind "Decrypting…". The page accepts a work factor of at most 20 (the age header is read before any work), one
 passphrase recipient only, and says only "That passphrase did not open this note" for a wrong passphrase. It follows the browser's
@@ -977,9 +978,9 @@ decrypts. The hashes of each release's template are listed here; a recipient who
 any self-contained page remains: whoever can change the file in transit can change its code to capture the passphrase, so send the
 file and the passphrase by different ways, `--verify`, or use the stock `age` path above.
 
-| Release | Script (`script-src`) | Style (`style-src`) | Template (SHA-256 of the page as `ShareViewerTemplate.html`: the file with its data block empty) |
+| Release | Script (`script-src`) | Style (`style-src`) | Template (SHA-256 of the page as `ShareViewerTemplate.html`: the file whose data block holds only the placeholder `@@SEMPERE-SHARE-DATA@@`, no final newline) |
 | --- | --- | --- | --- |
-| 1.3 (unreleased) | `sha256-CR74HbzQVmCsYzajiaE6p7KcpA/33OYuYwCQWXp3HbI=` | `sha256-cZL1/KwjSNvC7zebHbw9rRO44PocwPVtFlmx9sv8pAo=` | `41adba17f1b228da79fbc9f0f0f49c6b4862ecda3a90eaa80cbe9da98d55e5a0` |
+| 1.3 | `sha256-CR74HbzQVmCsYzajiaE6p7KcpA/33OYuYwCQWXp3HbI=` | `sha256-cZL1/KwjSNvC7zebHbw9rRO44PocwPVtFlmx9sv8pAo=` | `41adba17f1b228da79fbc9f0f0f49c6b4862ecda3a90eaa80cbe9da98d55e5a0` |
 
 **Tests.** Swift: `WebPageShareTests` (flattening, what leaks, pictures, sizes, audio, encryption, the stock `age` recipe, `--verify`, the
 fixture), `JPEGEncoderTests`, `CLIShareTests`. Web: `web/test/share.test.ts` (the Swift fixture opens, hostile containers, work factor 21
