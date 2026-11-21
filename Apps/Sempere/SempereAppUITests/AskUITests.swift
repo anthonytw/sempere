@@ -45,8 +45,8 @@ final class AskUITests: XCTestCase {
     }
 
     /// The Mac: ⌥⌘F (Edit ▸ Find ▸ Ask Your Notes…) shows Ask with the focus in the field, so the question is typed
-    /// at once; a click on Search and back on Ask leaves the focus there (typing goes on into the field), and the
-    /// question is never the search text.
+    /// at once; clicks on Search and back on Ask (three rounds) leave the focus there, each mode keeps its own text (the
+    /// question is never the search text, nor the search text the question), and the last answer shows again in Ask.
     @MainActor
     func testEditFindAskYourNotesOpensAskWithTheFocusInTheField() throws {
         #if !targetEnvironment(macCatalyst)
@@ -73,22 +73,43 @@ final class AskUITests: XCTestCase {
         app.typeText("wombat")
         XCTAssertTrue(UIWait.until(10) { (field.value as? String ?? "").contains("wombat") },
                       "⌥⌘F put the focus in the field: \(String(describing: field.value))")
-        // To Search and back to Ask with the mouse: the focus stays in the field each time.
-        app.buttons["Search"].firstMatch.click()
-        XCTAssertTrue(UIWait.until(10) { (field.placeholderValue ?? "").contains("Search notes") }, "Search mode")
-        XCTAssertFalse((field.value as? String ?? "").contains("wombat"), "the question is not the search text")
-        XCTAssertTrue(UIWait.until(5, hasFocus), "clicking Search left the focus in the field")
-        app.buttons["Ask"].firstMatch.click()
-        XCTAssertTrue(UIWait.until(10) { (field.placeholderValue ?? "").contains("Ask a question") }, "Ask mode again")
-        XCTAssertTrue(UIWait.until(5, hasFocus), "clicking Ask left the focus in the field")
-        // Whether the question typed before is still in the field after Search and back is not checked: on a Mac it
-        // sometimes is and sometimes is emptied a moment after the click (reported with the 1.3 UI checks).
+        func value() -> String { field.value as? String ?? "" }
+        // The field's text must hold for a while after a click, not only show for a moment (it used to be emptied about a
+        // second after the click on Ask, 2 runs in 3).
+        func holds(_ text: String, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
+            XCTAssertTrue(UIWait.until(10) { value().contains(text) }, "\(what): \(value())", file: file, line: line)
+            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(value().contains(text), "\(what), two seconds later: \(value())", file: file, line: line)
+        }
+        // To Search and back to Ask with the mouse, three times: the focus stays in the field each time, and each mode
+        // keeps its own text (the search typed in Search from the second round, the question in Ask).
+        for round in 1...3 {
+            app.buttons["Search"].firstMatch.click()
+            XCTAssertTrue(UIWait.until(10) { (field.placeholderValue ?? "").contains("Search notes") }, "Search mode (\(round))")
+            XCTAssertTrue(UIWait.until(5, hasFocus), "clicking Search left the focus in the field (\(round))")
+            // Round 1 with an empty search text (where the question used to be emptied), then with one.
+            if round == 2 { app.typeText("otter") }
+            if round > 1 { holds("otter", "the search text stays in Search (\(round))") }
+            XCTAssertFalse(value().contains("wombat"), "the question is not the search text (\(round)): \(value())")
+            app.buttons["Ask"].firstMatch.click()
+            XCTAssertTrue(UIWait.until(10) { (field.placeholderValue ?? "").contains("Ask a question") }, "Ask mode again (\(round))")
+            XCTAssertTrue(UIWait.until(5, hasFocus), "clicking Ask left the focus in the field (\(round))")
+            holds("wombat", "the question comes back with Ask (\(round))")
+            XCTAssertFalse(value().contains("otter"), "the search text is not the question (\(round)): \(value())")
+        }
         app.typeText(" sightings?")
-        XCTAssertTrue(UIWait.until(10) { (field.value as? String ?? "").hasSuffix(" sightings?") },
-                      "after switching, typing still goes into the field: \(String(describing: field.value))")
-        // Return asks (the question now ends in "sightings?", with or without "wombat"): the result lists notes.
+        XCTAssertTrue(UIWait.until(10) { value().hasSuffix("wombat sightings?") },
+                      "after switching, typing still goes on after the question: \(value())")
+        // Return asks: the result lists notes.
         app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
-        require(app.descendants(matching: .any)["ask.banner"].firstMatch, "the result's banner (no model here)", in: app)
+        let banner = app.descendants(matching: .any)["ask.banner"].firstMatch
+        require(banner, "the result's banner (no model here)", in: app)
+        // Search and back: the question and the last answer show again.
+        app.buttons["Search"].firstMatch.click()
+        holds("otter", "the search text after asking")
+        app.buttons["Ask"].firstMatch.click()
+        holds("wombat sightings?", "the question after asking")
+        require(banner, "the last answer, back in Ask", in: app, timeout: 10)
         #endif
     }
 
