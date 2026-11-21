@@ -389,6 +389,50 @@ final class VaultFolderConflictsTests: SyncTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir("A").appendingPathComponent(path(lost)).path))
     }
 
+    /// A symbolic link in the current folder above a missing file (the note's folder, or `notes` itself, pointing outside
+    /// the vault) is never followed: nothing is written through it, and the version stays unresolved.
+    func testALinkInTheFolderAboveAFileIsNeverFollowed() throws {
+        try linkInTheFolder("notes/\(noteID.uuidString.lowercased())")
+    }
+
+    func testALinkHigherInTheFolderIsNeverFollowed() throws {
+        try linkInTheFolder("notes")
+    }
+
+    private func linkInTheFolder(_ linked: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let (vault, _, lost, version) = try lostRevision()
+        let outside = tmp.appendingPathComponent("outside-the-vault", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let linkURL = dir("A").appendingPathComponent(linked)
+        try FileManager.default.removeItem(at: linkURL)
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: outside)
+        let r = try merge(vault, remove: true)
+        XCTAssertEqual(try FileManager.default.subpathsOfDirectory(atPath: outside.path), [], file: file, line: line)
+        XCTAssertTrue(r.copied.isEmpty, "\(r.copied)", file: file, line: line)
+        XCTAssertNotNil(r.errors[path(lost)], "\(r.errors)", file: file, line: line)
+        XCTAssertFalse(r.isComplete, file: file, line: line)
+        XCTAssertTrue(r.removed.isEmpty, file: file, line: line)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: version.path), file: file, line: line)
+    }
+
+    /// Missing folders on the way are made one level at a time, and one that is a link when it is reached is refused.
+    func testPlacingMakesFoldersOneLevelAtATimeAndRefusesALink() throws {
+        let folder = tmp.appendingPathComponent("place", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = tmp.appendingPathComponent("staged.bin")
+        try Data("bytes".utf8).write(to: file)
+        XCTAssertTrue(try VaultFolderConflicts.Merger.placeNew(file, under: folder, "a/b/c.bin"))
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("a/b/c.bin")), Data("bytes".utf8))
+        XCTAssertFalse(try VaultFolderConflicts.Merger.placeNew(file, under: folder, "a/b/c.bin"), "never replaces")
+        let outside = tmp.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("l"), withDestinationURL: outside)
+        XCTAssertThrowsError(try VaultFolderConflicts.Merger.placeNew(file, under: folder, "l/x/c.bin"))
+        XCTAssertThrowsError(try VaultFolderConflicts.Merger.placeNew(file, under: folder, "l/c.bin"))
+        XCTAssertThrowsError(try VaultFolderConflicts.Merger.placeNew(file, under: folder, "../c.bin"))
+        XCTAssertEqual(try FileManager.default.subpathsOfDirectory(atPath: outside.path), [])
+    }
+
     /// S9: a join request must be named after its own key and name this vault.
     func testJoinRequestsMustBeThisVaultsAndNamedAfterTheirKey() throws {
         let (vault, _, _, version) = try lostRevision()

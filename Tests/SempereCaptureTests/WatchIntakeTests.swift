@@ -343,6 +343,33 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertTrue(r.intake.canAddNow(item))
     }
 
+    /// Add and Delete renew a held note's received entry: a copy the watch sends again long after it arrived (its release
+    /// was lost) is a duplicate for the full `keepFor` after the Add or Delete, never judged again.
+    func testAddAndDeleteRenewTheReceivedEntry() throws {
+        final class Clock: @unchecked Sendable { var now = Date(timeIntervalSince1970: 1_800_000_000) }
+        let clock = Clock()
+        let r = try rig()
+        let intake = WatchIntake(received: WatchReceivedSet(url: nil, now: { clock.now }), delivery: r.delivery,
+                                 held: WatchHeldStore(root: r.dir.appendingPathComponent("held-renew")))
+        r.delivery.enabled = false
+        let (f1, m1, _) = try transfer(r)
+        let (f2, m2, _) = try transfer(r)
+        XCTAssertEqual(try intake.receive(file: f1, meta: m1).outcome, .held(.linkOff))
+        XCTAssertEqual(try intake.receive(file: f2, meta: m2).outcome, .held(.linkOff))
+        clock.now += WatchReceivedSet.keepFor - 24 * 3600   // held for almost the whole window
+        let items = try XCTUnwrap(intake.held?.list())
+        intake.deleteHeld(try XCTUnwrap(items.first { $0.id == m1.id }))
+        r.delivery.enabled = true
+        XCTAssertEqual(try intake.addHeld(try XCTUnwrap(items.first { $0.id == m2.id })), .vault)
+        clock.now += 30 * 24 * 3600   // past the window counted from receipt
+        try intake.received.insert(UUID())   // any insert prunes entries past the window
+        XCTAssertTrue(intake.received.contains(m1.id), "a deleted note's entry outlives its receipt")
+        XCTAssertTrue(intake.received.contains(m2.id), "an added note's entry outlives its receipt")
+        let (again, againMeta, _) = try transfer(r, id: m1.id)
+        XCTAssertEqual(try intake.receive(file: again, meta: againMeta).outcome, .duplicate)
+        XCTAssertEqual(intake.held?.list().count, 0, "the deleted note is not held again")
+    }
+
     /// A second add of one held note (a double tap, two callers at once) is a no-op, not a failure or a second placement.
     func testAddingTheSameHeldNoteTwiceIsANoOp() throws {
         let r = try rig()

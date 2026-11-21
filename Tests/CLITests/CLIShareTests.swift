@@ -226,6 +226,37 @@ final class CLIShareTests: CLITestCase {
         XCTAssertNoThrow(try open(path("ro.html")))
         XCTAssertEqual(try FileManager.default.subpathsOfDirectory(atPath: Self.fixtureVault).sorted(), before)
     }
+
+    /// The share passphrase is never the vault's: its variable, its value, or one the vault was opened with (exit 2, no file).
+    func testTheVaultPassphraseIsRefusedAsTheSharePassphrase() throws {
+        let a = try access()
+        func refused(_ args: [String], env: [String: String], _ why: String) throws {
+            let out = path("refused.html")
+            let r = try cli(["share", physics, "--out", out] + args, env: env)
+            XCTAssertEqual(r.status, 2, "\(why): \(r.err)")
+            XCTAssertTrue(r.err.contains("vault"), r.err)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: out), why)
+        }
+        try refused(["--share-passphrase-env", "SEMPERE_PASSPHRASE"] + a, env: ["SEMPERE_PASSPHRASE": phrase], "the default variable")
+        try refused(["--share-passphrase-env", "VAULT_PASS", "--passphrase-env", "VAULT_PASS"] + a, env: ["VAULT_PASS": phrase],
+                    "the named variable")
+        try refused(["--passphrase-file", try passphraseFile()] + a, env: ["SEMPERE_PASSPHRASE": phrase], "the default variable's value")
+        try refused(["--share-passphrase-env", "MY_SHARE_PASS", "--passphrase-env", "VAULT_PASS"] + a,
+                    env: ["MY_SHARE_PASS": phrase, "VAULT_PASS": phrase], "the named variable's value")
+        // Read through the recovery key's passphrase copy.
+        let keys = try FileManager.default.contentsOfDirectory(atPath: Self.fixtureVault + "/keys").filter { $0.hasSuffix(".key.age") }
+        let copy = Self.fixtureVault + "/keys/" + (try XCTUnwrap(keys.first))
+        let opened = ["--vault", Self.fixtureVault, "--recovery-key", copy]
+        let viaCopy = try cli(["share", Self.lecture, "--out", path("copy.html"), "--passphrase-file", try passphraseFile(Self.passphrase)]
+                              + opened + ["--passphrase-env", "VAULT_PASS"], env: ["VAULT_PASS": Self.passphrase])
+        XCTAssertEqual(viaCopy.status, 2, viaCopy.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path("copy.html")))
+        // A passphrase of its own still works, beside a vault passphrase.
+        let own = try cli(["share", Self.lecture, "--out", path("own.html"), "--passphrase-file", try passphraseFile()]
+                          + opened + ["--passphrase-env", "VAULT_PASS"], env: ["VAULT_PASS": Self.passphrase])
+        XCTAssertEqual(own.status, 0, own.err)
+        XCTAssertNoThrow(try open(path("own.html")))
+    }
 }
 
 private extension Data {

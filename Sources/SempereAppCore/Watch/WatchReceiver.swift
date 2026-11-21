@@ -186,7 +186,7 @@ public struct WatchReceiver: Sendable {
     public func admitReady() -> [UUID] { intake.admitReady() }
 
     /// "Delete".
-    public func deleteHeld(_ item: HeldCapture) { intake.held?.delete(item) }
+    public func deleteHeld(_ item: HeldCapture) { intake.deleteHeld(item) }
 
     public nonisolated static var defaultQuarantine: URL { AppSupport.folder("WatchQuarantine") }
     public nonisolated static func defaultReceivedSet() -> WatchReceivedSet {

@@ -30,7 +30,7 @@ final class WebPageShareTests: XCTestCase {
     /// Fast scrypt for every test but the one that checks the real factor.
     static func options(_ edit: (inout WebShareOptions) -> Void = { _ in }) -> WebShareOptions {
         var o = WebShareOptions()
-        o.scryptLog2N = 10
+        o.testScryptLog2N = 10
         edit(&o)
         return o
     }
@@ -313,7 +313,9 @@ final class WebPageShareTests: XCTestCase {
         let off = try share(state, blobs).1
         XCTAssertNil((off.json["note"] as? [String: Any])?["recordings"])
         XCTAssertTrue(off.blobs.isEmpty)
-        let (result, on) = try share(state, blobs) { $0.includeAudio = true; $0.maxFileBytes = 2 << 20 }
+        // With dates, so the (synthetic, not MP4) audio goes as stored: what a share without dates does to a recording is
+        // WebPageShareDatesTests'.
+        let (result, on) = try share(state, blobs) { $0.includeAudio = true; $0.includeDates = true; $0.maxFileBytes = 2 << 20 }
         let recs = try XCTUnwrap((on.json["note"] as? [String: Any])?["recordings"] as? [[String: Any]])
         XCTAssertEqual(recs.count, 1, "the long recording does not fit in 2 MB")
         XCTAssertEqual(on.blobs[small.sha256], audio)
@@ -321,7 +323,7 @@ final class WebPageShareTests: XCTestCase {
         XCTAssertGreaterThan(result.sections.audio, 40_000)
         let items = try XCTUnwrap(((on.json["note"] as? [String: Any])?["pages"] as? [[String: Any]])?[0]["items"] as? [[String: Any]])
         XCTAssertEqual(items.count, 1, "the card of a skipped recording goes with it")
-        let roomy = try share(state, blobs) { $0.includeAudio = true; $0.maxFileBytes = 20 << 20 }.1
+        let roomy = try share(state, blobs) { $0.includeAudio = true; $0.includeDates = true; $0.maxFileBytes = 20 << 20 }.1
         XCTAssertEqual((roomy.json["note"] as? [String: Any])?["recordings"].flatMap { ($0 as? [Any])?.count }, 2)
     }
 
@@ -379,7 +381,14 @@ final class WebPageShareTests: XCTestCase {
             XCTAssertEqual($0 as? WebShareError, .emptyPassphrase)
         }
         XCTAssertThrowsError(try share(state, blobs) { $0.maxFileBytes = 201 << 20 })
-        XCTAssertThrowsError(try share(state, blobs) { $0.scryptLog2N = 31 })
+        // The public field takes 17 to 20 only: the page refuses more than 20, `verify` less than 17.
+        for n in [16, 21] {
+            var o = WebShareOptions()
+            o.scryptLog2N = n
+            XCTAssertThrowsError(try WebPageShare.make(state, blobs: blobs, options: o, passphrase: Self.passphrase, template: Self.template)) {
+                guard case .badOption? = $0 as? WebShareError else { return XCTFail("\($0)") }
+            }
+        }
     }
 
     // MARK: Encryption

@@ -191,7 +191,7 @@ describe("the committed template", () => {
 
   it("is listed in docs/web-viewer.md with its hashes (update the table when the viewer changes)", () => {
     const docs = readFileSync(join(root, "docs", "web-viewer.md"), "utf8");
-    const row = /\| 1\.3 \(unreleased\) \|([^\n]*)\n/.exec(docs)?.[1] ?? "";
+    const row = /\| 1\.3 \|([^\n]*)\n/.exec(docs)?.[1] ?? "";
     // A multi-line Swift string drops the line break before its closing delimiter.
     const page = html.endsWith("\n") ? html.slice(0, -1) : html;
     expect(row).toContain(`sha256-${hash(script)}`);

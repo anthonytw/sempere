@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 @testable import SempereAppCore
-import SempereRender
+@testable import SempereRender
 import SempereShareViewer
 import TempDirSupport
 import Testing
@@ -83,7 +83,7 @@ extension AppModelSuites {
             defer { model.close() }
             var options = ShareOptions(format: .webPage)
             options.webSharePassphrase = "a passphrase for the test"
-            options.webShare.scryptLog2N = 10
+            options.webShare.testScryptLog2N = 10
             let r = try await export(model, [Self.lecture], options, into: try scratch())
             #expect(r.items.map(\.lastPathComponent) == ["Shared note.html"])
             #expect(r.exported == 1 && r.failures.isEmpty)

@@ -341,7 +341,7 @@ final class ShareExportTests: XCTestCase {
         defer { umask(umaskBefore) }
         var options = ShareOptions(format: .webPage)
         options.webSharePassphrase = "a passphrase for the test"
-        options.webShare.scryptLog2N = 10
+        options.webShare.testScryptLog2N = 10
         options.webShareTemplate = WebPageShareTests.template
         var seen: [Int] = []
         let dir = try scratch()

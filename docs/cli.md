@@ -2469,7 +2469,8 @@ What the app's opt-in Spotlight indexing (Settings ▸ Spotlight) would donate f
 (characters of text that would be donated, 0 without `--text`), and the caps (20,000 text characters, 50,000 notes,
 30 days to expiry). `--text` is "Include Note Text": recognized handwriting, typed text, PDF text and equations'
 source; `--transcripts` also reads recording transcripts (the app follows Search Recording Transcripts). It never
-writes anything and never prints note text. Indexing itself is app-only: Core Spotlight items belong to an app's
+writes anything. The text itself is shown only as a length, except that with `--text` each record's description
+holds the start of the note's text (its first 140 characters), as the app's item would. Indexing itself is app-only: Core Spotlight items belong to an app's
 bundle identity, which a command-line binary does not have in a form the system can open. `--json`: `{vault, includeText,
 items: [...], omitted, caps}`.
 
@@ -3016,9 +3017,14 @@ scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is w
 - The passphrase is never an argument (it would show in `ps`): `--passphrase-file FILE` (`-` for standard input; one trailing
   newline is dropped), `--share-passphrase-env VAR` (named so as not to clash with the vault's own `--passphrase-env`), or
   `--generate-passphrase` (seven random words, printed once: as `passphrase` in the JSON, or as a `Passphrase:` line on standard
-  error). Exactly one of the three.
+  error). Exactly one of the three. The recipient learns it, so it must not be the vault's: `--share-passphrase-env` naming the
+  variable the vault's passphrase comes from (`--passphrase-env`, else `SEMPERE_PASSPHRASE`), and a passphrase equal to that
+  variable's value or to one the vault was opened with (a recovery key's passphrase copy, a passphrase-wrapped device key), are refused
+  (exit 2) before anything is written.
 - Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
-  transcripts (`--audio`). Recognized text is in unless `--no-text`.
+  transcripts (`--audio`). Recognized text is in unless `--no-text`. Without `--dates` no date of a recording goes either: an MP4
+  recording's container times are zeroed and its tags blanked, and a transcript's creation time is left out; a recording imported in
+  another container is shared as stored ([web-viewer.md](web-viewer.md) "Share files").
 - The page shows the title `notes list` shows. For a voice note with no title of its own that is its derived title or "Voice note"
   and the capture's date and time, but without `--dates` a title that tells the capture time (the default, or a derived title whose
   format has `{date}` or `{time}`) becomes the bare words ("Voice note", "Watch voice note").

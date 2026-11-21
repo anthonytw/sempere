@@ -364,6 +364,16 @@ enum Recognizer {
         }
     }
 
+    /// The one request every transcription makes: on device only, never a server (DESIGN.md "Network").
+    static func request(for file: URL) -> SFSpeechURLRecognitionRequest {
+        let request = SFSpeechURLRecognitionRequest(url: file)
+        request.requiresOnDeviceRecognition = true
+        request.shouldReportPartialResults = false
+        request.addsPunctuation = true
+        request.taskHint = .dictation
+        return request
+    }
+
     static func transcribe(file: URL, recording: UUID, options: SpeechTranscription.Options) async throws -> Transcript {
         guard let locale = locale(options), let recognizer = SFSpeechRecognizer(locale: locale) else {
             throw SpeechTranscriptionError.unsupportedLanguage(options.language ?? options.noteLanguage ?? SpeechTranscription.deviceLanguage)
@@ -375,11 +385,7 @@ enum Recognizer {
             throw SpeechTranscriptionError.needsUsageDescription
         }
         try await authorize()
-        let request = SFSpeechURLRecognitionRequest(url: file)
-        request.requiresOnDeviceRecognition = true   // never a server (DESIGN.md)
-        request.shouldReportPartialResults = false
-        request.addsPunctuation = true
-        request.taskHint = .dictation
+        let request = request(for: file)
         let collector = Collector()
         let words: [RecognizedSpan] = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { c in

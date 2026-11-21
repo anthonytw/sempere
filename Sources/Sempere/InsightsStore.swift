@@ -18,10 +18,12 @@ extension Vault {
     public var insightsURL: URL { url.appendingPathComponent(Self.insightsName, isDirectory: true) }
 
     /// The bytes of `content` as the file `name`: format.md §4 framing with the label `insights` and the file name in
-    /// the tag, encrypted to the current `v_e` in one stanza.
+    /// the tag, encrypted to the current `v_e` in one stanza. The JSON first passes the reader's own decode and checks
+    /// (`InsightsCodec.decode`), so no writer emits a file that its readers, this device included, would reject.
     public func sealInsights(_ content: InsightsFileContent, name: InsightsFileName) throws -> Data {
         let json = try InsightsCodec.encode(content)
         guard json.count <= name.kind.maxBytes else { throw InsightsFileError.tooLarge }
+        _ = try InsightsCodec.decode(json, name: name)
         let body = try BodyFraming.frame(json: json, noteId: InsightsCodec.tagScope, filename: name.fileName, secret: try requireSecret())
         let sealed = try encrypt(body)
         guard sealed.count <= name.kind.maxBytes + 4096 else { throw InsightsFileError.tooLarge }
@@ -365,7 +367,11 @@ public struct InsightsStore: Sendable {
     /// one process (a background pass and "Regenerate") each change only their own scopes, so neither drops the other's.
     /// Refused (nothing written) when Note Insights is not on, checked under the lock (the switch's write takes it too,
     /// so a summary made before a turn-off is never written after its purge), and when this device's own file is there
-    /// but cannot be read (replacing it would drop the scopes it holds).
+    /// but cannot be read (replacing it would drop the scopes it holds). One exception: a file that opens under the
+    /// current key, with its tag, name and format verified, and fails only the checks of its content
+    /// (`InsightsFileError.invalid`) is this device's own recomputable output that every reader, this one included,
+    /// ignores whole: it holds no scope anyone can see, so it is replaced, starting from no topics (an earlier version
+    /// could write a topic summary past its limit). A file another key, damage or a newer format made stays refused.
     @discardableResult
     public func updateOwnTopics(now: Date = Date(), _ change: (inout [InsightsTopicsFile.Topic]) throws -> Bool) throws -> Bool {
         try vault.requireWritable()
@@ -375,10 +381,19 @@ public struct InsightsStore: Sendable {
             var topics: [InsightsTopicsFile.Topic] = []
             let name = InsightsFileName(.topics, device: me)
             if FileIO.exists(folder.appendingPathComponent(name.fileName)) {
-                guard case .topics(let f)? = try? read(name) else {
+                do {
+                    guard case .topics(let f)? = try read(name) else {
+                        throw InsightsFileError.cannotWrite("this device's topics file cannot be read, so it is not replaced")
+                    }
+                    topics = f.topics
+                } catch InsightsFileError.invalid {
+                    topics = []
+                } catch let e as InsightsFileError {
+                    if case .cannotWrite = e { throw e }
+                    throw InsightsFileError.cannotWrite("this device's topics file cannot be read, so it is not replaced")
+                } catch {
                     throw InsightsFileError.cannotWrite("this device's topics file cannot be read, so it is not replaced")
                 }
-                topics = f.topics
             }
             guard try change(&topics) else { return false }
             _ = try writeLocked(.topics(InsightsTopicsFile(device: me, written: 0, topics: topics)), me: me, now: now)
