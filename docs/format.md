@@ -4672,7 +4672,8 @@ one a reader shows.
   a device derives again when no file holds a title for the hash in the
   language and format now set, so changing the format re-derives (the older titles stay shown until then). It is never written into the note. A reader
   takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the
-  larger device id; a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
+  larger device id, where an `at` more than 7 days ahead of the reader's clock is not ordered and comes after every `at`
+  that is (as for `written` above); a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
   note's own title); readers of 1.3 ignore it, and 1.2 readers ignore `title`.
 - `gen`, `emb` and `title` all absent: a **tombstone** (§16.6). A file holding only a `title` is not one.
 
@@ -4804,7 +4805,11 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
 
 - **Topics file** (`sempere-insights-topics/1`): `format`, `device`, `written`, and `topics`, a list of `{ "scope":
   {"notebook": path} | {"tag": key}, "members": n, "membersHash": <SHA-256 hex over the sorted noteId:hash lines>,
-  "gen": {model, os, prompt, at, summary} }`. A scope has at least 3 summarized notes; `at` is Unix milliseconds. Scope
+  "gen": {model, os, prompt, at, summary, outLang?} }`. A scope has at least 3 summarized notes; `at` is Unix milliseconds;
+  `summary` at most 4 000 characters (writers keep it to 6 sentences and 1 200 characters, translated or not). `outLang`
+  (optional, 1.3): the language `summary` is written in when the vault's `insights.language` names one, a string of 1 to 64
+  UTF-8 bytes (else the file is invalid), with the same rule as a note file's `gen.outLang` (§16.2): a summary is current
+  for a reader only when its `outLang` equals the reader's `insights.language` (absent equals null). Scope
   names stay inside the ciphertext. A summary is stale when the members' digest changed.
 - **Voice-note titles (1.3).** A quick voice note (§11.3) stores no title unless the person typed one. Any device with
   a current `gen` slug derives a title from the shared format `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and

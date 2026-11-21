@@ -560,6 +560,7 @@ public struct InsightsTopicsFile: Hashable, Sendable, Codable {
             try InsightsValidate.short(t.membersHash, "membersHash")
             try t.gen.identity.check()
             try InsightsValidate.text(t.gen.summary, max: InsightsLimits.maxTopicSummary, "topic summary")
+            if let outLang = t.gen.outLang { try InsightsValidate.short(outLang, "outLang") }
         }
     }
 }
