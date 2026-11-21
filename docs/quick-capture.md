@@ -435,14 +435,16 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   (docs/security.md "A lost Apple Watch").
 - **What the phone admits.** A watch file gets a write-ledger entry only while Use on Apple Watch is on and its epoch is the one
   the phone holds for its vault (the plaintext `vault.json` epoch of the folder must not be ahead either). Anything else is
-  **held**: kept on the phone only (`Application Support/Sempere/WatchHeld/`), never in a vault folder, never synced, never in
-  the ledger, and acknowledged so the watch drops its copy, at most 200 files and 500 MB, of which at most 20 files and 50 MB may be notes that can only be deleted (a vault or epoch the phone never
+  **held**: kept on the phone (`Application Support/Sempere/WatchHeld/`), never in a vault folder, never synced, never in
+  the ledger, and answered as held, so the watch keeps its sealed copy until the phone adds or deletes the note (then the phone
+  releases it and the watch drops it), at most 200 files and 500 MB, of which at most 20 files and 50 MB may be notes that can only be deleted (a vault or epoch the phone never
   held: a watch sending those cannot use up the room for notes you can add); past either the file is refused and the
   watch keeps it. A file there without its record is removed once it is a day old (a younger one may be a note being written). Settings lists the held notes one by one, each with why it is held and when it came, with **Add…** (after a
   confirmation; it runs the normal path: catch-up then re-seals an older epoch's note under the current key), **Delete**, and
   **Delete All**. A note that came while Use on Apple Watch was off, or under an earlier key (after a lost watch's steps, what the
   lost watch sends), is offered for Delete first: adding it is **Add Anyway…**, with a warning, and `held add --all` skips it. A note sealed under an epoch the phone never held, or for a vault
-  it does not hold, can only be deleted. A watch that was offline across an epoch change has its notes held until you add them. A few go in by themselves once the phone catches up: those held because this device was removed from the list, once it is listed again, and those for a vault the phone did not hold, once it does (never one that arrived while Use on Apple Watch was off). A note sealed before the vault's key changed stays held as sealed under an earlier key until you add it. Held notes are kept only on the phone: deleting the app deletes them.
+  it does not hold, can only be deleted. A watch that was offline across an epoch change has its notes held until you add them. A few go in by themselves once the phone catches up: those held because this device was removed from the list, once it is listed again, and those for a vault the phone did not hold, once it does (never one that arrived while Use on Apple Watch was off). A note sealed before the vault's key changed stays held as sealed under an earlier key until you add it. Held notes are kept on the phone and, sealed, on the watch until you add or delete them: deleting the phone's app deletes
+  the phone's copies, and the watch sends what it still keeps again to a reinstalled app.
   The CLI has `sempere inbox watch held list|add|delete`. WatchConnectivity can reach the phone through Apple's cloud relay, not
   only within Bluetooth range, so a lost watch needs the steps above, not distance.
 - **A recording and a clear.** The watch keeps the profile a recording started with until the note is sealed (in memory, and in

@@ -11432,7 +11432,7 @@
         }
       }
     },
-    "Held Watch notes are kept only on this iPhone, not on the watch or in the vault: deleting Sempere deletes them." : {
+    "Held Watch notes stay on this iPhone, and sealed on the watch until you add or delete them here. They are never in the vault." : {
       "comment" : "Settings ▸ Quick Voice Notes ▸ Apple Watch, under the count of held Watch notes.",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -11440,7 +11440,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las notas del Watch retenidas se guardan solo en este iPhone, no en el reloj ni en la bóveda: si eliminas Sempere, se eliminan."
+            "value" : "Las notas del Watch retenidas se quedan en este iPhone y, selladas, en el reloj hasta que las añadas o las elimines aquí. Nunca están en la bóveda."
           }
         }
       }
