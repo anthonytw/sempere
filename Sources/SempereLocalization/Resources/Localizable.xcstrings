@@ -10600,7 +10600,7 @@
       }
     },
     "Fold %@" : {
-      "comment" : "Sidebar on an iPhone or iPad: hide a notebook's sub-notebooks (the notebook's name)",
+      "comment" : "Sidebar: hide a notebook's sub-notebooks (the notebook's name)",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -29456,7 +29456,7 @@
       }
     },
     "Unfold %@" : {
-      "comment" : "Sidebar on an iPhone or iPad: show a notebook's sub-notebooks (the notebook's name)",
+      "comment" : "Sidebar: show a notebook's sub-notebooks (the notebook's name)",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
