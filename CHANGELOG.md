@@ -8,6 +8,14 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [1.3.0] - TODO(user): release date (YYYY-MM-DD)
 
+### Security
+
+The release audit for 1.3 ([report](https://github.com/anthonytw/sempere/blob/main/docs/audits/2026-11-1.3.md)) found
+nothing in released versions except a dependency note: the swift-crypto package that 1.2.0 shipped is covered by
+published advisories for code that Sempere never calls, so it is not exploitable, and 1.3.0 updates it. The audit's other
+findings, including two Medium ones about what a note shared without dates still carried, were in code that no release
+had contained, and they were fixed before this release.
+
 ### Added
 
 - Ask your notes: type a question in the search field's new Ask mode (Edit ▸ Find ▸ Ask Your Notes… on the Mac,
