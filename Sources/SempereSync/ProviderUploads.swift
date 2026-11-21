@@ -23,11 +23,65 @@ public enum ProviderUploads {
         /// The provider reported an upload error (`ubiquitousItemUploadingError`): its code and message.
         case failed(code: Int, domain: String, message: String)
 
-        /// The provider cannot upload at all: its storage is full (`CocoaError.fileWriteOutOfSpace`), or iCloud is
-        /// not available (`.ubiquitousFileUbiquityServerNotAvailable`). The app words it as such.
-        public var isStorageUnavailable: Bool {
-            guard case .failed(let code, let domain, _) = self, domain == NSCocoaErrorDomain else { return false }
-            return code == 640 || code == 4355   // fileWriteOutOfSpace, ubiquitousFileUbiquityServerNotAvailable
+        /// The provider says, in so many words, that its storage is full: `CocoaError.fileWriteOutOfSpace` (640),
+        /// `.ubiquitousFileNotUploadedDueToQuota` (4354) or `NSFileProviderError.insufficientQuota` (-1003). Only then may
+        /// the app say the storage is full. Every other error is uncertain: iCloud reports
+        /// `.ubiquitousFileUbiquityServerNotAvailable` (4355) while it is merely slow or out of reach, and calling that "may
+        /// be full" was a false alarm (TestFlight 1.3.0 (112), owner 2026-11-20).
+        public var isStorageFull: Bool {
+            guard case .failed(let code, let domain, _) = self else { return false }
+            switch domain {
+            case NSCocoaErrorDomain: return code == 640 || code == 4354
+            case ProviderUploads.fileProviderErrorDomain: return code == -1003
+            default: return false
+            }
+        }
+    }
+
+    /// `NSFileProviderErrorDomain` (FileProvider is not on Linux; the string is the system's).
+    public static let fileProviderErrorDomain = "NSFileProviderErrorDomain"
+
+    /// How long an upload error must last before it is a problem the app shows.
+    public static let problemAfter: TimeInterval = 10 * 60
+    /// How many looks in a row (a run's count, the looks between runs) must see an upload error before it is a problem.
+    public static let problemSightings = 3
+
+    /// Whether an upload error the provider reports has lasted long enough to be a problem (owner 2026-11-20: "I don't
+    /// need it unless something is definitely wrong"). Providers report errors for a while that clear by themselves (iCloud
+    /// says its server is not available while it catches up), so one look proves nothing: an error is a problem only once
+    /// every look for at least `problemAfter`, and at least `problemSightings` looks, saw one. A look that sees none, or
+    /// one made while the device has no network path (a provider cannot upload then, and that is no fault), starts over.
+    /// A full storage is held to the same rule: nothing is lost meanwhile (the changes are on this device), and a single
+    /// answer of any kind is not "definitely wrong" yet.
+    public struct Persistence: Equatable, Sendable {
+        /// When the looks in a row that saw an error began.
+        public private(set) var since: Date?
+        /// How many looks in a row saw one.
+        public private(set) var sightings = 0
+        /// The error the last look saw.
+        public private(set) var latest: State?
+
+        public init() {}
+
+        /// One look's answer: `error` is the provider's (a `.failed` state; nil or any other state: none).
+        public mutating func observe(_ error: State?, at now: Date, networkDown: Bool = false) {
+            guard let error, case .failed = error, !networkDown else {
+                self = Persistence()
+                return
+            }
+            if since == nil { since = now }
+            sightings += 1
+            latest = error
+        }
+
+        /// An error the provider still reports, whether or not it is a problem yet.
+        public var isActive: Bool { latest != nil }
+
+        /// The error to show as a problem at `now`: the latest, once it lasted; nil before.
+        public func problem(at now: Date) -> State? {
+            guard let latest, let since, sightings >= ProviderUploads.problemSightings,
+                  now.timeIntervalSince(since) >= ProviderUploads.problemAfter else { return nil }
+            return latest
         }
     }
 

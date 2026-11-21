@@ -129,7 +129,8 @@ private struct SyncTargetRow: View {
                 Text(target.kind == .webdav ? (target.url ?? "") : (target.path ?? ""))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 if let session {
-                    Text(session.headline).font(.caption)
+                    // A problem stays in view while the next run goes (`settledKind`); otherwise syncing, synced, waiting.
+                    Text(session.needsAttention ? session.attentionHeadline : session.headline).font(.caption)
                         .foregroundStyle(session.needsAttention ? .orange : .secondary)
                     // A folder that went away, or a saved permission that no longer opens it (review of #72, G5).
                     if target.kind == .folder, session.status.kind == .problem(.notFound) || session.status.kind == .problem(.writeGrantLapsed) {

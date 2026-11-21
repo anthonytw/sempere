@@ -184,7 +184,10 @@ struct SyncFolderCommand: ParsableCommand {
             let waiting = ProviderUploads.waiting(folder: target, paths: report.uploaded + writes.paths)
             if waiting.count > 0 || waiting.error != nil {
                 report.providerPending = waiting.count
-                if case .failed(_, _, let message)? = waiting.error { report.providerError = message }
+                if let error = waiting.error, case .failed(_, _, let message) = error {
+                    report.providerError = message
+                    if error.isStorageFull { report.providerStorageFull = true }
+                }
             }
         }
 

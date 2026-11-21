@@ -8,8 +8,13 @@ import SempereWebDAV
 // library returns values, the app says them (docs/design/thin-app.md "Rules").
 
 extension SyncStatus {
-    /// The bar's line.
-    var headline: String {
+    /// The status's line (Sync Targets, Vault Details, the welcome list).
+    var headline: String { headline(for: kind) }
+
+    /// The note list's bar's line: the problem it is shown for, also while the next run goes (`settledKind`).
+    var attentionHeadline: String { headline(for: settledKind) }
+
+    private func headline(for kind: Kind) -> String {
         switch kind {
         case .syncing:
             return folder ? String(localized: "Syncing with the folder…") : String(localized: "Syncing with the server…")
@@ -27,7 +32,7 @@ extension SyncStatus {
             return String(localized: "Part of the changes synced. The rest follows at the next sync.",
                           comment: "Sync status: a run stopped early after it moved files")
         case .providerFailed(let state):
-            return ProviderUploads.errorText(state) ?? ""
+            return ProviderUploads.errorText(state, viaICloud: viaICloud) ?? ""
         case .waitingForProvider(let n):
             return viaICloud
                 ? String(localized: "\(n) changes waiting for iCloud to upload", comment: "Sync status; the number is a count of files")
@@ -90,23 +95,33 @@ extension SyncStatus {
 }
 
 extension SyncSession {
-    /// The bar's line.
+    /// The status's line.
     var headline: String { status.headline }
+    /// The note list's bar's line (shown only when `needsAttention`).
+    var attentionHeadline: String { status.attentionHeadline }
 
     /// What to do about a problem.
     static func text(for problem: WebDAVSyncProblem) -> String { SyncStatus.text(for: problem) }
 }
 
 extension ProviderUploads {
-    /// The upload error as the bar says it: a full iCloud storage (or iCloud unavailable) in plain words.
-    static func errorText(_ state: State?) -> String? {
+    /// An upload error that lasted (`ProviderUploads.Persistence`) as the bar says it. "Full" only when the provider
+    /// said so (`isStorageFull`); any other error says only that uploads have not gone through for a while, with the
+    /// provider's own words.
+    static func errorText(_ state: State?, viaICloud: Bool) -> String? {
         guard let state, case .failed(_, _, let message) = state else { return nil }
-        if state.isStorageUnavailable {
-            return String(localized: "iCloud is not uploading this folder's files: its storage may be full, or iCloud is not available. Check iCloud storage in Settings.",
-                          comment: "Sync status: a folder target in iCloud Drive whose uploads fail")
+        if state.isStorageFull {
+            return viaICloud
+                ? String(localized: "iCloud storage is full, so iCloud is not uploading this folder's files. Changes are kept on this device. Free up iCloud storage in Settings.",
+                         comment: "Sync status: a folder target in iCloud Drive whose uploads fail for a full iCloud storage")
+                : String(localized: "The folder's provider is out of storage and is not uploading its files. Changes are kept on this device.",
+                         comment: "Sync status: a folder target whose provider reports a full storage")
         }
-        return String(localized: "The folder's provider could not upload some files: \(message)",
-                      comment: "Sync status; the value is the provider's error message")
+        return viaICloud
+            ? String(localized: "iCloud has not uploaded this folder's files for a while. Changes are kept on this device. iCloud reports: \(message)",
+                     comment: "Sync status; the value is iCloud's error message")
+            : String(localized: "The folder's provider could not upload some files: \(message)",
+                     comment: "Sync status; the value is the provider's error message")
     }
 }
 

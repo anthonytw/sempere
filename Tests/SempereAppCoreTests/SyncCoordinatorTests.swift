@@ -485,34 +485,95 @@ struct SyncCoordinatorTests {
 /// unlocked here, upload-only otherwise; the loop's pace; what a run's outcome makes of the status. Runs are fakes.
 @MainActor
 struct SyncSessionTests {
-    /// Only an upload error of the provider is a problem; a summary's other states are not.
-    @Test func onlyAProvidersUploadErrorIsAProblem() async throws {
+    /// Only an upload error of the provider is a problem, and only once it lasted (`ProviderUploads.Persistence`):
+    /// TestFlight 1.3.0 (112) showed "its storage may be full" when iCloud merely lagged. A summary's other states, and an
+    /// error that clears, are only waiting.
+    @Test func onlyAProvidersLastingUploadErrorIsAProblem() async throws {
         let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
                                   run: { _ in SyncReport() }, countUnconfirmed: { 0 })
         session.kind = .folder
-        let failed = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "full")
-        session.providerSummary = { ProviderUploads.Summary(count: 1, error: failed) }
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        session.now = { clock }
+        let lag = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "server not available")
+        session.providerSummary = { ProviderUploads.Summary(count: 1, error: lag) }
         session.vaultUnlocked()
         _ = await session.syncNow()
-        #expect(session.status.kind == .providerFailed(failed) && session.needsAttention)
+        #expect(session.status.kind == .waitingForProvider(1) && !session.needsAttention, "one look proves nothing")
+        clock += 60
+        _ = await session.syncNow()
+        #expect(!session.needsAttention, "seen twice in a minute: still only waiting")
+        clock += ProviderUploads.problemAfter
+        _ = await session.syncNow()
+        #expect(session.status.kind == .providerFailed(lag) && session.needsAttention, "lasted: a problem")
+        #expect(!session.status.lastSuccessIsSync)
+        // While the next run goes, the problem stays (the bar does not come and go with runs).
+        #expect(SyncStatus(syncing: true, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: nil,
+                           folder: true, providerPending: 1, providerError: lag).needsAttention)
+        // A look that sees no error: only waiting again, and the time starts over.
         session.providerSummary = { ProviderUploads.Summary(count: 1, error: .waiting) }
         _ = await session.syncNow()
         #expect(session.providerError == nil)
         #expect(session.status.kind == .waitingForProvider(1) && !session.needsAttention)
+        session.providerSummary = { ProviderUploads.Summary(count: 1, error: lag) }
+        clock += 60
+        _ = await session.syncNow()
+        #expect(!session.needsAttention, "the error came back: its time starts over")
+        // No network path: the looks start over as well.
+        clock += ProviderUploads.problemAfter
+        session.networkChanged(reachable: false)
+        _ = await session.syncNow()
+        _ = await session.syncNow()
+        #expect(!session.needsAttention)
         session.stop()
     }
 
     @Test func statusKinds() {
         var s = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: nil)
-        #expect(s.kind == .synced)
+        #expect(s.kind == .synced && !s.needsAttention)
         s.unconfirmed = 3
-        #expect(s.kind == .pending(3))
+        #expect(s.kind == .pending(3) && !s.needsAttention)
         s.problems = [.offline]
         #expect(s.kind == .offline && !s.needsAttention)
         s.problems = [.unauthorized]
         #expect(s.needsAttention)
         s = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: false, lastSuccess: nil)
         #expect(s.kind == .waitingForUnlock && !s.needsAttention)
+    }
+
+    /// The note list's bar shows only what is definitely wrong (owner 2026-11-20): syncing, synced, changes not synced
+    /// yet, a run cut short, files waiting for the provider, waiting for the unlock and offline show none; a problem stays
+    /// one while the next run goes (`settledKind`).
+    @Test func onlyDefiniteProblemsNeedAttention() {
+        func status(_ edit: (inout SyncStatus) -> Void) -> SyncStatus {
+            var s = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: Date(),
+                               folder: true, viaICloud: true)
+            edit(&s)
+            return s
+        }
+        let quiet: [SyncStatus] = [
+            status { _ in },                                   // synced
+            status { $0.syncing = true },                      // syncing
+            status { $0.unconfirmed = 4 },                     // not synced yet
+            status { $0.continuing = true },                   // cut short
+            status { $0.providerPending = 3 },                 // waiting for iCloud
+            status { $0.arriving = 2 },                        // files on their way
+            status { $0.twoWay = false; $0.staged = 5 },       // waiting for the unlock
+            status { $0.deviceLocked = true },
+            status { $0.problems = [.offline] },               // offline: kept here, syncs when back
+            status { $0.networkDown = true; $0.problems = [.unauthorized] },
+        ]
+        for s in quiet { #expect(!s.needsAttention, "\(s.kind)") }
+        let loud: [WebDAVSyncProblem] = [.unauthorized, .certificate("x"), .certificateDate, .otherVault, .notFound,
+                                         .redirect("https://x"), .serverChangedManifest, .notWritable(["a"]),
+                                         .writeGrantLapsed, .failures(["a: b"]), .failed("x")]
+        for p in loud {
+            #expect(status { $0.problems = [p] }.needsAttention, "\(p)")
+            let running = status { $0.problems = [p]; $0.syncing = true }
+            #expect(running.kind == .syncing && running.settledKind == .problem(p) && running.needsAttention,
+                    "a problem stays while the next run goes: \(p)")
+        }
+        let full = ProviderUploads.State.failed(code: 4354, domain: NSCocoaErrorDomain, message: "full")
+        #expect(status { $0.providerPending = 1; $0.providerError = full }.needsAttention)
     }
 
     /// Review of #91, S1: a write made while a Sync Now runs is synced after its write delay once that run ends,

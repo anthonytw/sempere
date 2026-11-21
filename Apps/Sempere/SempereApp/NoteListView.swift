@@ -173,8 +173,9 @@ struct NoteListView: View {
                     RecognitionBar(progress: progress) { model.cancelRecognizingNotes() }
                 }
                 VaultStatusBar(loading: model.loading, join: model.joinProgress)
-                // One bar per sync target (folder or server) of the open vault.
-                ForEach(model.syncSessions, id: \.locationID) { WebDAVStatusBar(session: $0) }
+                // A bar per sync target (folder or server) of the open vault where something is definitely wrong; none
+                // while all is well or only in progress (owner 2026-11-20). Sync Targets… keeps every target's status.
+                ForEach(model.syncSessions.filter(\.needsAttention), id: \.locationID) { WebDAVStatusBar(session: $0) }
             }
         }
         .refreshable {

@@ -328,8 +328,10 @@ private struct CertificateWarning: View {
     }
 }
 
-/// The note list's bar for a WebDAV vault (`SyncStatus`): syncing, synced, offline, waiting for the
-/// unlock, or what went wrong, with Sync Now and Server Settings….
+/// The note list's bar for one sync target (`SyncStatus`), shown only while something is definitely wrong
+/// (`SyncSession.needsAttention`, owner 2026-11-20): what went wrong, with Sync Now, Sync Targets… and Server Settings….
+/// Syncing, synced, waiting and offline show no bar; each target's status line stays in Sync Targets… (the sidebar's More
+/// menu, File ▸ Sync Targets…, Settings) and Vault Details.
 struct WebDAVStatusBar: View {
     @AppModelEnvironment private var model
     let session: SyncSession
@@ -343,7 +345,7 @@ struct WebDAVStatusBar: View {
                 if model.syncSessions.count > 1 {
                     Text(session.targetName).font(.caption2.weight(.semibold))
                 }
-                Text(session.headline).font(.caption)
+                Text(session.attentionHeadline).font(.caption)
                 if let last = session.lastSuccess, !session.isSyncing {
                     if session.status.lastSuccessIsSync {
                         Text("Last sync \(last, format: .relative(presentation: .named))")
@@ -386,7 +388,7 @@ struct WebDAVStatusBar: View {
     }
 
     private var icon: String {
-        switch session.status.kind {
+        switch session.status.settledKind {
         case .syncing: return "arrow.triangle.2.circlepath"
         case .offline: return "wifi.slash"
         case .problem: return "exclamationmark.triangle.fill"

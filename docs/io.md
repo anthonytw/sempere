@@ -1920,7 +1920,12 @@ syncs with both ways.
   wrote that the provider has not uploaded yet (`ubiquitousItemIsUploaded`, `isUploading`) are kept in
   `<target state dir>/provider-uploads.json` and asked again each run, and while any wait the bar, the welcome list
   and Vault Details say "n changes waiting for iCloud to upload" and "Written to the folder …" instead of "Synced"
-  and "Last sync" (offline audit P15); an upload error (a full iCloud storage) is a problem the bar shows. The
+  and "Last sync" (offline audit P15); an upload error the provider reports is a problem only once it lasted
+  (`ProviderUploads.Persistence`: every look for 10 minutes, and at least 3 looks, saw one; a look with none, or with no
+  network path, starts over), and is called a full storage only when the error says so (`isStorageFull`:
+  `NSFileWriteOutOfSpaceError`, `NSUbiquitousFileNotUploadedDueToQuotaError`, the File Provider's insufficient quota).
+  iCloud's "server not available" (4355), which it reports while it is merely slow, is never "full" (TestFlight 1.3.0
+  (112) said "may be full" for a lag). The
   unlisted screen counts them as on no target. A run is marked in flight before it starts; when the next run finds
   the mark (a run that threw or was killed before recording what it wrote), it looks at every file of the folder.
   Past 20,000 paths the record is truncated, and the target then counts as holding none of this device's files.
@@ -2059,12 +2064,14 @@ syncs with both ways.
   removes an unfinished `<copy>.download` and its state, and removes `<copy>.old` only when the copy
   holds every revision, blob, inbox file and notebook record in it; otherwise it is kept and named in an
   alert, which offers Show in Finder on a Mac and Share… elsewhere.
-- **Status** (`SyncStatus`, the note list's bar): syncing; synced (and how many files a provider
-  still delivers); "n changes not synced yet"; offline ("Changes are kept on this device and sync
+- **Status** (`SyncStatus`, each target's line in Sync Targets… and Vault Details): syncing; synced (and how many files a
+  provider still delivers); "n changes not synced yet"; offline ("Changes are kept on this device and sync
   when the server can be reached", not an error); waiting for the unlock (a closed or locked vault);
   or the problem and what to do (wrong password, certificate, the folder gone or holding another
-  vault, a device list changed on both sides, files that failed). The menu has Sync Now and Server
-  Settings…; "Download Again" is gone, since a run takes what the server has.
+  vault, a device list changed on both sides, files that failed, a provider's upload error that lasted). The note
+  list's bar shows only the problems (`SyncStatus.needsAttention`, judged on `settledKind` so it stays while the next
+  run goes; owner 2026-11-20: an ever-present status line was annoying), with Sync Now, Sync Targets… and Server
+  Settings…; everything else shows no bar. "Download Again" is gone, since a run takes what the server has.
 - **Other writers.** Several devices write to one server folder; their files meet by the engine's
   union rules (docs/design/device-first-sync.md §5), conflicts on `vault.json` keep both copies and
   are reported. Tests: `TwoDeviceSyncTests` (SempereAppCoreTests; two `AppModel`s on one in-memory server running the
