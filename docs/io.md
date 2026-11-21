@@ -762,7 +762,9 @@ the package meanwhile makes yet another whole-vault version.
    and this vault's id, `openNotebookRecord`, `checkIncomingPassphraseCopy`), then placed through a temporary name that never
    replaces a file, after `requireWritable`. No symbolic link in the folder's path to it is followed: a file below a link
    (`BoundedRead.firstLink`, checked before staging and again before writing) is an error that leaves its version
-   unresolved, and missing folders are made one level at a time, each checked to be a folder and not a link. The acceptance rule's outcomes are never quarantined: pending (its key's record
+   unresolved, and missing folders are made one level at a time, each checked to be a folder and not a link. The check
+   comes before the write (check-then-write by path), so a writer racing in the folder at that moment is not fully
+   excluded. The acceptance rule's outcomes are never quarantined: pending (its key's record
    has not arrived) leaves the version unresolved, set aside goes to this machine's set-aside store
    (`vault.setAsideStore.keep`) and is settled. A file that fails its own check goes to `<quarantine>/<nn-device>/<path>`;
    a `VaultError` (the vault cannot judge it now) leaves the version unresolved. A retired kit's passphrase copy (not the
