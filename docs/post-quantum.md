@@ -59,7 +59,7 @@ so a vault can be opened and listed. The app's deployment target is iPadOS
 
 swift-crypto 4.0–4.3 declare tools version 6.0; 4.4+ need 6.1. A Swift 6.0
 toolchain resolves to 4.3.x, 6.1 to the latest 4.x; 5.0 needs 6.2, so the manifest's range (`4.0.0 ..< 6.0.0`) gives 6.2 and newer
-the latest 5.x (`Package.resolved` pins 5.1.1).
+the latest 5.x (`Package.resolved` pins 5.1.2).
 
 ## Validation
 
