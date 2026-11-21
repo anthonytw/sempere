@@ -766,8 +766,18 @@ struct SyncSessionTests {
         // looks over after they had been sampled as stopped): once `start`'s count is in, the looks go on until
         // `providerRecheckLimit` in a row saw no fewer files, and then none is planned.
         await session.startCount?.value
+        // Stopped = nothing planned, no run, and the count unchanged for 100 ms in a row: `providerRecheckDue` is also
+        // nil for the moment a look is running (it is cleared before the look and set again after), so it alone is
+        // not "stopped" (the gate, build 113, sampled in that moment).
         func waitUntilStopped() async throws {
-            for _ in 0..<2000 where session.providerRecheckDue != nil || session.isSyncing {
+            var last = looks.add(0), stableSince = ContinuousClock.now
+            for _ in 0..<4000 {
+                let now = looks.add(0)
+                if now != last || session.providerRecheckDue != nil || session.isSyncing {
+                    last = now; stableSince = .now
+                } else if ContinuousClock.now - stableSince >= .milliseconds(100) {
+                    break
+                }
                 try await Task.sleep(for: .milliseconds(5))
             }
             #expect(session.providerRecheckDue == nil, "the looks stopped")
