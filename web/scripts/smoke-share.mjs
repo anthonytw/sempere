@@ -7,7 +7,7 @@
 // one sentence and a right one draws the note, and prints how long scrypt took. Exits 1 on any failure.
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { launchBrowser } from "./smoke-lib.mjs";
+import { engineNoise, launchBrowser } from "./smoke-lib.mjs";
 
 const [file, passphrase, shot] = process.argv.slice(2);
 if (!file || !passphrase) {
@@ -24,7 +24,7 @@ const requests = [];
 context.on("request", (r) => requests.push(r.url()));
 page.on("console", (m) => {
   const t = m.text();
-  if (/content security policy|trusted type|refused to|violat/i.test(t)) fail(`console: ${t}`);
+  if (/content security policy|trusted type|refused to|violat/i.test(t) && !engineNoise(t)) fail(`console: ${t}`);
 });
 let workers = 0;
 page.on("worker", () => { workers++; });

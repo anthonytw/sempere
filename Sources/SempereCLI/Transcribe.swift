@@ -79,6 +79,7 @@ struct TranscribeCommand: ParsableCommand {
     var downloadModel = false
 
     @OptionGroup var access: AccessOptions
+    @OptionGroup var cache: CacheOptions
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
@@ -97,6 +98,16 @@ struct TranscribeCommand: ParsableCommand {
         if all && !recordings.isEmpty { throw ValidationError("recordings can be named only with one note") }
         if engineChoice == nil && engine != "auto" { throw ValidationError("--engine must be auto, speechtranscriber or sfspeech") }
         if let language, TranscriptionLanguage.tag(language) == nil { throw ValidationError("--language is not a language tag: \(language)") }
+    }
+
+    /// `SEMPERE_TRANSCRIBE_FAKE=1` in a debug build: every recording gets a fixed transcript without the Speech
+    /// framework, so the CLI tests run the rest of the command (the transcript write, `--insights`) for real.
+    static var fakeTranscription: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["SEMPERE_TRANSCRIBE_FAKE"] == "1"
+        #else
+        return false
+        #endif
     }
 
     var engineChoice: TranscriptionEngine? { TranscriptionEngine(rawValue: engine) }
@@ -141,7 +152,7 @@ struct TranscribeCommand: ParsableCommand {
             }
             return
         }
-        if !dryRun && !SpeechTranscription.isSupported { throw Self.unavailable }
+        if !dryRun && !Self.fakeTranscription && !SpeechTranscription.isSupported { throw Self.unavailable }
         let vault = try access.openVault(.required)
         if !dryRun { try vault.requireWritable() }   // format.md §7.3: exit 7, not a failure per recording
         let ids: [UUID]
@@ -225,7 +236,7 @@ struct TranscribeCommand: ParsableCommand {
             o.note = id; o.force = true
             let options = o
             let updater = InsightsUpdater(vault: vault, model: model, embedder: p.embedder, deviceState: DeviceState.defaultURL(), app: appName)
-            let inputs = try InsightsCLI.inputs(vault, cache: CacheOptions())
+            let inputs = try InsightsCLI.inputs(vault, cache: cache)
             let report = try blockingThrowing { try await updater.run(options, notes: inputs) }
             out.redone = true; out.generated = report.generated; out.titled = report.titled
             if let why = report.failures[id.uuidString.lowercased()] { out.error = why; out.redone = false }
@@ -275,7 +286,11 @@ struct TranscribeCommand: ParsableCommand {
                     let opts = o
                     let ext = r.blob.type.lowercased().hasPrefix("audio/mp4") ? "m4a" : nil
                     let transcript: Transcript = try vault.withBlobFile(note: id, r.blob, pathExtension: ext) { url in
-                        try blockingThrowing { try await SpeechTranscription.transcribe(file: url, recording: r.id, options: opts) }
+                        if Self.fakeTranscription {
+                            return Transcript(recording: r.id, engine: "fake", language: opts.language ?? "en", created: Date(),
+                                              segments: [.init(start: 0, end: 1, text: "texto de prueba")])
+                        }
+                        return try blockingThrowing { try await SpeechTranscription.transcribe(file: url, recording: r.id, options: opts) }
                     }
                     let content = try transcript.encoded()
                     let ref = try vault.writeBlob(note: id, content, type: BlobRef.transcriptType)
