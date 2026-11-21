@@ -32,7 +32,9 @@ Do not use features newer than Swift 6.0 in `Sources/`.
 - `Sources/*` and `Tests/*` must build on Linux: Foundation (plus FoundationNetworking in `SempereWebDAV` only, and
   Observation in `SempereAppCore` only), swift-crypto (`import Crypto`), `CZlib` and swift-argument-parser only. No UIKit,
   AppKit, PencilKit, CoreGraphics, Compression, CommonCrypto, Security, `os` (log through `PerfSink`).
-  Apple-only code goes under `Apps/`. Apple-only *tests* (e.g. comparing
+  Apple-only code goes under `Apps/`. One provider exception: `UniformTypeIdentifiers` in
+  `Sources/SempereSync/UbiquitousFolderHooks.swift` only, behind `#if canImport`, to read whether an item's type conforms
+  to `com.apple.package` beside `isPackage` (`check-portability.sh`). Apple-only *tests* (e.g. comparing
   against PencilKit) are allowed behind `#if canImport(PencilKit)`.
 - Files under a vault's `notes/` (revisions and each note's `att/` blobs), `notebooks/` and `epochs/`
   are write-once. Never add code that modifies them in place; re-encrypting everything (key hierarchy
