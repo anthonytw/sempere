@@ -1,11 +1,10 @@
-import FuzzSupport
 import Foundation
 import XCTest
 
 @testable import Sempere
 
 /// `AudioMetadata` zeroes an MP4 recording's container times and blanks its tags without moving a byte, and refuses a
-/// file it cannot read whole.
+/// file it cannot read whole. Its fuzz target is `SempereFuzzTests.testFuzzAudioMetadata`.
 final class AudioMetadataTests: XCTestCase {
     static func box(_ type: String, _ body: [UInt8]) -> [UInt8] {
         let n = UInt32(8 + body.count)
@@ -69,15 +68,5 @@ final class AudioMetadataTests: XCTestCase {
         XCTAssertNil(AudioMetadata.scrubbed(good + Data(moov)))
         // A last mdat cut short is a recording that stopped: still read.
         XCTAssertNotNil(AudioMetadata.scrubbed(good.dropLast(10)))
-    }
-
-    func testFuzz() throws {
-        let seeds = try [Self.synthetic()] + ["tone-aac.m4a", "tone-aac-faststart.m4a"].map(AudioProbeTests.fixture)
-        let report = Fuzz.run("audio-metadata", seeds: seeds, quick: 400, maxSize: 64 << 10) { input in
-            if let out = AudioMetadata.scrubbed(input), out.count != input.count { return "the length changed" }
-            return nil
-        }
-        XCTAssertGreaterThan(report.cases, 0)
-        for f in report.failures { XCTFail("\(f)") }
     }
 }

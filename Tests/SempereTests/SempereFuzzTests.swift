@@ -338,6 +338,15 @@ final class SempereFuzzTests: VaultTestCase {
         })
     }
 
+    /// `AudioMetadata` (a share's recording without its dates) on mutated MP4s: nil or the same length, never a trap.
+    func testFuzzAudioMetadata() throws {
+        let seeds = try [AudioMetadataTests.synthetic()] + ["tone-aac.m4a", "tone-aac-faststart.m4a"].map(AudioProbeTests.fixture)
+        assertClean(Fuzz.run("audio-metadata", seeds: seeds, quick: 400, maxSize: 64 << 10) { input in
+            if let out = AudioMetadata.scrubbed(input), out.count != input.count { return "the length changed" }
+            return nil
+        })
+    }
+
     /// Whole op logs as one JSON array, half of them generated: duplicate
     /// ids, removes of unknown ids, parent cycles, orphans, conflicting
     /// (device, seq), huge `included`, many pages and long strokes.
