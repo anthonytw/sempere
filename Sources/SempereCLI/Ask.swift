@@ -21,7 +21,10 @@ struct AskCommand: ParsableCommand {
             The first line of the text output is the mode. Nothing leaves this machine and nothing is stored: no \
             question, answer or history is written to the vault or anywhere else. --retrieve-only never calls the model; \
             --require-model exits 3 when it cannot run; --explain shows each candidate's ranks, the passages sent \
-            and each dropped sentence with the reason. Linux has no model and no embedder: keyword mode, exit 0.
+            and each dropped sentence with the reason. A question in a language none of the notes is written in is \
+            translated by the model into the notes' language to search them (one more call); the answer is written and \
+            checked in the notes' language, then translated back, and its numbers, codes and names are checked again \
+            against the notes. Linux has no model and no embedder: keyword mode, exit 0.
             """
     )
 
@@ -90,6 +93,7 @@ struct AskCommand: ParsableCommand {
     static func print(_ r: AskResult, explain: Bool, quiet: Bool) {
         Swift.print("mode: \(r.mode.rawValue)" + (r.mode == .answer ? "" : r.missing.map { "  (\($0))" } ?? ""))
         for n in r.notices { printStderr("note: \(n)") }
+        if let q = r.searchedAs { printStderr("note: searched as (\(r.searchLang ?? "?")): \(q)") }
         var number: [String: Int] = [:]
         for n in r.notes where n.used { number[n.note] = number.count + 1 }
         if r.mode == .answer {
@@ -128,7 +132,8 @@ struct AskCommand: ParsableCommand {
         Swift.print("")
         Swift.print("Candidates (vector rank, keyword rank, score):")
         for c in e.candidates {
-            Swift.print("  \(c.note.prefix(8))  v\(c.vectorRank.map(String.init) ?? "-")  k\(c.keywordRank.map(String.init) ?? "-")  \(c.score)  \(c.title)")
+            let scores = "v=\(c.vectorScore.map { String($0) } ?? "-") k=\(c.keywordScore.map { String($0) } ?? "-")"
+            Swift.print("  \(c.note.prefix(8))  v\(c.vectorRank.map(String.init) ?? "-")  k\(c.keywordRank.map(String.init) ?? "-")  \(c.score)  (\(scores))  \(c.title)")
         }
         Swift.print("Sent to the model (\(e.evidenceTokens) tokens):")
         for s in e.sent { Swift.print("  \(s.source)  \(s.note.prefix(8))  \(s.page.map { "p\($0)" } ?? "transcript")  ~\(s.tokens) tokens") }

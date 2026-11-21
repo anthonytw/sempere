@@ -133,6 +133,28 @@ final class CLIAskTests: CLITestCase {
         XCTAssertTrue(text.out.contains("Sent to the model"), text.out)
     }
 
+    /// A question in a language no note is in (design §3.8): the fake model translates it (`[en] …`) for searching, the
+    /// answer is written in the notes' language and translated back (`[es] …`), and the JSON says what was searched.
+    func testAQuestionInAnotherLanguageIsTranslatedForSearching() throws {
+        let (args, _) = try setUpVault()
+        let spanish = "¿Qué decide el damping ratio de un spring?"
+        let j = json(try cli(["ask", spanish, "--lang", "es", "--json"] + args, env: fake))
+        XCTAssertEqual(j["lang"] as? String, "es")
+        XCTAssertEqual(j["searchLang"] as? String, "en")
+        XCTAssertEqual(j["searchedAs"] as? String, "[en] " + spanish)
+        XCTAssertEqual(j["vectors"] as? String, "used")
+        XCTAssertEqual(j["mode"] as? String, "answer", "\(j)")
+        let answer = try XCTUnwrap(j["answer"] as? [[String: Any]])
+        XCTAssertFalse(answer.isEmpty)
+        XCTAssertTrue(answer.allSatisfy { ($0["text"] as? String)?.hasPrefix("[es] ") == true }, "\(answer)")
+        let text = try cli(["ask", spanish, "--lang", "es"] + args, env: fake)
+        XCTAssertTrue(text.err.contains("searched as (en)"), text.err)
+        // Without the model the question is not translated, and the notice says so.
+        let off = json(try cli(["ask", "¿Cuántos gramos lleva la receta?", "--lang", "es", "--json"] + args, env: noModel))
+        XCTAssertNil(off["searchedAs"] as? String)
+        XCTAssertTrue((off["missing"] as? String)?.contains("could not be translated") == true, "\(off)")
+    }
+
     func testReadOnlyVaultAndNothingIsWritten() throws {
         let (args, vault) = try setUpVault()
         let before = try snapshotOfFiles(vault.url)
