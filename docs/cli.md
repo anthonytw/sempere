@@ -2469,7 +2469,8 @@ What the app's opt-in Spotlight indexing (Settings ▸ Spotlight) would donate f
 (characters of text that would be donated, 0 without `--text`), and the caps (20,000 text characters, 50,000 notes,
 30 days to expiry). `--text` is "Include Note Text": recognized handwriting, typed text, PDF text and equations'
 source; `--transcripts` also reads recording transcripts (the app follows Search Recording Transcripts). It never
-writes anything and never prints note text. Indexing itself is app-only: Core Spotlight items belong to an app's
+writes anything. The text itself is shown only as a length, except that with `--text` each record's description
+holds the start of the note's text (its first 140 characters), as the app's item would. Indexing itself is app-only: Core Spotlight items belong to an app's
 bundle identity, which a command-line binary does not have in a form the system can open. `--json`: `{vault, includeText,
 items: [...], omitted, caps}`.
 

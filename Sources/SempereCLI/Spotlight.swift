@@ -23,8 +23,10 @@ struct SpotlightPlanCommand: ParsableCommand {
         discussion: """
             By default the title, notebook, tags and modified date of each note (the "Show This Vault's Notes in \
             Spotlight" switch). --text adds what "Include Note Text" adds: recognized handwriting, typed text, PDF \
-            text and equations' source, the first 20,000 characters of each note (shown here as a length); with \
-            --transcripts also recording transcripts (the app follows the Search Recording Transcripts setting). \
+            text and equations' source, the first 20,000 characters of each note (shown here as a length, except \
+            the description, which then prints the start of each note: its first 140 characters, as the app's item \
+            holds it); with --transcripts also recording transcripts (the app follows the Search Recording \
+            Transcripts setting). \
             Deleted notes are never included; thumbnails, insight summaries and embeddings never are.
             """
     )
