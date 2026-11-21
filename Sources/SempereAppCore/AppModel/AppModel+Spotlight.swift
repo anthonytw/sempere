@@ -267,7 +267,8 @@ extension AppModelCore {
             }
         } catch {
             // The next change or the next launch tries again; nothing is claimed as donated that was not.
-            services.perf.event("spotlight.pass", "failed")
+            let failure = error as NSError
+            services.perf.event("spotlight.pass", "failed \(failure.domain) \(failure.code)")
         }
     }
 
