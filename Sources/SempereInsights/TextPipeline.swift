@@ -554,8 +554,9 @@ public struct FactCheck: Sendable {
     }
 
     /// `cut` of a whole text (a translation): split into sentences first.
-    public static func cut(text: String) -> String? {
-        cut(InsightsChunker.sentences(text.replacingOccurrences(of: "\n", with: " "))).summary
+    public static func cut(text: String, maxSentences: Int = 4, maxCharacters: Int = 600) -> String? {
+        cut(InsightsChunker.sentences(text.replacingOccurrences(of: "\n", with: " ")), maxSentences: maxSentences,
+            maxCharacters: maxCharacters).summary
     }
 
     /// True when `sentence` passes: every strict token supported, and enough of its content words.

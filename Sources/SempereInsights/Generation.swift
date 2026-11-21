@@ -131,6 +131,8 @@ public enum TopicSummaries {
     public static let minMembers = 3
     public static let singleShot = 25
     public static let maxSentences = 6
+    /// The most characters a topic summary keeps, translated or not (`InsightsLimits.maxTopicSummary` is 4,000).
+    public static let maxCharacters = 1200
     /// A scope is regenerated at most once a day.
     public static let minInterval: TimeInterval = 24 * 3600
 
@@ -217,10 +219,13 @@ public enum TopicSummaries {
         }
         let paragraph = try await model.summarize(topic: name, summaries: summaries, language: language)
         let source = sorted.map { $0.summary + " " + $0.keywords.joined(separator: " ") }.joined(separator: "\n")
-        let checked = FactCheck(source: source, merger: merger).check(paragraph, maxSentences: maxSentences, maxCharacters: 1200).summary
-        // The insight language (`insights.language`): put into it after the fact check, as a note's summary is.
+        let checked = FactCheck(source: source, merger: merger).check(paragraph, maxSentences: maxSentences,
+                                                                      maxCharacters: maxCharacters).summary
+        // The insight language (`insights.language`): put into it after the fact check, as a note's summary is, and held
+        // to the same length rule, so it never exceeds what a topics file may hold (`InsightsLimits.maxTopicSummary`).
         guard let outputLanguage, let checked, !checked.isEmpty else { return checked }
-        return try await model.translate(checked, to: outputLanguage)
+        return FactCheck.cut(text: try await model.translate(checked, to: outputLanguage), maxSentences: maxSentences,
+                             maxCharacters: maxCharacters)
     }
 }
 

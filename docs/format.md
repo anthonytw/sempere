@@ -4810,7 +4810,11 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   (optional, 1.3): the language `summary` is written in when the vault's `insights.language` names one, a string of 1 to 64
   UTF-8 bytes (else the file is invalid), with the same rule as a note file's `gen.outLang` (§16.2): a summary is current
   for a reader only when its `outLang` equals the reader's `insights.language` (absent equals null). Scope
-  names stay inside the ciphertext. A summary is stale when the members' digest changed.
+  names stay inside the ciphertext. A summary is stale when the members' digest changed. A writer checks every insights
+  file as a reader would before writing it, so it never writes one its readers reject. A device's own topics file that
+  opens under the current key (tag, name and format verified) but fails only these content checks, which a pre-release
+  build could write, holds nothing any reader shows, so the device replaces it; one that does not open (damage, another
+  key, a later format) is left, and the device writes no topics until it opens or is deleted.
 - **Voice-note titles (1.3).** A quick voice note (§11.3) stores no title unless the person typed one. Any device with
   a current `gen` slug derives a title from the shared format `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and
   `{time}` `HH.mm`, 24 hour, in the capture's time zone, from the recording's `captureInfo.tz` (§8.3.1), else from a
