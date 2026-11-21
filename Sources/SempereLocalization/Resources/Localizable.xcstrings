@@ -15592,6 +15592,55 @@
         }
       }
     },
+    "Not synced with %@ for %lld days: it cannot be reached." : {
+      "comment" : "Sync status of a target not reached for a week or more; %1$@ is the folder's or server's name, %2$lld the days",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Not synced with %1$@ for %2$lld day: it cannot be reached."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Not synced with %1$@ for %2$lld days: it cannot be reached."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sin sincronizar con %1$@ desde hace %2$lld de días: no se puede acceder."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sin sincronizar con %1$@ desde hace %2$lld día: no se puede acceder."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sin sincronizar con %1$@ desde hace %2$lld días: no se puede acceder."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Not synced yet with %@" : {
       "comment" : "%@ is the sync targets' names",
       "extractionState" : "manual",

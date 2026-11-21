@@ -234,10 +234,12 @@ struct ExportSheet: View {
         if !(options.format == .webPage && outcome.webShareSections != nil) { handOffSection(outcome) }
     }
 
-    /// Share… and Save…; the share sheet is up as soon as the files are made (`ExportHandOffButtons.autoShare`).
+    /// Share… and Save…; the share sheet is up as soon as the files are made (`ExportHandOffButtons.autoShare`),
+    /// unless something was left out or not exported: the sheet would cover what the sections above say.
     private func handOffSection(_ outcome: ExportJob.Outcome) -> some View {
         Section {
-            ExportHandOffButtons(state: $handOff, items: outcome.items, autoShare: true)
+            ExportHandOffButtons(state: $handOff, items: outcome.items,
+                                 autoShare: outcome.failures.isEmpty && outcome.warnings.isEmpty)
         } footer: {
             Text("The files are deleted from the app when you close this sheet.")
         }
@@ -469,6 +471,10 @@ struct ExportHandOffState {
     var items: [URL] = []
     var sharing = false
     var saving = false
+    /// The files last shared on their own (`ExportHandOffButtons.autoShare`): each export's files are shared
+    /// once, however often the buttons reappear (a Form row scrolled out and back reruns its `.task`, and a
+    /// Mac's picker is presented from the anchor without `sharing`, so it is no guard).
+    var autoShared: [URL]?
     /// Why the last Save to Files was undone (a folder inside a vault or a backup), shown as an alert.
     var refusal: String?
     /// The view the Mac's share picker and save panel are presented from.
@@ -507,7 +513,8 @@ extension View {
 struct ExportHandOffButtons: View {
     @Binding var state: ExportHandOffState
     let items: [URL]
-    /// Present the share sheet (which offers Save to Files) as soon as the buttons appear, once; the buttons stay as
+    /// Present the share sheet (which offers Save to Files) as soon as the buttons appear, once per set of files
+    /// (`ExportHandOffState.autoShared`); the buttons stay as
     /// the way back after it is dismissed (owner, build 112: the file was made at the top and Share was below).
     var autoShare = false
 
@@ -515,11 +522,12 @@ struct ExportHandOffButtons: View {
     var body: some View {
         Button("Share…", systemImage: "square.and.arrow.up") { deliver(save: false) }
             .background(PresentationAnchor(box: state.anchor))
-            .task {
-                guard autoShare, !items.isEmpty else { return }
+            .task(id: items) {
+                guard autoShare, !items.isEmpty, state.autoShared != items else { return }
                 // The anchor needs a moment to be in a window (a Mac presents from it).
                 try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled, !state.sharing, !state.saving else { return }
+                guard !Task.isCancelled, !state.sharing, !state.saving, state.autoShared != items else { return }
+                state.autoShared = items
                 deliver(save: false)
             }
         Button(Platform.isMac ? LocalizedStringKey("Save…") : LocalizedStringKey("Save to Files…"),

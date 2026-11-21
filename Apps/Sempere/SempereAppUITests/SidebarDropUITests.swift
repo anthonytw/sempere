@@ -176,6 +176,15 @@ final class SidebarDropUITests: XCTestCase {
         let selected = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: cell)
         wait(for: [selected], timeout: 10)
         XCTAssertFalse(sidebarRow(app, "Work/Atlas").exists, "the tap opened Work without unfolding it")
+        #if targetEnvironment(macCatalyst)
+        // Review of build 113, S4: → and ← unfold and fold the selected notebook, as the system outline's did.
+        app.typeKey(.rightArrow, modifierFlags: [])
+        require(sidebarRow(app, "Work/Atlas"), "sidebar row Work/Atlas after →", in: app, timeout: 10)
+        app.typeKey(.leftArrow, modifierFlags: [])
+        let folded = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: sidebarRow(app, "Work/Atlas"))
+        wait(for: [folded], timeout: 10)
+        XCTAssertTrue(cell.isSelected, "the keys folded Work and left it selected")
+        #endif
         expand(app, "Work", showing: "Work/Atlas")
         XCTAssertTrue(cell.isSelected, "the chevron unfolded Work and left it selected")
     }

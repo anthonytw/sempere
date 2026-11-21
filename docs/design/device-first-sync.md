@@ -701,7 +701,8 @@ they are not.
 | problem | per target: wrong password, certificate changed, folder not found ("choose it again"), server or iCloud full, quarantined files (n), late files from before a key change (n), device-list conflict |
 
 The note list's bar shows only the problem row (`SyncStatus.needsAttention`; owner 2026-11-20: "I don't need it unless
-something is definitely wrong"); the other states are each target's line in Sync Targets… and Vault Details.
+something is definitely wrong"), and a target unreachable for a week while the device is online (`unreachableDays`,
+`staleAfter`); the other states are each target's line in Sync Targets… and Vault Details.
 
 **iCloud uploads.** A run into an iCloud Drive folder only writes local files; iCloud uploads them later, so "Synced"
 needs two things: the run confirmed the target, and iCloud has uploaded what the run wrote (owner decision 2026-11-19, an

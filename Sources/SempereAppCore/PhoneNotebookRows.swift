@@ -29,6 +29,13 @@ public enum PhoneNotebookRows {
         unfolded.contains(path) ? unfolded.subtracting([path]) : unfolded.union([path])
     }
 
+    /// `unfolded` with `path` unfolded (`unfold`) or folded, for a Mac's → and ← on a selected notebook row; nil when
+    /// `path` has no sub-notebooks in `tree` (the key is not the sidebar's).
+    public static func setting(_ path: String, unfold: Bool, in unfolded: Set<String>, tree: [NotebookNode]) -> Set<String>? {
+        guard rows(tree).contains(where: { $0.node.path == path && $0.hasChildren }) else { return nil }
+        return unfold ? unfolded.union([path]) : unfolded.subtracting([path])
+    }
+
     /// `unfolded` with every notebook above `path` unfolded, so `path`'s row is listed (a notebook chosen
     /// elsewhere, e.g. a note's notebook).
     public static func revealing(_ path: String, in unfolded: Set<String>) -> Set<String> {

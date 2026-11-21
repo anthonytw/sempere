@@ -59,6 +59,16 @@ struct SidebarView: View {
         return model.canDeleteNotebook(path) ? actions : actions.filter { !$0.destructive }
     }
 
+    /// → (`unfold`) or ← on a Mac: the selected notebook's sub-notebooks shown or hidden; any other row, or another
+    /// device, leaves the key to the list.
+    private func foldSelected(unfold: Bool) -> KeyPress.Result {
+        guard Platform.isMac, case .notebook(let path) = model.sidebarSelection,
+              let next = PhoneNotebookRows.setting(path, unfold: unfold, in: unfolded, tree: model.notebookTree)
+        else { return .ignored }
+        withAnimation { unfolded = next }
+        return .handled
+    }
+
     private func moveToTopLevel(_ path: String) {
         let undo = UndoBox(undoManager)
         Task { await model.move(.notebook(path), to: .topLevel, undoManager: undo.manager) }
@@ -192,6 +202,9 @@ struct SidebarView: View {
             }
             Label("Recently Deleted", systemImage: "trash").tag(SidebarItem.deleted)
         }
+        // A Mac's → and ← unfold and fold the selected notebook, as an outline's did (review of build 113, S4).
+        .onKeyPress(.rightArrow) { foldSelected(unfold: true) }
+        .onKeyPress(.leftArrow) { foldSelected(unfold: false) }
         .onChange(of: model.recentlyRecognizedNotes.isEmpty) { model.leaveEmptyRecognizedSection() }
         // A notebook chosen elsewhere is listed, its parents unfolded.
         .onChange(of: model.sidebarSelection, initial: true) { _, selection in

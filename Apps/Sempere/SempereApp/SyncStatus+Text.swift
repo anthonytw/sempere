@@ -12,7 +12,14 @@ extension SyncStatus {
     var headline: String { headline(for: kind) }
 
     /// The note list's bar's line: the problem it is shown for, also while the next run goes (`settledKind`).
-    var attentionHeadline: String { headline(for: settledKind) }
+    /// A target unreachable for long (`unreachableDays`) says for how long, and with what.
+    var attentionHeadline: String {
+        if let days = unreachableDays {
+            return String(localized: "Not synced with \(targetName) for \(days) days: it cannot be reached.",
+                          comment: "Sync status of a target not reached for a week or more; %1$@ is the folder's or server's name, %2$lld the days")
+        }
+        return headline(for: settledKind)
+    }
 
     private func headline(for kind: Kind) -> String {
         switch kind {

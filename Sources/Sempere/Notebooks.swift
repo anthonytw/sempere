@@ -134,9 +134,6 @@ public struct NotebookNode: Hashable, Sendable, Identifiable {
 
     public var id: String { path }
 
-    /// `children`, or nil for a leaf (what `OutlineGroup` expects).
-    public var childrenOrNil: [NotebookNode]? { children.isEmpty ? nil : children }
-
     public init(name: String, path: String, children: [NotebookNode] = []) {
         self.name = name; self.path = path; self.children = children
     }

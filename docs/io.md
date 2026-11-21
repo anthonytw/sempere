@@ -2070,7 +2070,9 @@ syncs with both ways.
   or the problem and what to do (wrong password, certificate, the folder gone or holding another
   vault, a device list changed on both sides, files that failed, a provider's upload error that lasted). The note
   list's bar shows only the problems (`SyncStatus.needsAttention`, judged on `settledKind` so it stays while the next
-  run goes; owner 2026-11-20: an ever-present status line was annoying), with Sync Now, Sync Targets… and Server
+  run goes; owner 2026-11-20: an ever-present status line was annoying), and a target the runs could not reach for
+  `SyncStatus.staleAfter` (7 days, from the last sync or, never synced, from when it was added) while the device had a
+  network ("Not synced with NAME for N days: it cannot be reached."), with Sync Now, Sync Targets… and Server
   Settings…; everything else shows no bar. "Download Again" is gone, since a run takes what the server has.
 - **Other writers.** Several devices write to one server folder; their files meet by the engine's
   union rules (docs/design/device-first-sync.md §5), conflicts on `vault.json` keep both copies and

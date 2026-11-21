@@ -2,7 +2,8 @@
 
 - The sync bar at the bottom of the note list now appears only when something is wrong (a refused password or
   certificate, a sync folder gone or not writable, files that failed, a device-list conflict, an upload problem that
-  lasts). Syncing, synced, offline and waiting for iCloud show no bar; each target's status stays in Sync Targets….
+  lasts, a sync target that could not be reached for a week while the device was online). Syncing, synced, offline
+  and waiting for iCloud show no bar; each target's status stays in Sync Targets….
 
 ### Fixed
 

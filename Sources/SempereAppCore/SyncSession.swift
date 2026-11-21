@@ -152,7 +152,10 @@ public final class SyncSession {
     @ObservationIgnored private var providerRecheckIdle = 0
     /// Runs started so far: a look that a run overlapped keeps its answer to itself (the run's count is newer).
     @ObservationIgnored private var runsStarted = 0
-    @ObservationIgnored private var providerRecheckDue: Date?
+    /// When the loop looks at the waiting files next (`planProviderRecheck`); nil: no look planned.
+    @ObservationIgnored private(set) var providerRecheckDue: Date?
+    /// The count `start` makes, for tests to wait on (a later fresh count starts the provider's looks over).
+    @ObservationIgnored private(set) var startCount: Task<Void, Never>?
     /// The folder is in iCloud Drive (the wording names it).
     @ObservationIgnored var uploadsViaICloud = false
     /// A folder target's path as run errors may spell it (as stored, symbolic links resolved): a write refused there
@@ -246,7 +249,7 @@ public final class SyncSession {
                 if self.sleeper == nap { self.sleeper = nil }
             }
         }
-        Task { await recount() }
+        startCount = Task { await recount() }
     }
 
     /// A scheduled run may start now: runs are automatic, the pace is not paused (or a write or demand waits), and
@@ -519,7 +522,8 @@ public final class SyncSession {
         SyncStatus(syncing: isSyncing, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
                    staged: staged, networkDown: networkDown && kind == .webdav, continuing: continuing,
-                   providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError)
+                   providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
+                   targetName: targetName, added: added == .distantPast ? nil : added, now: now())
     }
 
     /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
@@ -572,11 +576,23 @@ public struct SyncStatus: Equatable, Sendable {
     public var viaICloud = false
     /// The provider's upload error for them (a `.failed` state; the app words it).
     var providerError: ProviderUploads.State?
+    /// The target's name (the folder's or the host), for the line of a target unreachable for long (`unreachableDays`).
+    public var targetName = ""
+    /// When the target was added (the registry's `SyncTarget.added`); nil when unknown. A target that never synced
+    /// has been unreachable since then (`unreachableDays`).
+    var added: Date?
+    /// The time the status was taken (the session's clock): `unreachableDays` counts to it.
+    var now: Date
+
+    /// How long a target may stay unreachable before it needs attention (`unreachableDays`): offline for an hour is
+    /// normal, for a week the user should look (a server gone, a renamed host, a share never mounted again).
+    public static let staleAfter: TimeInterval = 7 * 24 * 60 * 60
 
     public init(syncing: Bool, problems: [WebDAVSyncProblem], unconfirmed: Int, arriving: Int, twoWay: Bool, lastSuccess: Date?,
                 folder: Bool = false, deviceLocked: Bool = false, staged: Int = 0, networkDown: Bool = false,
                 continuing: Bool = false, providerPending: Int = 0, viaICloud: Bool = false,
-                providerError: ProviderUploads.State? = nil) {
+                providerError: ProviderUploads.State? = nil, targetName: String = "", added: Date? = nil,
+                now: Date = Date()) {
         self.syncing = syncing
         self.problems = problems
         self.unconfirmed = unconfirmed
@@ -591,6 +607,9 @@ public struct SyncStatus: Equatable, Sendable {
         self.providerPending = providerPending
         self.viaICloud = viaICloud
         self.providerError = providerError
+        self.targetName = targetName
+        self.added = added
+        self.now = now
     }
 
     /// The problem for a run that threw (`WebDAVSyncProblem.from(error:)`, the one classification the CLI reads too).
@@ -624,11 +643,25 @@ public struct SyncStatus: Equatable, Sendable {
     /// (a refused password or certificate, a folder gone or not writable, files that failed, a device-list conflict) and
     /// a provider's upload error that lasted (`ProviderUploads.Persistence`) are; syncing, synced, changes not synced
     /// yet, a run cut short, files waiting for the provider, waiting for the unlock and offline (changes are kept on this
-    /// device, and sync when it is back) are not. Judged on `settledKind`: a problem stays one while the next run goes.
+    /// device, and sync when it is back) are not, except a target the last runs could not reach for `staleAfter` while
+    /// the device had a network (`unreachableDays`). Judged on `settledKind`: a problem stays one while the next run goes.
     public var needsAttention: Bool {
         switch settledKind {
         case .problem, .providerFailed: return true
-        default: return false
+        default: return unreachableDays != nil
         }
+    }
+
+    /// Whole days the target has not been reached, when that is at least `staleAfter` and the runs, not the device's
+    /// network, said so (`.offline` also covers a host not found or unreachable, timeouts and a folder that is not
+    /// there, `WebDAVSyncProblem.from(error:)`); nil otherwise. Counted from the last sync, or, for a target that never
+    /// synced, from when it was added (`added`, the registry's date: the first run is tried as soon as a target is
+    /// added); a target whose date is unknown is not counted.
+    public var unreachableDays: Int? {
+        guard settledKind == .offline, !networkDown, problems.contains(.offline),
+              let since = lastSuccess ?? added else { return nil }
+        let age = now.timeIntervalSince(since)
+        guard age >= Self.staleAfter else { return nil }
+        return Int(age / (24 * 60 * 60))
     }
 }

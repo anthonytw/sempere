@@ -50,9 +50,9 @@ final class NotebookTests: XCTestCase {
         XCTAssertEqual(research.children.map(\.path), ["Research/Daily log"])
         XCTAssertEqual(research.children[0].children.map(\.path), ["Research/Daily log/2026"])
         XCTAssertEqual(research.children[0].children[0].name, "2026")
-        XCTAssertNil(research.children[0].children[0].childrenOrNil)
+        XCTAssertTrue(research.children[0].children[0].children.isEmpty)
         XCTAssertEqual(tree[2].children.map(\.name), ["Math 9", "Math 10"])   // numeric-aware order
-        XCTAssertNil(tree[0].childrenOrNil)
+        XCTAssertTrue(tree[0].children.isEmpty)
         XCTAssertEqual(NotebookNode.flatten(tree),
                        ["Archive", "Research", "Research/Daily log", "Research/Daily log/2026",
                         "School", "School/Math 9", "School/Math 10"])
