@@ -89,7 +89,7 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 - Apple Watch: after an iPhone restart, before the first unlock, or when the held-notes folder cannot be read, the phone
   no longer tells the watch it holds nothing, so the watch keeps its copies.
 
-## [1.2.0] - TODO(user): release date (YYYY-MM-DD)
+## [1.2.0] - 2026-11-18
 
 ### Security
 

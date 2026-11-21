@@ -254,12 +254,12 @@ Release, formula, blog) goes out until Apple has approved the app (B.6), so all 
 
 | Step | What | Who |
 | --- | --- | --- |
-| B.1 | release PR: `just release-prep`, curate the section, the planned release date | you date it |
+| B.1 | release PR: `just release-prep`, curate the section; the date stays `TODO(user)` | you review it |
 | B.2 | `just ci-release` on the merge commit; note its SHA | Mac, unattended |
 | B.3 | App Store build of that SHA | you approve the upload |
 | B.4 | website live with `/privacy` and `/support` | you approve the deploy |
 | B.5 | App Store submission, manual release | **[you]** |
-| B.6 | launch day, after approval: tag, local build, GitHub Release, Homebrew, Release This Version, site, blog | you |
+| B.6 | launch day, after approval: a one-line PR dates the CHANGELOG on main; tag the **swept SHA from B.2** (the App Store build), not the date commit; local build, GitHub Release, Homebrew, Release This Version, site, blog. `release-tag.sh` and `release-build.sh` read the notes from main's CHANGELOG, so the tagged commit may stay undated, and app changes merged since B.2 stay out of the release | you |
 
 ### B.1 The release PR
 
