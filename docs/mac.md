@@ -747,8 +747,8 @@ be checked.
 
 ## Spotlight
 
-Opt-in (Settings ▸ Spotlight, docs/design/1.3-spotlight.md): note titles, notebooks, tags and dates, and with Include
-Note Text the notes' text, go into Core Spotlight's named index `sempere`. A Mac has no data protection classes, so
+Opt-in (Settings ▸ Spotlight, docs/design/1.3-spotlight.md): note titles, notebooks, tags and dates (with the vault's name
+in each item's description when two or more vaults use Spotlight), and with Include Note Text the notes' text, go into Core Spotlight's named index `sempere`. A Mac has no data protection classes, so
 the app makes the plain named index there (`CSSearchableIndex(name:)`; the `protectionClass:` initializer exists on
 Catalyst 27, but `.complete` means nothing without a lock screen) and the index is readable whenever the user's
 account is; Spotlight can show the items in system search. The opt-in sheet says so. A result opens the note in the
