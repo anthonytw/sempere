@@ -39,12 +39,19 @@ public struct WebShareOptions: Sendable, Equatable {
     /// The file's size budget in bytes (the page, the template and the armor included).
     public var maxFileBytes = WebShareOptions.defaultMaxFileBytes
     public var imageQuality = ImageQuality.normal
-    /// log2 of the scrypt N. Writers use 18 and never go below 17 (design §3.4); tests pass less.
+    /// log2 of the scrypt N: 17 to 20 (`scryptLog2NRange`); writers use 18 (design §3.4). The page refuses more than 20,
+    /// and `ShareTemplate.verify` less than 17.
     public var scryptLog2N = WebShareOptions.defaultScryptLog2N
+    /// Tests only: a work factor outside `scryptLog2NRange` (fast scrypt), used instead of `scryptLog2N` when set.
+    var testScryptLog2N: Int?
+    /// The work factor a share is encrypted with.
+    var effectiveScryptLog2N: Int { testScryptLog2N ?? scryptLog2N }
 
     public static let defaultMaxFileBytes = 20 << 20
     public static let maxFileBytesLimit = 200 << 20
     public static let defaultScryptLog2N = 18
+    /// The work factors a share may use: at least `ShareTemplate.minViewerLog2N`, at most what the page accepts.
+    public static let scryptLog2NRange = ShareTemplate.minViewerLog2N...20
     public static let maxPages = 200
 
     public init() {}
@@ -315,16 +322,21 @@ public enum WebPageShare {
                             template: ShareTemplate, pdfRasterizer: (any PDFPageRasterizer)? = nil,
                             imageDecoder: (any ImageDecoding)? = nil) throws -> WebShareResult {
         guard !passphrase.isEmpty else { throw WebShareError.emptyPassphrase }
-        guard (1...30).contains(options.scryptLog2N) else { throw WebShareError.badOption("The scrypt work factor must be 1 to 30.") }
+        if options.testScryptLog2N == nil {
+            guard WebShareOptions.scryptLog2NRange.contains(options.scryptLog2N) else {
+                throw WebShareError.badOption("The scrypt work factor must be \(WebShareOptions.scryptLog2NRange.lowerBound) to "
+                    + "\(WebShareOptions.scryptLog2NRange.upperBound).")
+            }
+        }
         guard options.maxFileBytes > 0, options.maxFileBytes <= WebShareOptions.maxFileBytesLimit else {
             throw WebShareError.badOption("The size limit must be between 1 and \(WebShareOptions.maxFileBytesLimit >> 20) MB.")
         }
         let planned = try plan(state, blobs: blobs, options: options, template: template, pdfRasterizer: pdfRasterizer,
                                imageDecoder: imageDecoder)
-        let encrypted = try AgeFile.encrypt(planned.payload, to: [ScryptRecipient(passphrase: passphrase, workFactor: options.scryptLog2N)],
+        let encrypted = try AgeFile.encrypt(planned.payload, to: [ScryptRecipient(passphrase: passphrase, workFactor: options.effectiveScryptLog2N)],
                                             armor: true)
         let file = template.fill(encrypted)
-        return WebShareResult(file: file, sections: planned.sections, scryptLog2N: options.scryptLog2N,
+        return WebShareResult(file: file, sections: planned.sections, scryptLog2N: options.effectiveScryptLog2N,
                               scriptSha256: template.scriptSha256, skipped: planned.skipped, pages: state.pages.count)
     }
 

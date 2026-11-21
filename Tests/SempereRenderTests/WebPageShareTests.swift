@@ -30,7 +30,7 @@ final class WebPageShareTests: XCTestCase {
     /// Fast scrypt for every test but the one that checks the real factor.
     static func options(_ edit: (inout WebShareOptions) -> Void = { _ in }) -> WebShareOptions {
         var o = WebShareOptions()
-        o.scryptLog2N = 10
+        o.testScryptLog2N = 10
         edit(&o)
         return o
     }
@@ -381,7 +381,14 @@ final class WebPageShareTests: XCTestCase {
             XCTAssertEqual($0 as? WebShareError, .emptyPassphrase)
         }
         XCTAssertThrowsError(try share(state, blobs) { $0.maxFileBytes = 201 << 20 })
-        XCTAssertThrowsError(try share(state, blobs) { $0.scryptLog2N = 31 })
+        // The public field takes 17 to 20 only: the page refuses more than 20, `verify` less than 17.
+        for n in [16, 21] {
+            var o = WebShareOptions()
+            o.scryptLog2N = n
+            XCTAssertThrowsError(try WebPageShare.make(state, blobs: blobs, options: o, passphrase: Self.passphrase, template: Self.template)) {
+                guard case .badOption? = $0 as? WebShareError else { return XCTFail("\($0)") }
+            }
+        }
     }
 
     // MARK: Encryption
