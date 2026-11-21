@@ -359,10 +359,12 @@ public struct WatchIntake: Sendable {
     /// "Add to inbox": the user's decision to take a held file. It runs the normal record-and-place path, and catch-up then
     /// re-seals it under the current key as for any file of an earlier epoch. A file whose epoch this device never held cannot be
     /// added (`WatchHeldError.unreadable`): only Delete. A note that is no longer held (added a moment ago) is a no-op: nil.
+    /// Once the note has left the held store its received entry is renewed (`renewReceived`).
     @discardableResult
     public func addHeld(_ item: HeldCapture) throws -> WatchPlacement? {
         guard let held else { throw WatchHeldError.notFound(item.id.uuidString) }
         guard item.canAdd else { throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it") }
+        defer { renewReceived(item) }
         return try held.take(item) { sealed in
             // The state may have changed since it was held: checked again, with the toggle treated as on, against one reading
             // of the profile (as `receive`). An epoch or vault this device never held cannot be added, whatever the stored
@@ -373,6 +375,19 @@ public struct WatchIntake: Sendable {
             }
             return try place(sealed, vault: item.vault, using: delivery)
         }
+    }
+
+    /// "Delete": removes a held note and renews its received entry.
+    public func deleteHeld(_ item: HeldCapture) {
+        held?.delete(item)
+        renewReceived(item)
+    }
+
+    /// A held note leaves the held store (Add, Delete) and the phone sends the watch its release: its received entry is renewed,
+    /// so a copy the watch sends again after a release that was lost is answered as a duplicate for the full `keepFor` from
+    /// now, never judged again (a deleted note held again, or placed without an Add).
+    private func renewReceived(_ item: HeldCapture) {
+        if held?.list().contains(where: { $0.id == item.id }) != true { try? received.insert(item.id) }
     }
 
     /// Places the held notes that would be admitted now, as if they had just arrived: their vault and epoch are the phone's
