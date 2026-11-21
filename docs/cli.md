@@ -3022,7 +3022,9 @@ scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is w
   variable's value or to one the vault was opened with (a recovery key's passphrase copy, a passphrase-wrapped device key), are refused
   (exit 2) before anything is written.
 - Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
-  transcripts (`--audio`). Recognized text is in unless `--no-text`.
+  transcripts (`--audio`). Recognized text is in unless `--no-text`. Without `--dates` no date of a recording goes either: an MP4
+  recording's container times are zeroed and its tags blanked, and a transcript's creation time is left out; a recording imported in
+  another container is shared as stored ([web-viewer.md](web-viewer.md) "Share files").
 - The page shows the title `notes list` shows. For a voice note with no title of its own that is its derived title or "Voice note"
   and the capture's date and time, but without `--dates` a title that tells the capture time (the default, or a derived title whose
   format has `{date}` or `{time}`) becomes the bare words ("Voice note", "Watch voice note").

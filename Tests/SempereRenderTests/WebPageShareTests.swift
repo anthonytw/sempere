@@ -313,7 +313,9 @@ final class WebPageShareTests: XCTestCase {
         let off = try share(state, blobs).1
         XCTAssertNil((off.json["note"] as? [String: Any])?["recordings"])
         XCTAssertTrue(off.blobs.isEmpty)
-        let (result, on) = try share(state, blobs) { $0.includeAudio = true; $0.maxFileBytes = 2 << 20 }
+        // With dates, so the (synthetic, not MP4) audio goes as stored: what a share without dates does to a recording is
+        // WebPageShareDatesTests'.
+        let (result, on) = try share(state, blobs) { $0.includeAudio = true; $0.includeDates = true; $0.maxFileBytes = 2 << 20 }
         let recs = try XCTUnwrap((on.json["note"] as? [String: Any])?["recordings"] as? [[String: Any]])
         XCTAssertEqual(recs.count, 1, "the long recording does not fit in 2 MB")
         XCTAssertEqual(on.blobs[small.sha256], audio)
@@ -321,7 +323,7 @@ final class WebPageShareTests: XCTestCase {
         XCTAssertGreaterThan(result.sections.audio, 40_000)
         let items = try XCTUnwrap(((on.json["note"] as? [String: Any])?["pages"] as? [[String: Any]])?[0]["items"] as? [[String: Any]])
         XCTAssertEqual(items.count, 1, "the card of a skipped recording goes with it")
-        let roomy = try share(state, blobs) { $0.includeAudio = true; $0.maxFileBytes = 20 << 20 }.1
+        let roomy = try share(state, blobs) { $0.includeAudio = true; $0.includeDates = true; $0.maxFileBytes = 20 << 20 }.1
         XCTAssertEqual((roomy.json["note"] as? [String: Any])?["recordings"].flatMap { ($0 as? [Any])?.count }, 2)
     }
 

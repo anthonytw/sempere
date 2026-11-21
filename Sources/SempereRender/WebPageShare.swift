@@ -26,13 +26,15 @@ public struct WebShareOptions: Sendable, Equatable {
         }
     }
 
-    /// Recordings and their transcripts (AAC as stored). Off: audio cards are left out too.
+    /// Recordings and their transcripts (AAC as stored; without dates an MP4's container times are zeroed and its tags
+    /// blanked, `AudioMetadata`, and a transcript's `created` is the epoch). Off: audio cards are left out too.
     public var includeAudio = false
     /// The recognized text of each page (search and copy in the page). On by default.
     public var includeText = true
     public var includeTags = false
     public var includeNotebookPath = false
-    /// The note's creation date. Off: the share carries no date at all.
+    /// The note's creation date. Off: the share carries no date at all (a recording imported in a container other than
+    /// MP4 is shared as stored and may carry its own tags: docs/web-viewer.md "Share files").
     public var includeDates = false
     /// The file's size budget in bytes (the page, the template and the armor included).
     public var maxFileBytes = WebShareOptions.defaultMaxFileBytes
@@ -426,6 +428,7 @@ public enum WebPageShare {
             p.strokes = page.strokes.map { Stroke(id: $0.id, ink: $0.ink, points: $0.points, transform: $0.transform) }
             if options.includeText, var r = page.recognition {
                 r.basis = nil
+                r.engine = ""   // the recognizer's name and version would tell the sender's system
                 p.recognition = r
             }
             for item in page.items {
@@ -440,16 +443,39 @@ public enum WebPageShare {
             var rec = Recording(id: r.id, blob: BlobRef(sha256: r.blob.sha256, size: r.blob.size, type: r.blob.type),
                                 started: options.includeDates ? r.started : epoch, duration: r.duration, codec: r.codec,
                                 sampleRate: r.sampleRate, channels: r.channels, bitRate: r.bitRate, title: r.title)
-            if let data = media.audioData(r.blob) {
-                attachments[r.blob.sha256] = data
-            } else { continue }
-            if let t = r.transcript, let data = media.audioData(t) {
-                attachments[t.sha256] = data
-                rec.transcript = BlobRef(sha256: t.sha256, size: t.size, type: t.type)
+            guard let stored = media.audioData(r.blob) else { continue }
+            if options.includeDates {
+                attachments[r.blob.sha256] = stored
+            } else if AudioMetadata.mp4Types.contains(r.blob.type) {
+                // The container's times date the recording: zeroed, and its tags blanked (docs/web-viewer.md).
+                guard let clean = AudioMetadata.scrubbed(stored) else {
+                    skipped.append("recording \(r.title.flatMap { $0.isEmpty ? nil : $0 } ?? r.id.uuidString.lowercased().prefix(8).description) "
+                        + "was left out: its file could not be read to remove its dates")
+                    continue
+                }
+                rec.blob = BlobRef(content: clean, type: r.blob.type)
+                attachments[rec.blob.sha256] = clean
+            } else {
+                attachments[r.blob.sha256] = stored   // another container is shared as stored (docs/web-viewer.md)
+            }
+            if let t = r.transcript, let data = media.audioData(t), let shared = sharedTranscript(data, includeDates: options.includeDates) {
+                let ref = BlobRef(content: shared, type: t.type)
+                attachments[ref.sha256] = shared
+                rec.transcript = ref
             }
             out.recordings.append(rec)
         }
         return out
+    }
+
+    /// A transcript as the share carries it: without the recognizer's name, and without the time it was made unless
+    /// dates are included (then the epoch, as the note's `created`). Nil when it does not decode (the page could not
+    /// show it either).
+    static func sharedTranscript(_ data: Data, includeDates: Bool) -> Data? {
+        guard var t = try? Transcript.decode(data) else { return nil }
+        t.engine = ""
+        if !includeDates { t.created = Date(timeIntervalSince1970: 0) }
+        return try? t.encoded()
     }
 
     static func flatten(_ item: Item, page: Int, options: WebShareOptions, media: ShareMedia, step: (side: Int, quality: Int),

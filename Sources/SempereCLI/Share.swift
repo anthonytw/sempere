@@ -23,7 +23,9 @@ struct ShareCommand: ParsableCommand {
 
             Left out unless asked: tags (--tags), the notebook path (--notebook-path), the creation date \
             (--dates), recordings and their transcripts (--audio). Recognized text is included unless \
-            --no-text. Images are re-encoded (at most 2048 px, JPEG) and lose their metadata; PDF pages \
+            --no-text. Without --dates no date of a recording goes either: an MP4 recording's container \
+            times are zeroed and its tags blanked, a transcript's creation time is left out; a recording \
+            imported in another container is shared as stored. Images are re-encoded (at most 2048 px, JPEG) and lose their metadata; PDF pages \
             become pictures (Poppler's pdftoppm; without it they are left out); videos are never included. \
             The file name never carries the note's title: you choose it with --out, and a folder gets \
             "Shared note.html".

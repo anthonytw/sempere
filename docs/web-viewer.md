@@ -949,13 +949,21 @@ tail -c +10 payload.bin | head -c "$((16#$(xxd -s 5 -l 4 -p payload.bin)))" | gu
   (`docs/format.md` §5), flattened: no revisions, history, clocks, tombstones, `origin`, `parent` or `rec` fields, no deleted items or erased
   strokes, no other notes, no `vault.json`. Pages keep their strokes with their ids (a stroke's texture seed is in its id), paper and items.
   Tags (`--tags`), the notebook path (`--notebook-path`) and the creation date (`--dates`; otherwise 1970-01-01) are included only on
-  request, recognized text unless `--no-text`, recordings and their transcripts only with `--audio`.
+  request, recognized text unless `--no-text`, recordings and their transcripts only with `--audio`. Recognized text and transcripts
+  carry no recognizer name (their `engine` is empty: it would tell the sender's system version).
+- **A share without dates carries no date of a recording.** Its `started` is 1970-01-01, its transcript's `created` too (the transcript
+  keeps its language, which the page shows), and an MP4 / M4A recording's container is edited in place before it is added: the
+  creation and modification times of `mvhd`, of each `tkhd` and of each `mdhd` are zeroed and its tag boxes (`udta`, `meta`, XMP
+  `uuid`) become `free` boxes, so nothing moves and it plays as before (`AudioMetadata`). The app's recordings are MP4 and carry
+  only those times and a gapless-playback tag; an MP4 whose boxes cannot be read is left out with a notice rather than shared with
+  its dates. A recording imported in another container (MP3, WAV, CAF, …) is shared as stored and may still carry its own tags (an
+  ID3 date, a `bext` chunk, a location an app wrote). With `--dates` every recording is shared as stored.
 - Each attachment's **name is the SHA-256 of its content** in lowercase hex, which is how an item's `{ sha256, size, type }` finds it.
   The viewer checks every name, length and duplicate before it shows anything.
 - Pictures are re-encoded for the share (at most 2048 px on the long side, JPEG quality 0.82 by default, PNG when transparent and small),
   with orientation baked in, the crop scaled with the picture and **all metadata (location, camera) removed**. PDF pages are
   rasterized (150 dpi, as pictures: no PDF parser in the page), an equation's render likewise, a video becomes its poster frame
-  (the clip is never included), audio is AAC as stored. The whole file is at most 20 MB by default (`--max-size`, up to 200): a
+  (the clip is never included), audio is as stored apart from the dates and tags above. The whole file is at most 20 MB by default (`--max-size`, up to 200): a
   note that cannot fit fails with where the bytes went (ink and text, pictures, audio, viewer), never a truncated file; pictures shrink
   step by step (2048, 1600, 1280 px) before that, and a recording that does not fit is left out with a notice.
 - The container's parser is fuzzed on both sides (`WebPageShareFuzzTests`, `web/test/share.test.ts`) and bounded by its input: a gzip
