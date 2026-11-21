@@ -242,6 +242,13 @@ final class AskTests: TempDirTestCase {
         let codes = AskValidator.dedupe([.init(text: "The policy number is KM-448120.", sources: ["S1"]),
                                          .init(text: "The policy number is KM-448121.", sources: ["S1"])])
         XCTAssertEqual(codes.kept.count, 2)
+        // A near repeat that adds a number states something new (review of build 114, N3).
+        let pay = AskValidator.dedupe([.init(text: "Pay the electrician on Friday at the house before noon with cash from the kitchen drawer.", sources: ["S1"]),
+                                       .init(text: "Pay the electrician 200 on Friday at the house before noon with cash from the kitchen drawer.", sources: ["S1"])])
+        XCTAssertEqual(pay.kept.count, 2, "\(pay.removed)")
+        let again = AskValidator.dedupe([.init(text: "Pay the electrician 200 on Friday at the house before noon with cash from the kitchen drawer.", sources: ["S1"]),
+                                         .init(text: "Pay the electrician on Friday at the house before noon with cash from the kitchen drawer.", sources: ["S1"])])
+        XCTAssertEqual(again.kept.count, 1, "the shorter one, with no new number, still goes")
     }
 
     // MARK: Relevance of "Other matching notes"
@@ -342,6 +349,9 @@ final class AskTests: TempDirTestCase {
         "Damped oscillation of a spring and mass: the amplitude decays with the damping ratio of 0.3.": "Oscilación amortiguada de un resorte y una masa: la amplitud decae con la razón de amortiguamiento de 0.3.",
     ]
 
+    /// A name tagger that finds no names (the fake translations start with common nouns, "Oscilación").
+    static let noNames: @Sendable (String, String) -> Set<String> = { _, _ in [] }
+
     /// A fake translator: the Spanish question into `q`, known English sentences into Spanish, anything else tagged.
     func translator(wrong: [String: String] = [:]) -> @Sendable (String, String) -> String {
         let q = self.q
@@ -356,7 +366,7 @@ final class AskTests: TempDirTestCase {
         let vectors = notes.map { ($0, devA, key) }
         var s = FakeModelProvider.Script(); s.translation = translator()
         let model = FakeModelProvider(s)
-        var o = AskOptions(); o.language = "es"; o.explain = true
+        var o = AskOptions(); o.language = "es"; o.explain = true; o.nameTagger = Self.noNames
         let r = await (try engine(notes, vectors: vectors, model: model)).ask(Self.spanishQuestion, options: o)
         XCTAssertEqual(r.question, Self.spanishQuestion, "the result keeps the question as asked")
         XCTAssertEqual(r.lang, "es")
@@ -384,7 +394,7 @@ final class AskTests: TempDirTestCase {
         let source = "Damped oscillation of a spring and mass: the amplitude decays with the damping ratio of 0.3."
         var s = FakeModelProvider.Script()
         s.translation = translator(wrong: [source: "Oscilación amortiguada de un resorte: la amplitud decae con la razón de amortiguamiento de 0.5."])
-        var o = AskOptions(); o.language = "es"; o.explain = true
+        var o = AskOptions(); o.language = "es"; o.explain = true; o.nameTagger = Self.noNames
         // The only sentence: dropped, so no answer.
         s.answer = { _, sources in
             let s2 = sources.first { $0.title == "Springs 2" }?.id ?? "S1"
@@ -413,8 +423,8 @@ final class AskTests: TempDirTestCase {
 
     func testTheLanguageFreeChecksOfATranslatedSentence() {
         let springs = Self.corpus[1].1
-        func check(_ t: String, _ original: String, _ evidence: String = springs, context: String = "") -> String? {
-            AskValidator.checkTranslation(t, original: original, evidence: evidence, context: context)
+        func check(_ t: String, _ original: String, _ evidence: String = springs, titles: String = "", names: Set<String>? = []) -> String? {
+            AskValidator.checkTranslation(t, original: original, evidence: evidence, titles: titles, language: "es", names: names)
         }
         XCTAssertNil(check("La razón de amortiguamiento es 0.3.", "The damping ratio is 0.3."))
         XCTAssertEqual(check("La razón de amortiguamiento es 0.5.", "The damping ratio is 0.3."), "not in the cited passages: 5")
@@ -423,13 +433,65 @@ final class AskTests: TempDirTestCase {
         XCTAssertNil(check("El número de póliza es KM-448120.", "The policy number is KM-448120.", insurance))
         XCTAssertEqual(check("El número de póliza es KM-448121.", "The policy number is KM-448120.", insurance), "not in the cited passages: 448121")
         XCTAssertNil(check("El seguro es de Keystone Mutual.", "The insurance is with Keystone Mutual.", insurance))
-        // Names: in the passages, the question or a translation of one (same first four letters); an invented one goes.
+        // Names: in the passages or a translation of a name of the checked sentence (same first four letters); an invented one goes.
         let lisbon = "Lisbon trip in May: we stay at Hotel Alfama Patio for 4 nights."
         XCTAssertNil(check("Nos quedamos 4 noches en el Hotel Alfama Patio de Lisboa.", "We stay at Hotel Alfama Patio in Lisbon for 4 nights.", lisbon))
         XCTAssertEqual(check("Volamos a Lisboa con TAP.", "We fly to Lisbon.", lisbon), "not in the cited passages: TAP")
         XCTAssertEqual(check("Volamos a Lisboa con Iberia.", "We fly to Lisbon.", lisbon), "not in the cited passages: Iberia")
-        XCTAssertNil(check("Volamos con Iberia.", "We fly.", lisbon, context: "¿Volamos con Iberia?"), "a name the question gives")
+        // The question is no evidence: a name only the question gives goes; one the passages hold stands.
+        XCTAssertEqual(check("Volamos con Iberia.", "We fly.", lisbon), "not in the cited passages: Iberia")
+        XCTAssertNil(check("Volamos con Iberia.", "We fly with Iberia.", lisbon + " We fly with Iberia.", names: ["iberia"]))
         XCTAssertEqual(check("  ", "We fly."), "the translation is empty")
+    }
+
+    /// Review of build 114, B1: "¿Cuándo vuelve Marta de Lisboa?" over a note about Pedro must not come back as an answer
+    /// about Marta, whether the name is swapped at the start, added there, or dropped.
+    func testATranslationCannotSwapInANameTheNotesDoNotHold() {
+        func check(_ t: String, _ original: String, _ evidence: String, titles: String = "", names: Set<String>? = nil) -> String? {
+            AskValidator.checkTranslation(t, original: original, evidence: evidence, titles: titles, language: "es", names: names)
+        }
+        let pedro = "Pedro returns from Lisbon on Friday."
+        XCTAssertNil(check("Pedro vuelve de Lisboa el viernes.", pedro, pedro, names: ["pedro", "lisboa"]), "a month or weekday is no name")
+        XCTAssertEqual(check("Marta vuelve de Lisboa el viernes.", pedro, pedro, names: ["marta", "lisboa"]), "not in the cited passages: Marta")
+        XCTAssertEqual(check("Marta vuelve de Lisboa el viernes.", pedro, pedro), "not in the cited passages: Marta", "without a tagger too")
+        // A first-word name added in front of the note's name.
+        let trip = "We fly to Lisbon with Pedro on Friday."
+        XCTAssertEqual(check("Marta vuela a Lisboa con Pedro.", "We fly to Lisbon with Pedro.", trip, names: ["marta", "lisboa", "pedro"]),
+                       "not in the cited passages: Marta")
+        XCTAssertNil(check("Volamos a Lisboa con Pedro.", "We fly to Lisbon with Pedro.", trip, names: ["lisboa", "pedro"]),
+                     "a verb starting the sentence is no name")
+        // The original's names survive: after the first word, or a first word the passages capitalize inside a sentence.
+        XCTAssertEqual(check("Volamos a Lisboa.", "We fly to Lisbon with Pedro.", trip, names: ["lisboa"]), "the translation lost Pedro")
+        XCTAssertEqual(check("Ella vuela a Lisboa.", "Ana flies to Lisbon.", "We fly with Ana to Lisbon.", names: ["lisboa"]),
+                       "the translation lost Ana")
+        XCTAssertNil(check("Ana vuela a Lisboa.", "Ana flies to Lisbon.", "We fly with Ana to Lisbon.", names: ["ana", "lisboa"]))
+        // S1: a variant shares its first four letters with a capitalized word of the sentence or a title, not with any word.
+        let park = "Notas para la reunión: we travel to the park in March."
+        XCTAssertEqual(check("Viajamos a Paraguay.", "We travel to the park.", park, names: ["paraguay"]), "not in the cited passages: Paraguay")
+        XCTAssertEqual(check("Viajamos con Marco en marzo.", "We travel in March.", park, names: ["marco"]), "not in the cited passages: Marco")
+        XCTAssertNil(check("Viajamos a Lisboa.", "We travel.", "We travel in May.", titles: "Lisbon trip", names: ["lisboa"]), "a title's name")
+        // German capitalizes every noun: the original's nouns are not names that must survive.
+        XCTAssertNil(AskValidator.checkTranslation("La receta lleva harina.", original: "Das Rezept braucht Mehl.", evidence: "Das Rezept braucht Mehl.",
+                                                   titles: "", language: "es", originalLanguage: "de", names: []))
+    }
+
+    /// Review of build 114, S2 and S3: digits next to letters (Japanese, Chinese) and number words.
+    func testNumberWordsAndDigitsBesideLettersAreChecked() {
+        XCTAssertEqual(LanguageFreeCheck.tokens("航班在3点出发").map(\.key), ["航班在", "3", "点出发"])
+        XCTAssertEqual(LanguageFreeCheck.tokens("500g").map(\.key), ["500", "g"])
+        let flight = "The flight leaves at 3."
+        XCTAssertNil(AskValidator.checkTranslation("航班在3点出发。", original: flight, evidence: flight, titles: "", language: "zh"))
+        XCTAssertEqual(AskValidator.checkTranslation("航班在5点出发。", original: flight, evidence: flight, titles: "", language: "zh"),
+                       "not in the cited passages: 5")
+        func check(_ t: String, _ original: String, _ evidence: String) -> String? {
+            AskValidator.checkTranslation(t, original: original, evidence: evidence, titles: "", language: "es", names: [])
+        }
+        let salt = "The dough has 10 g of salt."
+        XCTAssertEqual(check("La masa lleva cinco gramos de sal.", "The dough has salt.", salt), "not in the cited passages: cinco")
+        XCTAssertNil(check("La masa lleva diez gramos de sal.", salt, salt), "a number may survive as its word")
+        XCTAssertNil(check("Nos quedamos 4 noches.", "We stay four nights.", "We stay four nights."), "a digit for a number word of the passages")
+        XCTAssertEqual(check("Nos quedamos tres noches.", "We stay four nights.", "We stay four nights."), "not in the cited passages: tres")
+        XCTAssertNil(check("Una noche en Lisboa.", "One night in Lisbon.", "One night in Lisbon."), "one is also the article: not checked")
     }
 
     func testAnUntranslatableQuestionSaysSoInsteadOfFindingNothingSilently() async throws {
@@ -450,6 +512,18 @@ final class AskTests: TempDirTestCase {
         XCTAssertTrue(failed.notes.isEmpty)
         XCTAssertEqual(failed.missingKind, "failed")
         XCTAssertTrue(failed.missing?.contains("could not be translated") == true, "\(String(describing: failed.missing))")
+        XCTAssertEqual(failed.untranslatedTo, "en")
+        // A model without the notes' language: the missing language is the notes', not the question's (review of build
+        // 114, N1); with some note matched (a shared name), the result still names the language it was not put into (N2).
+        var noEnglish = FakeModelProvider.Script(); noEnglish.unsupportedLanguages = ["en"]
+        let notesLang = await (try engine(notes, vectors: vectors, model: FakeModelProvider(noEnglish))).ask(question, options: o)
+        XCTAssertTrue(notesLang.notes.isEmpty)
+        XCTAssertEqual(notesLang.missingKind, "notesLanguage")
+        XCTAssertEqual(notesLang.untranslatedTo, "en")
+        let shared = await (try engine(notes, vectors: vectors, model: FakeModelProvider(noEnglish))).ask("¿Qué es la resonance?", options: o)
+        XCTAssertFalse(shared.notes.isEmpty, "a word both languages share matched")
+        XCTAssertEqual(shared.untranslatedTo, "en")
+        XCTAssertNotEqual(shared.missingKind, "notesLanguage")
         // --retrieve-only: no model call, the notice says why only shared words matched.
         o.retrieveOnly = true
         let retrieve = await (try engine(notes, vectors: vectors)).ask(question, options: o)
@@ -461,6 +535,7 @@ final class AskTests: TempDirTestCase {
         o.retrieveOnly = false
         let same = await (try engine(mixed, model: model)).ask(question, options: o)
         XCTAssertNil(same.searchedAs)
+        XCTAssertNil(same.untranslatedTo)
         XCTAssertFalse(model.log.contains("translateQuestion"))
     }
 
@@ -472,11 +547,11 @@ final class AskTests: TempDirTestCase {
         let vectors = notes.map { ($0, devA, key) }
         var s = FakeModelProvider.Script(); s.translation = translator()
         let model = FakeModelProvider(s)
-        var o = AskOptions(); o.deviceLanguage = "en"
+        var o = AskOptions(); o.deviceLanguage = "en"; o.nameTagger = Self.noNames
         let closedCalls = LockedList()
         o.detectLanguage = { _, among in closedCalls.append(among.joined(separator: ",")); return among.first }
         // A recognizer that is sure of Spanish for Spanish words, of English otherwise.
-        o.languageHypotheses = { question, among in
+        o.languageHypotheses = { question, among, _ in
             let spanish = question.contains("¿") || question.contains("amortiguamiento")
             let lang = spanish ? "es" : "en"
             return among.contains(lang) ? [.init(language: lang, confidence: 0.96), .init(language: "pt", confidence: 0.02)] : []
@@ -496,18 +571,22 @@ final class AskTests: TempDirTestCase {
         XCTAssertEqual(closedCalls.items.first, "en", "the closed candidates: the notes' language and the device's")
         // Unsure (below 0.8): the closed choice.
         var unsure = o
-        unsure.languageHypotheses = { _, _ in [.init(language: "es", confidence: 0.6), .init(language: "pt", confidence: 0.4)] }
+        unsure.languageHypotheses = { _, _, _ in [.init(language: "es", confidence: 0.6), .init(language: "pt", confidence: 0.4)] }
         let r3 = await (try engine(notes, vectors: vectors, model: FakeModelProvider(s))).ask(Self.spanishQuestion, options: unsure)
         XCTAssertEqual(r3.lang, "en")
         // A language the model does not support is not offered to the open detection.
         var noSpanish = s; noSpanish.unsupportedLanguages = ["es"]
         let offered = LockedList()
         var o4 = o
-        o4.languageHypotheses = { _, among in offered.append(among.joined(separator: ",")); return [] }
+        let likely = LockedList()
+        o4.languageHypotheses = { _, among, priors in
+            offered.append(among.joined(separator: ",")); likely.append(priors.joined(separator: ",")); return []
+        }
         _ = await (try engine(notes, vectors: vectors, model: FakeModelProvider(noSpanish))).ask(Self.spanishQuestion, options: o4)
         XCTAssertEqual(offered.items.count, 1)
         XCTAssertFalse(offered.items[0].split(separator: ",").contains("es"), offered.items[0])
         XCTAssertTrue(offered.items[0].split(separator: ",").contains("fr"))
+        XCTAssertEqual(likely.items, ["en"], "the vault's and the device's languages are the recognizer's priors")
     }
 
     func testOpenDetectionNeedsWordsAndConfidence() {
@@ -528,11 +607,12 @@ final class AskTests: TempDirTestCase {
         notes.append(note("Pan", "La receta del pan lleva harina y agua.", language: "es"))
         var s = FakeModelProvider.Script(); s.translation = translator()
         let model = FakeModelProvider(s)
-        var o = AskOptions(); o.language = "es"
+        var o = AskOptions(); o.language = "es"; o.nameTagger = Self.noNames
         o.detectLanguage = { text, among in text.contains("damping") ? "en" : (among.first ?? "es") }
+        o.explain = true
         let r = await (try engine(notes, model: model)).ask("damping ratio spring", options: o)
         XCTAssertNil(r.searchedAs)
-        XCTAssertEqual(r.mode, .answer)
+        XCTAssertEqual(r.mode, .answer, "\(String(describing: r.explain?.droppedSentences))")
         XCTAssertTrue(model.log.contains("translateSentences"))
         XCTAssertTrue(r.answer.allSatisfy { !$0.text.contains("damping") }, "\(r.answer)")
     }

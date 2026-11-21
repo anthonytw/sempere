@@ -18,7 +18,8 @@ enum AppInsights {
                                         powerWindow: { powerWindow }, maxGraphNotes: maxGraphNotes)
         // Ask names the language of a question (docs/design/1.3-ask.md §3.1).
         services.detectLanguage = { AppleInsightsProviders.detectLanguage($0, among: $1) }
-        services.languageHypotheses = { AppleInsightsProviders.languageHypotheses($0, among: $1) }
+        services.languageHypotheses = { AppleInsightsProviders.languageHypotheses($0, among: $1, likely: $2) }
+        services.nameTagger = { AppleInsightsProviders.nameKeys($0, language: $1) }
         return services
     }
 

@@ -26146,6 +26146,19 @@
         }
       }
     },
+    "The on-device model does not support the language of your notes, so the question could not be translated to search them." : {
+      "comment" : "Ask banner: the question is in another language than the notes, and the on-device model cannot use the notes' language.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo del dispositivo no admite el idioma de tus notas, así que la pregunta no se pudo traducir para buscar en ellas."
+          }
+        }
+      }
+    },
     "The page could not be drawn for reading." : {
       "comment" : "Handwriting recognition error",
       "extractionState" : "manual",
@@ -26193,6 +26206,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La frase de contraseña no abre la copia de la clave de recuperación de esta bóveda."
+          }
+        }
+      }
+    },
+    "The question could not be translated into the language of your notes, so only words they share were matched." : {
+      "comment" : "Ask banner over the matching notes: the question was not translated into the notes' language, so only shared words (names, numbers) matched.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La pregunta no se pudo traducir al idioma de tus notas, así que solo se buscaron las palabras que comparten."
           }
         }
       }

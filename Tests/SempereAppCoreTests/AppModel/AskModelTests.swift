@@ -152,9 +152,10 @@ extension AppModelSuites {
             #expect(model.insights.mode != .on)
 
             func state(_ r: AskResult) -> AskModelState { var s = AskModelState(); s.result = r; return s }
-            func result(kind: String?, vectors: String, mode: AskMode = .retrieval, lang: String = "en") -> AskResult {
-                AskResult(question: "q", mode: mode, lang: lang, enough: false, dropped: 0, answer: [], notes: [], missing: kind.map { _ in "x" },
-                          missingKind: kind, vectors: vectors, notices: [], explain: nil)
+            func result(kind: String?, vectors: String, mode: AskMode = .retrieval, lang: String = "en", untranslatedTo: String? = nil,
+                        notes: [AskNoteResult] = []) -> AskResult {
+                AskResult(question: "q", mode: mode, lang: lang, enough: false, dropped: 0, answer: [], notes: notes, missing: kind.map { _ in "x" },
+                          missingKind: kind, vectors: vectors, notices: [], explain: nil, untranslatedTo: untranslatedTo)
             }
             #expect(state(result(kind: "language", vectors: "language", lang: "es")).banners == [.languageUnsupported("es"), .vectorsSkipped(kind: "language")])
             #expect(state(result(kind: "failed", vectors: "used")).banners == [.modelFailed])
@@ -162,6 +163,16 @@ extension AppModelSuites {
             #expect(state(result(kind: nil, vectors: "incompatible")).banners == [.vectorsSkipped(kind: "incompatible")])
             #expect(state(result(kind: "noModel", vectors: "noEmbedder")).banners == [.modelUnavailable(kind: "noModel"), .vectorsSkipped(kind: "noEmbedder")])
             #expect(state(result(kind: nil, vectors: "used", mode: .answer)).banners.isEmpty)
+            // A question the model could not put into the notes' language (design §3.8): the language named is the notes'.
+            let matched = [AskNoteResult(note: "n", title: "T", notebook: nil, modified: nil, pages: [], why: ["keywords"], used: false, passages: [])]
+            #expect(state(result(kind: "notesLanguage", vectors: "language", lang: "es", untranslatedTo: "en")).banners
+                    == [.notesLanguageUnsupported("en"), .vectorsSkipped(kind: "language")])
+            #expect(state(result(kind: "failed", vectors: "used", lang: "es", untranslatedTo: "en")).banners == [.questionNotTranslated("en")],
+                    "with nothing found the failure was the translation's")
+            #expect(state(result(kind: "failed", vectors: "used", lang: "es", untranslatedTo: "en", notes: matched)).banners
+                    == [.modelFailed, .questionNotTranslated("en")])
+            #expect(state(result(kind: nil, vectors: "used", mode: .answer, lang: "es", untranslatedTo: "en", notes: matched)).banners
+                    == [.questionNotTranslated("en")], "some notes matched: the screen says the question was not translated")
         }
 
         @Test func aCitedNoteOpensAtItsPage() async throws {

@@ -267,6 +267,10 @@ enum AskWording {
             }
         case .languageUnsupported:
             return String(localized: "The on-device model does not support the language of this question.")
+        case .notesLanguageUnsupported:
+            return String(localized: "The on-device model does not support the language of your notes, so the question could not be translated to search them.")
+        case .questionNotTranslated:
+            return String(localized: "The question could not be translated into the language of your notes, so only words they share were matched.")
         case .modelFailed:
             return String(localized: "The answer could not be written. These are the best matches.")
         case .vectorsSkipped(let kind):

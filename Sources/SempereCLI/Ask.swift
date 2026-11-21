@@ -83,7 +83,8 @@ struct AskCommand: ParsableCommand {
         var o = AskOptions()
         o.limit = limit; o.filter = filter; o.language = lang; o.retrieveOnly = retrieveOnly; o.explain = explain
         o.detectLanguage = { AppleInsightsProviders.detectLanguage($0, among: $1) }
-        o.languageHypotheses = { AppleInsightsProviders.languageHypotheses($0, among: $1) }
+        o.languageHypotheses = { AppleInsightsProviders.languageHypotheses($0, among: $1, likely: $2) }
+        o.nameTagger = { AppleInsightsProviders.nameKeys($0, language: $1) }
         #if DEBUG
         // Debug builds only: the device language Ask assumes (a candidate for the question's language), for checks
         // of a device in another language than this machine's.

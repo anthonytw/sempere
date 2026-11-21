@@ -2604,10 +2604,12 @@ an error: the exit is 0 whatever the mode. On Linux there is no model and no emb
   sent with a token estimate, and each dropped sentence with the reason (`repeats an earlier sentence`, `translation: …`).
 - `--json`: `{question, mode, lang, enough, dropped, answer: [{text, sources: [note id]}], notes: [{note, title, notebook,
   modified, pages, why: ["keywords", "similar"], used, passages: [{page, text}]}], missing, missingKind, vectors, notices,
-  explain?, searchedAs?, searchLang?}` (`missingKind`: `noModel`, `disabled`, `notReady`, `deviceNotEligible`, `unsupported`, `language`, `failed` or
+  explain?, searchedAs?, searchLang?, untranslatedTo?}` (`missingKind`: `noModel`, `disabled`, `notReady`, `deviceNotEligible`, `unsupported`, `language`,
+  `notesLanguage` (the model lacks the notes' language, so the question could not be translated), `failed` or
   `notFound`; `vectors`: `used`, or why not: `off`, `noEmbedder`, `language`, `noMap`, `incompatible`, `noVectors`,
   `unembeddable`, `none`; `searchedAs`/`searchLang`: the question's translation and its language when it was translated
-  for searching; all are additions to the design's shape). The
+  for searching; `untranslatedTo`: the notes' language when the question needed a translation into it and did not get
+  one; all are additions to the design's shape). The
   citations are note ids drawn by the program from validated source ids, never from the model's text.
 - A read-only vault works (nothing is written); a locked or incomplete vault gives the usual exit codes.
 

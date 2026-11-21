@@ -57,7 +57,7 @@ struct NoteListView: View {
         }
         // The field's text, put back if the field starts editing without it (a Mac's search dismissal empties it behind
         // SwiftUI's back when Search | Ask is clicked with an empty search; `SearchFieldTextSync`).
-        .background(SearchFieldTextSync(text: model.askTarget == .ask ? model.askQuestion : model.searchText))
+        .background(SearchFieldTextSync(text: { model.askTarget == .ask ? model.askQuestion : model.searchText }))
         // Search | Ask under the field while it is in use (Ask your notes, docs/design/1.3-ask.md §3.6).
         .safeAreaInset(edge: .top, spacing: 0) {
             if ui.searchPresented || model.askTarget == .ask { AskTargetPicker(refocus: { searchFocused = true }).background(.bar) }

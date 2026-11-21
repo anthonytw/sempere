@@ -177,7 +177,8 @@ public struct AskResult: Hashable, Sendable, Codable {
     /// nothing is.
     public var missing: String?
     /// The kind of `missing`, for the app to word and for scripts: `noModel`, `disabled`, `notReady`, `deviceNotEligible`,
-    /// `unsupported`, `language` (the model does not support the question's language), `failed` (the model call failed or
+    /// `unsupported`, `language` (the model does not support the question's language), `notesLanguage` (it does not support
+    /// the notes' language, `untranslatedTo`, so the question could not be translated), `failed` (the model call failed or
     /// timed out) or `notFound` (no answer from the notes); nil when nothing is missing. A question in a language no note
     /// is in that could not be translated (design §3.8) and found nothing says so in `missing`, with the model's kind. Additive to the design's shape.
     public var missingKind: String?
@@ -193,14 +194,17 @@ public struct AskResult: Hashable, Sendable, Codable {
     /// into `searchLang`, the notes' language; nil when the question was searched as it is. The answer is in `lang`.
     public var searchedAs: String?
     public var searchLang: String?
+    /// The notes' language a question in a language no note is in should have been searched in, when it could not be
+    /// translated into it (additive, design §3.8): only words both languages share were matched. Nil otherwise.
+    public var untranslatedTo: String?
 
     public init(question: String, mode: AskMode, lang: String, enough: Bool, dropped: Int, answer: [AskAnswerSentence],
                 notes: [AskNoteResult], missing: String?, missingKind: String?, vectors: String, notices: [String],
-                explain: AskExplain?, searchedAs: String? = nil, searchLang: String? = nil) {
+                explain: AskExplain?, searchedAs: String? = nil, searchLang: String? = nil, untranslatedTo: String? = nil) {
         self.question = question; self.mode = mode; self.lang = lang; self.enough = enough; self.dropped = dropped
         self.answer = answer; self.notes = notes; self.missing = missing; self.missingKind = missingKind
         self.vectors = vectors; self.notices = notices; self.explain = explain
-        self.searchedAs = searchedAs; self.searchLang = searchLang
+        self.searchedAs = searchedAs; self.searchLang = searchLang; self.untranslatedTo = untranslatedTo
     }
 }
 

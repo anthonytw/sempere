@@ -32,19 +32,57 @@ public enum AppleInsightsProviders {
     /// The language of `text` as a BCP 47 primary tag (NaturalLanguage's recognizer), nil when it is none of `candidates`
     /// (the vault's note languages and the device's) with at least `AskLanguage.minConfidence`, or unavailable.
     public static func detectLanguage(_ text: String, among candidates: [String]) -> String? {
-        let hypotheses = languageHypotheses(text, among: candidates).map { (language: $0.language, confidence: $0.confidence) }
+        let hypotheses = languageHypotheses(text, among: candidates, likely: []).map { (language: $0.language, confidence: $0.confidence) }
         return AskLanguage.choose(hypotheses: hypotheses, among: candidates).map(InsightsLanguage.primary)
     }
 
     /// NaturalLanguage's hypotheses for `text`, constrained to `candidates` (so a short question is not taken for a
-    /// language nobody here uses); empty where NaturalLanguage does not exist. `AskOptions.languageHypotheses`.
-    public static func languageHypotheses(_ text: String, among candidates: [String]) -> [AskLanguage.Hypothesis] {
+    /// language nobody here uses), with `likely` (the vault's and the device's languages) as priors: together they hold
+    /// `likelyShare` of the prior, the other candidates the rest ("Lisbon hotel nights" is Portuguese at 0.83 without
+    /// them, English at 0.70 with them, measured 2026-11-20); empty where NaturalLanguage does not exist.
+    /// `AskOptions.languageHypotheses`.
+    public static func languageHypotheses(_ text: String, among candidates: [String], likely: [String]) -> [AskLanguage.Hypothesis] {
         #if canImport(NaturalLanguage)
         let r = NLLanguageRecognizer()
-        let constraints = recognizerLanguages(for: candidates).map { NLLanguage(rawValue: $0) }
+        let languages = recognizerLanguages(for: candidates)
+        let constraints = languages.map { NLLanguage(rawValue: $0) }
         if !constraints.isEmpty { r.languageConstraints = constraints }
+        let priors = recognizerLanguages(for: likely).filter { languages.isEmpty || languages.contains($0) }
+        if !priors.isEmpty {
+            let others = languages.filter { !priors.contains($0) }
+            var hints: [NLLanguage: Double] = [:]
+            for l in priors { hints[NLLanguage(rawValue: l)] = likelyShare / Double(priors.count) }
+            for l in others { hints[NLLanguage(rawValue: l)] = (1 - likelyShare) / Double(others.count) }
+            r.languageHints = hints
+        }
         r.processString(text)
         return r.languageHypotheses(withMaximum: max(5, candidates.count)).map { .init(language: $0.key.rawValue, confidence: $0.value) }
+        #else
+        return []
+        #endif
+    }
+
+    /// The share of the recognizer's prior the likely languages hold (`languageHypotheses`).
+    public static let likelyShare = 0.6
+
+    /// The words of `text` NaturalLanguage tags as names of people, places or organizations in `language`, as
+    /// `LanguageFreeCheck` keys (lowercased, accents folded); empty where NaturalLanguage does not exist.
+    /// `AskOptions.nameTagger`.
+    public static func nameKeys(_ text: String, language: String) -> Set<String> {
+        #if canImport(NaturalLanguage)
+        let tagger = NLTagger(tagSchemes: [.nameType])
+        tagger.string = text
+        if let l = recognizerLanguages(for: [language]).first { tagger.setLanguage(NLLanguage(rawValue: l), range: text.startIndex..<text.endIndex) }
+        var out = Set<String>()
+        let names: Set<NLTag> = [.personalName, .placeName, .organizationName]
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .nameType,
+                             options: [.omitWhitespace, .omitPunctuation]) { tag, range in
+            if let tag, names.contains(tag) {
+                out.insert(String(text[range]).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased())
+            }
+            return true
+        }
+        return out
         #else
         return []
         #endif

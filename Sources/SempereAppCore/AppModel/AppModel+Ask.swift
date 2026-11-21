@@ -31,6 +31,12 @@ public enum AskBanner: Equatable, Sendable {
     case modelUnavailable(kind: String)
     /// The model does not support the question's language (BCP 47 primary tag).
     case languageUnsupported(String)
+    /// The model does not support the notes' language (BCP 47 primary tag), so a question in another language could not
+    /// be translated into it (`AskResult.missingKind` `notesLanguage`).
+    case notesLanguageUnsupported(String)
+    /// The question is in a language no note is in and could not be translated into the notes' (BCP 47 primary tag), so
+    /// only words both share were matched (`AskResult.untranslatedTo`; design §3.8).
+    case questionNotTranslated(String)
     /// The model's call failed or took too long.
     case modelFailed
     /// Vector matching was skipped (`AskResult.vectors`: `language`, `incompatible`, `noMap`, `noVectors`, `noEmbedder`).
@@ -56,11 +62,14 @@ public struct AskModelState: Equatable, Sendable {
         if r.mode != .answer, let kind = r.missingKind {
             switch kind {
             case "language": out.append(.languageUnsupported(r.lang))
-            case "failed": out.append(.modelFailed)
+            case "notesLanguage": out.append(.notesLanguageUnsupported(r.untranslatedTo ?? r.lang))
+            // With nothing found, a failure was the question's translation: the next banner says that.
+            case "failed": if r.untranslatedTo == nil || !r.notes.isEmpty { out.append(.modelFailed) }
             case "notFound": break
             default: out.append(.modelUnavailable(kind: kind))
             }
         }
+        if let to = r.untranslatedTo, r.missingKind != "notesLanguage" { out.append(.questionNotTranslated(to)) }
         switch r.vectors {
         case "used", "none": break
         case "off": out.append(.insightsOff)
@@ -111,6 +120,7 @@ extension AppModelCore {
         let me = vault.writerDevice
         let detect = insightsServices.detectLanguage
         let hypotheses = insightsServices.languageHypotheses
+        let nameTagger = insightsServices.nameTagger
         let offerKey = Self.askOfferKey(vault.vaultId)
         ask.phase = .retrieving
         ask.result = nil
@@ -123,6 +133,7 @@ extension AppModelCore {
                 var options = AskOptions()
                 options.detectLanguage = detect
                 options.languageHypotheses = hypotheses
+                options.nameTagger = nameTagger
                 options.onRetrieved = { first in
                     Task { @MainActor in self?.askRetrieved(first, serial: serial, generation: gen) }
                 }

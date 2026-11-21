@@ -10,7 +10,8 @@ import Testing
 struct AskWordingTests {
     @Test func everyBannerHasItsOwnWords() {
         let all: [AskBanner] = [.modelUnavailable(kind: "disabled"), .modelUnavailable(kind: "notReady"), .modelUnavailable(kind: "deviceNotEligible"),
-                                .modelUnavailable(kind: "noModel"), .languageUnsupported("es"), .modelFailed,
+                                .modelUnavailable(kind: "noModel"), .languageUnsupported("es"), .notesLanguageUnsupported("en"),
+                                .questionNotTranslated("en"), .modelFailed,
                                 .vectorsSkipped(kind: "language"), .vectorsSkipped(kind: "incompatible"), .insightsOff]
         let words = all.map(AskWording.text)
         #expect(Set(words).count == words.count - 1, "deviceNotEligible and noModel say the same: not available")

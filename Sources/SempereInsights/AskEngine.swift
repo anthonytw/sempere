@@ -21,10 +21,17 @@ public struct AskOptions: Sendable {
     /// the one it is confident of, else nil (the vault's main language is used).
     public var detectLanguage: (@Sendable (_ question: String, _ among: [String]) -> String?)?
     /// The platform's language recognizer's hypotheses for the question among `among` (NaturalLanguage, constrained to
-    /// them); nil where there is none. Used first, over the languages the model can answer in
-    /// (`AskLanguage.openCandidates`), so a question is recognized by its own words, not only among the vault's and the
-    /// device's languages; a short or unsure question falls back to `detectLanguage` (`AskLanguage.openChoice`).
-    public var languageHypotheses: (@Sendable (_ question: String, _ among: [String]) -> [AskLanguage.Hypothesis])?
+    /// them), with `likely` (the vault's and the device's languages, `AskLanguage.candidates`) as its priors, so a short
+    /// keyword question ("Lisbon hotel nights") is not taken for another language; nil where there is none. Used first,
+    /// over the languages the model can answer in (`AskLanguage.openCandidates`), so a question is recognized by its own
+    /// words, not only among the vault's and the device's languages; a short or unsure question falls back to
+    /// `detectLanguage` (`AskLanguage.openChoice`).
+    public var languageHypotheses: (@Sendable (_ question: String, _ among: [String], _ likely: [String]) -> [AskLanguage.Hypothesis])?
+    /// The platform's name tagger (NaturalLanguage): the words of `text`, in `language`, that are names of people,
+    /// places or organizations, as `LanguageFreeCheck` keys (lowercased, accents folded); nil where there is none. A
+    /// translated sentence's first word is checked as a name only when the tagger calls it one (design §3.8); without a
+    /// tagger, when it is no common sentence-initial word.
+    public var nameTagger: (@Sendable (_ text: String, _ language: String) -> Set<String>)?
     /// The device's language (BCP 47 primary tag), a candidate for the question's language; nil takes `Locale.current`'s.
     public var deviceLanguage: String?
     /// The model call's limit (design §4: 30 s, then `retrieval`).
@@ -199,7 +206,7 @@ public struct AskEngine: Sendable {
         if o.language == nil, let hyps = o.languageHypotheses {
             let supports: (String) -> Bool = { l in model.map { $0.availability.isAvailable ? $0.supports(language: l) : true } ?? true }
             let wide = AskLanguage.openCandidates(candidates, supports: supports)
-            open = AskLanguage.openChoice(question: question, hypotheses: hyps(question, wide), among: wide)
+            open = AskLanguage.openChoice(question: question, hypotheses: hyps(question, wide, candidates), among: wide)
         }
         let lang = InsightsLanguage.primary(o.language ?? open ?? o.detectLanguage?(question, candidates) ?? main)
 
@@ -221,8 +228,10 @@ public struct AskEngine: Sendable {
         var searchQuestion = question
         var searchLang = lang
         var translated: String?
-        // Why it was not translated: the kind is the model's (`AskResult.missingKind`; nil with `--retrieve-only`).
+        // Why it was not translated: the kind is the model's (`AskResult.missingKind`; nil with `--retrieve-only`), except
+        // that a model without the notes' language says `notesLanguage` (the question's language is not the missing one).
         var untranslated: (kind: String?, why: String)?
+        var untranslatedTo: String?
         let pinned = Set(reader.settings.enabled ? reader.settings.pins.keys.map(InsightsLanguage.primary) : [])
         if !pool.isEmpty, let target = AskLanguage.retrievalLanguage(question: lang, noteLanguages: AskLanguage.noteLanguages(pool), pinned: pinned) {
             let names = "the question is in \(AskLanguage.name(lang)) and your notes are in \(AskLanguage.name(target))"
@@ -241,9 +250,10 @@ public struct AskEngine: Sendable {
                 }
             } else {
                 let m = modelMissing(language: target) ?? ("noModel", "there is no on-device model here")
-                untranslated = (m.kind, "\(names), and it could not be translated (\(m.why)), so only shared words were matched")
+                untranslated = (m.kind == "language" ? "notesLanguage" : m.kind,
+                                "\(names), and it could not be translated (\(m.why)), so only shared words were matched")
             }
-            if let untranslated { notices.append(untranslated.why) }
+            if let untranslated { notices.append(untranslated.why); untranslatedTo = target }
         }
 
         // Keyword matching takes the words of both forms of the question (names and numbers are often the same in both).
@@ -307,7 +317,8 @@ public struct AskEngine: Sendable {
             let (missing, kind) = listed.isEmpty && untranslated != nil ? (untranslated?.why, untranslated?.kind ?? kind) : (missing, kind)
             return AskResult(question: question, mode: fallbackMode, lang: lang, enough: false, dropped: dropped, answer: [],
                              notes: listed.map { result($0, used: false) }, missing: missing, missingKind: kind, vectors: vectorsKind,
-                             notices: notices, explain: explain, searchedAs: translated, searchLang: translated == nil ? nil : searchLang)
+                             notices: notices, explain: explain, searchedAs: translated, searchLang: translated == nil ? nil : searchLang,
+                             untranslatedTo: untranslatedTo)
         }
 
         if o.retrieveOnly { return fallback(missing: nil) }
@@ -379,8 +390,10 @@ public struct AskEngine: Sendable {
                 for (k, t) in zip(kept, out) {
                     let cited = k.sources.compactMap { byId[$0] }
                     let evidence = cited.map(\.evidenceText).joined(separator: "\n")
-                    let context = ([question, searchQuestion] + cited.map(\.labelTitle)).joined(separator: " ")
-                    if let why = AskValidator.checkTranslation(t, original: k.text, evidence: evidence, context: context) {
+                    // The question is no evidence (a translation could swap the note's name for the question's).
+                    let titles = cited.map(\.labelTitle).joined(separator: "\n")
+                    if let why = AskValidator.checkTranslation(t, original: k.text, evidence: evidence, titles: titles, language: lang,
+                                                               originalLanguage: from, names: o.nameTagger?(t, lang)) {
                         failed.append(.init(text: String(t.prefix(AskValidator.maxSentenceCharacters)), reason: "translation: \(why)"))
                     } else {
                         translatedKept.append(.init(text: AskValidator.clean(t), sources: k.sources))
@@ -420,7 +433,7 @@ public struct AskEngine: Sendable {
             + others.map { result($0, used: false) }
         return AskResult(question: question, mode: .answer, lang: lang, enough: true, dropped: dropped, answer: sentences,
                          notes: rows, missing: nil, missingKind: nil, vectors: vectorsKind, notices: notices, explain: explain,
-                         searchedAs: translated, searchLang: translated == nil ? nil : searchLang)
+                         searchedAs: translated, searchLang: translated == nil ? nil : searchLang, untranslatedTo: untranslatedTo)
     }
 
     /// Runs `op`, or throws when it takes longer than `seconds`.
