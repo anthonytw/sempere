@@ -2566,7 +2566,8 @@ content words, stemmed, over titles, tags, notebooks, insight keywords and text)
 passages of the best six notes are picked, and Apple's on-device model (macOS 26 with Apple Intelligence) writes at most five
 sentences from those passages only, each naming its sources. The answer is checked: a sentence with no source, an unknown
 source, a number or name its cited passages do not hold, or too few words in common with them is dropped, and with none left,
-or over 40% dropped, or the model saying the notes do not answer, there is no answer. Nothing leaves the machine and nothing
+or over 40% dropped (a sentence dropped only for sharing too few words does not count), or the model saying the notes do not
+answer, there is no answer. Repeated sentences are removed (their sources merged into the first). Nothing leaves the machine and nothing
 is written: no question, answer or history is stored in the vault or anywhere else. Deleted notes and notes outside the
 filters are never candidates; `--since` and `--until` take `YYYY-MM-DD` (local) or RFC 3339 and compare the note's modified
 date. A question over 400 characters is cut (a notice says so).
@@ -2580,18 +2581,33 @@ Insights off or not set up for the question's language, no embedder here, or emb
 an error: the exit is 0 whatever the mode. On Linux there is no model and no embedder: `keyword` mode.
 
 - `--limit N` notes are listed (default 6); the model reads at most 6.
-- `--lang` is the question's language (default: detected on macOS, else the vault's main language). The embedder needs a
+- `--lang` is the question's language (default: detected on macOS from the question's own words, among the languages the
+  on-device model supports, when it has at least three words that are not names and the recognizer is at least 80% sure;
+  otherwise among the notes' and this machine's languages; else the vault's main language). The embedder needs a
   language the vault pins (`insights.embeddingRevision`); otherwise vector matching is skipped (a notice says so) and
   generation still runs if the model supports the language.
+- **A question in another language** (none of the notes is written in it, e.g. Spanish about English notes;
+  `docs/design/1.3-ask.md` §3.8): the model first translates the question into the notes' main language (pinned first), and
+  keyword matching (words of both forms) and vector matching (the translation) search with it; stderr shows `note: searched
+  as (en): …`. The model answers in the notes' language, the answer is checked against the passages there, then translated
+  into the question's language, and every number, date, code and name of the translation is checked again against the cited
+  passages (a sentence that changed or invented one is dropped). That is three model calls instead of one. Without the
+  model (or with `--retrieve-only`) the question is searched as it is, and a notice (or, when nothing matched, the missing
+  line) says it could not be translated. An answer the recognizer finds in a note's language rather than the question's is
+  translated and checked the same way.
+- In `answer` mode "Other matching notes" lists only notes above a relevance cutoff: a keyword score at least half the
+  best one, or a vector score at least 90% of the best cited note's. Fewer, or none, is fine; `retrieval` and `keyword` list
+  every best match.
 - `--retrieve-only` never calls the model. `--require-model` exits 3 with the reason when the model cannot run (the
   insights convention); the two together are a usage error (2).
-- `--explain` adds each candidate's vector and keyword ranks and fused score, the passages sent with a token estimate, and
-  each dropped sentence with the reason.
+- `--explain` adds each candidate's vector and keyword ranks, fused score and the two scores the cutoff reads, the passages
+  sent with a token estimate, and each dropped sentence with the reason (`repeats an earlier sentence`, `translation: …`).
 - `--json`: `{question, mode, lang, enough, dropped, answer: [{text, sources: [note id]}], notes: [{note, title, notebook,
   modified, pages, why: ["keywords", "similar"], used, passages: [{page, text}]}], missing, missingKind, vectors, notices,
-  explain?}` (`missingKind`: `noModel`, `disabled`, `notReady`, `deviceNotEligible`, `unsupported`, `language`, `failed` or
+  explain?, searchedAs?, searchLang?}` (`missingKind`: `noModel`, `disabled`, `notReady`, `deviceNotEligible`, `unsupported`, `language`, `failed` or
   `notFound`; `vectors`: `used`, or why not: `off`, `noEmbedder`, `language`, `noMap`, `incompatible`, `noVectors`,
-  `unembeddable`, `none`; both are additions to the design's shape). The
+  `unembeddable`, `none`; `searchedAs`/`searchLang`: the question's translation and its language when it was translated
+  for searching; all are additions to the design's shape). The
   citations are note ids drawn by the program from validated source ids, never from the model's text.
 - A read-only vault works (nothing is written); a locked or incomplete vault gives the usual exit codes.
 

@@ -128,6 +128,12 @@ public enum AskRetriever {
     /// Notes ranked by how well their title, tags, notebook, insight keywords and text hold the question's content
     /// words (BM25-like; idf over the notes searched). Best first, at most `listSize`; a note that holds none is not listed.
     public static func keywordRanking(terms: [String], notes: [AskNote], gens: (InsightsNoteInput) -> InsightsNoteFile.Gen?) -> [UUID] {
+        keywordScores(terms: terms, notes: notes, gens: gens).map(\.note)
+    }
+
+    /// `keywordRanking` with each note's score (for the relevance cutoff of the listed notes).
+    public static func keywordScores(terms: [String], notes: [AskNote], gens: (InsightsNoteInput) -> InsightsNoteFile.Gen?)
+        -> [(note: UUID, score: Double)] {
         let queryForms = Array(Set(terms.map(AskText.form))).sorted()
         guard !queryForms.isEmpty, !notes.isEmpty else { return [] }
         let want = Set(queryForms)
@@ -169,7 +175,7 @@ public enum AskRetriever {
             if s > 0 { scored.append((notes[i].id, s, notes[i].input.modified ?? .distantPast)) }
         }
         scored.sort { ($0.1, $0.2, $1.0.uuidString) > ($1.1, $1.2, $0.0.uuidString) }
-        return scored.prefix(listSize).map(\.0)
+        return scored.prefix(listSize).map { ($0.0, $0.1) }
     }
 
     // MARK: vector retrieval
@@ -178,6 +184,12 @@ public enum AskRetriever {
     /// mean cosine to the 10 nearest, as `RelatedGraph` does). `r_n` is taken against every note up to 800 notes, else
     /// against 300 notes spread evenly by id (an N-by-N scan is too much for a question). Best first, at most `listSize`.
     public static func vectorRanking(query: [Float], vectors: [UUID: [Float]], mean: [Float]?) -> [UUID] {
+        vectorScores(query: query, vectors: vectors, mean: mean).map(\.note)
+    }
+
+    /// `vectorRanking` with each note's CSLS score (above 0: nearer the question than the question's and the note's
+    /// neighborhoods are on average; the relevance cutoff of the listed notes).
+    public static func vectorScores(query: [Float], vectors: [UUID: [Float]], mean: [Float]?) -> [(note: UUID, score: Double)] {
         guard !vectors.isEmpty else { return [] }
         let ids = vectors.keys.sorted { $0.uuidString < $1.uuidString }
         let q = VectorMath.centered(query, mean: mean)
@@ -200,7 +212,26 @@ public enum AskRetriever {
             scored.append((id, 2 * cosQ[i] - rq - meanTop(cos, exclude: nil)))
         }
         scored.sort { ($0.1, $1.0.uuidString) > ($1.1, $0.0.uuidString) }
-        return scored.prefix(listSize).map(\.0)
+        return scored.prefix(listSize).map { ($0.0, $0.1) }
+    }
+
+    // MARK: relevance
+
+    /// A keyword match below this share of the best keyword score is not listed among "Other matching notes".
+    public static let keywordCutoff = 0.5
+    /// A vector match below this share of the cited notes' best vector score is not listed among "Other matching notes".
+    public static let vectorCutoff = 0.9
+
+    /// Whether a note the answer did not cite is worth listing under "Other matching notes" (design §3.1, "Relevance"):
+    /// its keyword score is at least `keywordCutoff` of the best keyword score, or its vector score (CSLS) is positive and
+    /// at least `vectorCutoff` of `referenceVector` (the best vector score among the notes the answer cites, else the best
+    /// of all): about as near the question as the notes the answer came from. Vector scores alone do not separate a small
+    /// vault's unrelated notes (every one scored above 0 on the 2026-11-20 fixture), hence the relative rule. Fewer notes,
+    /// or none, is fine.
+    public static func isRelevant(keyword: Double?, bestKeyword: Double, vector: Double?, referenceVector: Double?) -> Bool {
+        if let k = keyword, bestKeyword > 0, k >= keywordCutoff * bestKeyword { return true }
+        if let v = vector, let r = referenceVector, v > 0, r > 0, v >= vectorCutoff * r { return true }
+        return false
     }
 
     // MARK: fusion

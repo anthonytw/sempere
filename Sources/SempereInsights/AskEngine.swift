@@ -20,6 +20,11 @@ public struct AskOptions: Sendable {
     /// languages worth choosing among (the vault's note languages and the device's, `AskLanguage.candidates`) and answers
     /// the one it is confident of, else nil (the vault's main language is used).
     public var detectLanguage: (@Sendable (_ question: String, _ among: [String]) -> String?)?
+    /// The platform's language recognizer's hypotheses for the question among `among` (NaturalLanguage, constrained to
+    /// them); nil where there is none. Used first, over the languages the model can answer in
+    /// (`AskLanguage.openCandidates`), so a question is recognized by its own words, not only among the vault's and the
+    /// device's languages; a short or unsure question falls back to `detectLanguage` (`AskLanguage.openChoice`).
+    public var languageHypotheses: (@Sendable (_ question: String, _ among: [String]) -> [AskLanguage.Hypothesis])?
     /// The device's language (BCP 47 primary tag), a candidate for the question's language; nil takes `Locale.current`'s.
     public var deviceLanguage: String?
     /// The model call's limit (design §4: 30 s, then `retrieval`).
@@ -36,6 +41,44 @@ public struct AskOptions: Sendable {
 public enum AskLanguage {
     /// The least confidence a hypothesis needs.
     public static let minConfidence = 0.5
+    /// The least confidence the open detection needs (over many languages, so it must be surer).
+    public static let openConfidence = 0.8
+    /// The open detection needs at least this many words of two letters or more that are not names (a capitalized word
+    /// after the first): one-word queries and names ("Kazuo Ishiguro", "Hotel Alfama Patio") say little about a language.
+    public static let openMinWords = 3
+    /// The languages the open detection considers (those the model supports, plus the closed candidates): the languages
+    /// of Apple's on-device model, as primary tags.
+    public static let commonLanguages = ["en", "es", "fr", "de", "it", "pt", "nl", "da", "sv", "nb", "fi", "tr", "pl", "ru",
+                                         "ja", "ko", "zh", "vi"]
+
+    /// A recognizer's hypothesis: a language tag and its probability.
+    public struct Hypothesis: Hashable, Sendable {
+        public var language: String
+        public var confidence: Double
+        public init(language: String, confidence: Double) { self.language = language; self.confidence = confidence }
+    }
+
+    /// The words of `question` the open detection counts: two letters or more, not a capitalized word after the first.
+    public static func wordsForDetection(_ question: String) -> Int {
+        let words = question.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "\u{2019}" }).filter { $0.count >= 2 }
+        return words.enumerated().filter { $0.offset == 0 || !($0.element.first?.isUppercase ?? false) }.count
+    }
+
+    /// The open detection's candidates: `candidates` (the vault's and the device's languages) first, then each of
+    /// `commonLanguages` that `supports` accepts (the model's languages; every one without a model), once each.
+    public static func openCandidates(_ candidates: [String], supports: (String) -> Bool) -> [String] {
+        var out = candidates
+        for l in commonLanguages where !out.contains(l) && supports(l) { out.append(l) }
+        return out
+    }
+
+    /// The question's language from the open detection: the most confident hypothesis among `candidates` with at least
+    /// `openConfidence`, when the question has `openMinWords` words; nil otherwise (the caller falls back to the closed
+    /// detection among the vault's and the device's languages, then to the vault's main language).
+    public static func openChoice(question: String, hypotheses: [Hypothesis], among candidates: [String]) -> String? {
+        guard wordsForDetection(question) >= openMinWords else { return nil }
+        return choose(hypotheses: hypotheses.map { ($0.language, $0.confidence) }, among: candidates, minConfidence: openConfidence)
+    }
 
     /// The device's language as a primary tag, nil when `Locale.current` names none.
     public static var currentDeviceLanguage: String? {
@@ -54,9 +97,31 @@ public enum AskLanguage {
         return out
     }
 
+    /// A language as messages name it: its English name ("Spanish"), else the tag.
+    public static func name(_ tag: String) -> String {
+        Locale(identifier: "en").localizedString(forIdentifier: tag) ?? tag
+    }
+
+    /// The primary languages of `notes` (live ones), most used first, ties by tag.
+    public static func noteLanguages(_ notes: [AskNote]) -> [String] {
+        var counts: [String: Int] = [:]
+        for n in notes where !n.input.deleted { counts[InsightsLanguage.primary(n.input.language), default: 0] += 1 }
+        return counts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
+    }
+
+    /// The language a question in `question` is searched in when no note is written in it (design §3.8): the most used
+    /// note language the vault pins embeddings for, else the most used one; nil when some note is in the question's
+    /// language (or there are no notes): the question is searched as it is.
+    public static func retrievalLanguage(question: String, noteLanguages: [String], pinned: Set<String>) -> String? {
+        let q = InsightsLanguage.primary(question)
+        guard let first = noteLanguages.first, !noteLanguages.contains(q) else { return nil }
+        return noteLanguages.first { pinned.contains($0) } ?? first
+    }
+
     /// The most confident of `hypotheses` (a language tag and its probability) among `candidates`, nil when none reaches
     /// `minConfidence` (the caller falls back to the vault's main language). Ties go to the earlier candidate.
-    public static func choose(hypotheses: [(language: String, confidence: Double)], among candidates: [String]) -> String? {
+    public static func choose(hypotheses: [(language: String, confidence: Double)], among candidates: [String],
+                              minConfidence: Double = AskLanguage.minConfidence) -> String? {
         var best: (language: String, confidence: Double)?   // the candidate's tag
         for c in candidates {
             let p = hypotheses.filter { InsightsLanguage.primary($0.language) == c }.map(\.confidence).max() ?? 0
@@ -128,7 +193,15 @@ public struct AskEngine: Sendable {
         let main = InsightsUpdater.mainLanguage(notes.map(\.input))
         let candidates = AskLanguage.candidates(noteLanguages: notes.filter { !$0.input.deleted }.map(\.input.language),
                                                 device: o.deviceLanguage ?? AskLanguage.currentDeviceLanguage)
-        let lang = InsightsLanguage.primary(o.language ?? o.detectLanguage?(question, candidates) ?? main)
+        // The question's own words first (over every language the model answers in), then the closed choice among the
+        // vault's and the device's languages, then the vault's main language.
+        var open: String?
+        if o.language == nil, let hyps = o.languageHypotheses {
+            let supports: (String) -> Bool = { l in model.map { $0.availability.isAvailable ? $0.supports(language: l) : true } ?? true }
+            let wide = AskLanguage.openCandidates(candidates, supports: supports)
+            open = AskLanguage.openChoice(question: question, hypotheses: hyps(question, wide), among: wide)
+        }
+        let lang = InsightsLanguage.primary(o.language ?? open ?? o.detectLanguage?(question, candidates) ?? main)
 
         // Candidates: live notes inside the filters with text, the most recent 20,000.
         var pool = notes.filter { o.filter.allows($0.input) && !$0.parts.isEmpty }
@@ -142,19 +215,56 @@ public struct AskEngine: Sendable {
         let insightLanguage = reader.settings.language
         let gens: (InsightsNoteInput) -> InsightsNoteFile.Gen? = { snapshot.bestGen(for: $0.id, hash: $0.hash, language: insightLanguage)?.gen }
 
-        let terms = AskText.terms(question)
-        let keyword = AskRetriever.keywordRanking(terms: terms, notes: pool, gens: gens)
-        var vectorRank: [UUID] = []
+        // A question in a language no note is written in is searched in the notes' language (design §3.8): one model
+        // call translates it; the original stays the answer's language. Without the model only shared words (names,
+        // numbers) can match, and the result says so.
+        var searchQuestion = question
+        var searchLang = lang
+        var translated: String?
+        // Why it was not translated: the kind is the model's (`AskResult.missingKind`; nil with `--retrieve-only`).
+        var untranslated: (kind: String?, why: String)?
+        let pinned = Set(reader.settings.enabled ? reader.settings.pins.keys.map(InsightsLanguage.primary) : [])
+        if !pool.isEmpty, let target = AskLanguage.retrievalLanguage(question: lang, noteLanguages: AskLanguage.noteLanguages(pool), pinned: pinned) {
+            let names = "the question is in \(AskLanguage.name(lang)) and your notes are in \(AskLanguage.name(target))"
+            if o.retrieveOnly {
+                untranslated = (nil, "\(names); without the model it was not translated, so only shared words were matched")
+            } else if let model, modelMissing(language: target) == nil {
+                do {
+                    let t = try await Self.withTimeout(o.timeout) { try await model.translateQuestion(question, from: lang, to: target) }
+                    let (clean, _) = AskText.normalize(t)
+                    guard !clean.isEmpty else { throw InsightsProviderError.failed("the model returned no translation") }
+                    translated = clean; searchQuestion = clean; searchLang = target
+                    notices.append("the question was translated into \(AskLanguage.name(target)) to search your notes")
+                } catch {
+                    let why = (error as? InsightsProviderError)?.description ?? String(describing: error).prefix(200).description
+                    untranslated = ("failed", "\(names), and it could not be translated (\(why)), so only shared words were matched")
+                }
+            } else {
+                let m = modelMissing(language: target) ?? ("noModel", "there is no on-device model here")
+                untranslated = (m.kind, "\(names), and it could not be translated (\(m.why)), so only shared words were matched")
+            }
+            if let untranslated { notices.append(untranslated.why) }
+        }
+
+        // Keyword matching takes the words of both forms of the question (names and numbers are often the same in both).
+        var terms = AskText.terms(searchQuestion)
+        if translated != nil { for t in AskText.terms(question) where !terms.contains(t) { terms.append(t) } }
+        let keywordScored = AskRetriever.keywordScores(terms: terms, notes: pool, gens: gens)
+        let keyword = keywordScored.map(\.note)
+        var vectorScored: [(note: UUID, score: Double)] = []
         var setup: Vectors?
         var vectorsKind = pool.isEmpty ? "none" : "used"
         if !pool.isEmpty {
-            let (v, why) = vectorSetup(question: question, language: lang, allowed: Set(pool.map(\.id)))
+            let (v, why) = vectorSetup(question: searchQuestion, language: searchLang, allowed: Set(pool.map(\.id)))
             setup = v
-            if let v { vectorRank = AskRetriever.vectorRanking(query: v.question, vectors: v.vectors, mean: v.mean) }
+            if let v { vectorScored = AskRetriever.vectorScores(query: v.question, vectors: v.vectors, mean: v.mean) }
             if let why { notices.append(why.why); vectorsKind = why.kind }
         }
+        let keywordScore = Dictionary(keywordScored.map { ($0.note, $0.score) }, uniquingKeysWith: { a, _ in a })
+        let vectorScore = Dictionary(vectorScored.map { ($0.note, $0.score) }, uniquingKeysWith: { a, _ in a })
+        let bestKeyword = keywordScored.first?.score ?? 0
         let keep = max(AskRetriever.sourceCount, max(0, o.limit))
-        let fused = AskRetriever.fuse(vector: vectorRank, keyword: keyword, modified: modified, allowed: Set(byId.keys), keep: keep)
+        let fused = AskRetriever.fuse(vector: vectorScored.map(\.note), keyword: keyword, modified: modified, allowed: Set(byId.keys), keep: keep)
         let listed = Array(fused.prefix(max(0, o.limit)))
 
         // Passages of every listed note; passage embeddings only for the notes generation reads, at most 18.
@@ -185,15 +295,19 @@ public struct AskEngine: Sendable {
         let fallbackMode: AskMode = setup == nil ? .keyword : .retrieval
         var explain: AskExplain?
         if o.explain {
+            func round(_ x: Double?) -> Double? { x.map { ($0 * 10_000).rounded() / 10_000 } }
             explain = AskExplain(candidates: fused.map { c in
                 .init(note: c.note.uuidString.lowercased(), title: byId[c.note]?.input.title ?? "", vectorRank: c.vectorRank,
-                      keywordRank: c.keywordRank, score: (c.score * 10_000).rounded() / 10_000)
+                      keywordRank: c.keywordRank, score: round(c.score) ?? 0, vectorScore: round(vectorScore[c.note]),
+                      keywordScore: round(keywordScore[c.note]))
             }, sent: [], evidenceTokens: 0, droppedSentences: [], noAnswer: nil)
         }
         func fallback(missing: String?, kind: String? = nil, dropped: Int = 0) -> AskResult {
-            AskResult(question: question, mode: fallbackMode, lang: lang, enough: false, dropped: dropped, answer: [],
-                      notes: listed.map { result($0, used: false) }, missing: missing, missingKind: kind, vectors: vectorsKind,
-                      notices: notices, explain: explain)
+            // Nothing found for a question that could not be put into the notes' language: say that, not just "nothing".
+            let (missing, kind) = listed.isEmpty && untranslated != nil ? (untranslated?.why, untranslated?.kind ?? kind) : (missing, kind)
+            return AskResult(question: question, mode: fallbackMode, lang: lang, enough: false, dropped: dropped, answer: [],
+                             notes: listed.map { result($0, used: false) }, missing: missing, missingKind: kind, vectors: vectorsKind,
+                             notices: notices, explain: explain, searchedAs: translated, searchLang: translated == nil ? nil : searchLang)
         }
 
         if o.retrieveOnly { return fallback(missing: nil) }
@@ -225,9 +339,14 @@ public struct AskEngine: Sendable {
             explain?.evidenceTokens = sent.reduce(0) { $0 + InsightsChunker.tokens(String(repeating: "x", count: $1.characters)) }
         }
 
+        // A translated question is answered in the notes' language, so the answer is checked in the language of its
+        // passages (design §3.8), then put into the question's.
         let answer: ModelAnswer
+        let (askQuestion, askLang) = (searchQuestion, searchLang)
         do {
-            answer = try await Self.withTimeout(o.timeout) { try await model.answer(question: question, sources: sent, language: lang) }
+            answer = try await Self.withTimeout(o.timeout) {
+                try await model.answer(question: askQuestion, sources: sent, language: askLang)
+            }
         } catch {
             let why = (error as? InsightsProviderError)?.description ?? String(describing: error).prefix(200).description
             return fallback(missing: why, kind: "failed")
@@ -236,21 +355,72 @@ public struct AskEngine: Sendable {
         explain?.droppedSentences = validation.dropped
         explain?.noAnswer = validation.reason
         guard validation.answers else {
-            return fallback(missing: "I couldn't find that in your notes", kind: "notFound", dropped: validation.dropped.count)
+            return fallback(missing: "I couldn't find that in your notes", kind: "notFound", dropped: validation.failures)
+        }
+        var kept = validation.kept
+        var dropped = validation.failures
+
+        // The answer's language: the notes' when the question was translated; else what the recognizer says (a model
+        // can answer in the notes' language anyway). Not the question's: translate it, then check what no language
+        // changes (numbers, codes, names) against the same passages.
+        var answerLang: String? = translated != nil ? searchLang : nil
+        if answerLang == nil, let detect = o.detectLanguage {
+            let among = [lang] + AskLanguage.noteLanguages(pool).filter { $0 != lang }
+            if let d = detect(kept.map(\.text).joined(separator: " "), among), InsightsLanguage.primary(d) != lang { answerLang = d }
+        }
+        if let from = answerLang, from != lang {
+            do {
+                let texts = kept.map(\.text)
+                let out = try await Self.withTimeout(o.timeout) { try await model.translateSentences(texts, from: from, to: lang) }
+                guard out.count == texts.count else { throw InsightsProviderError.failed("the translation has \(out.count) sentences, not \(texts.count)") }
+                let byId = Dictionary(sent.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                var translatedKept: [AskValidation.Kept] = []
+                var failed: [AskExplain.Dropped] = []
+                for (k, t) in zip(kept, out) {
+                    let cited = k.sources.compactMap { byId[$0] }
+                    let evidence = cited.map(\.evidenceText).joined(separator: "\n")
+                    let context = ([question, searchQuestion] + cited.map(\.labelTitle)).joined(separator: " ")
+                    if let why = AskValidator.checkTranslation(t, original: k.text, evidence: evidence, context: context) {
+                        failed.append(.init(text: String(t.prefix(AskValidator.maxSentenceCharacters)), reason: "translation: \(why)"))
+                    } else {
+                        translatedKept.append(.init(text: AskValidator.clean(t), sources: k.sources))
+                    }
+                }
+                explain?.droppedSentences += failed
+                dropped += failed.count
+                let share = Double(failed.count) / Double(max(1, kept.count))
+                guard !translatedKept.isEmpty, share <= AskValidator.maxDroppedShare else {
+                    explain?.noAnswer = "the translated answer did not pass the check"
+                    return fallback(missing: "I couldn't find that in your notes", kind: "notFound", dropped: dropped)
+                }
+                let unique = AskValidator.dedupe(translatedKept)
+                explain?.droppedSentences += unique.removed.map { .init(text: $0, reason: AskValidator.repeatReason) }
+                kept = AskValidator.capped(unique.kept)
+            } catch {
+                let why = (error as? InsightsProviderError)?.description ?? String(describing: error).prefix(200).description
+                notices.append("the answer is in \(AskLanguage.name(from)): it could not be put into \(AskLanguage.name(lang)) (\(why))")
+            }
         }
 
         // Citations drawn by code: the union of the surviving sentences' sources, in order of first use.
         let noteOf = Dictionary(sent.map { ($0.id, $0.note) }, uniquingKeysWith: { a, _ in a })
         var usedOrder: [UUID] = []
-        let sentences: [AskAnswerSentence] = validation.kept.map { k in
+        let sentences: [AskAnswerSentence] = kept.map { k in
             let ids = k.sources.compactMap { noteOf[$0] }
             for id in ids where !usedOrder.contains(id) { usedOrder.append(id) }
             return AskAnswerSentence(text: k.text, sources: ids.map { $0.uuidString.lowercased() })
         }
+        // "Other matching notes": only those above the relevance cutoff (fewer, or none, is fine).
+        let referenceVector = usedOrder.compactMap { vectorScore[$0] }.max() ?? vectorScored.first?.score
+        let others = listed.filter { !usedOrder.contains($0.note) }.filter {
+            AskRetriever.isRelevant(keyword: keywordScore[$0.note], bestKeyword: bestKeyword, vector: vectorScore[$0.note],
+                                    referenceVector: referenceVector)
+        }
         let rows = usedOrder.compactMap { id in listed.first { $0.note == id } ?? fused.first { $0.note == id } }.map { result($0, used: true) }
-            + listed.filter { !usedOrder.contains($0.note) }.map { result($0, used: false) }
-        return AskResult(question: question, mode: .answer, lang: lang, enough: true, dropped: validation.dropped.count, answer: sentences,
-                         notes: rows, missing: nil, missingKind: nil, vectors: vectorsKind, notices: notices, explain: explain)
+            + others.map { result($0, used: false) }
+        return AskResult(question: question, mode: .answer, lang: lang, enough: true, dropped: dropped, answer: sentences,
+                         notes: rows, missing: nil, missingKind: nil, vectors: vectorsKind, notices: notices, explain: explain,
+                         searchedAs: translated, searchLang: translated == nil ? nil : searchLang)
     }
 
     /// Runs `op`, or throws when it takes longer than `seconds`.

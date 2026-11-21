@@ -178,7 +178,8 @@ public struct AskResult: Hashable, Sendable, Codable {
     public var missing: String?
     /// The kind of `missing`, for the app to word and for scripts: `noModel`, `disabled`, `notReady`, `deviceNotEligible`,
     /// `unsupported`, `language` (the model does not support the question's language), `failed` (the model call failed or
-    /// timed out) or `notFound` (no answer from the notes); nil when nothing is missing. Additive to the design's shape.
+    /// timed out) or `notFound` (no answer from the notes); nil when nothing is missing. A question in a language no note
+    /// is in that could not be translated (design §3.8) and found nothing says so in `missing`, with the model's kind. Additive to the design's shape.
     public var missingKind: String?
     /// Whether vector matching ran (`used`) or why not (additive): `off` (Note Insights off), `noEmbedder`, `language`
     /// (the question's language is not pinned), `noMap`, `incompatible`, `noVectors`, `unembeddable`, or `none` (no notes).
@@ -188,13 +189,18 @@ public struct AskResult: Hashable, Sendable, Codable {
     public var notices: [String]
     /// Only with `--explain`.
     public var explain: AskExplain?
+    /// The question as it was searched when no note is in its language (additive, design §3.8): the model's translation
+    /// into `searchLang`, the notes' language; nil when the question was searched as it is. The answer is in `lang`.
+    public var searchedAs: String?
+    public var searchLang: String?
 
     public init(question: String, mode: AskMode, lang: String, enough: Bool, dropped: Int, answer: [AskAnswerSentence],
                 notes: [AskNoteResult], missing: String?, missingKind: String?, vectors: String, notices: [String],
-                explain: AskExplain?) {
+                explain: AskExplain?, searchedAs: String? = nil, searchLang: String? = nil) {
         self.question = question; self.mode = mode; self.lang = lang; self.enough = enough; self.dropped = dropped
         self.answer = answer; self.notes = notes; self.missing = missing; self.missingKind = missingKind
         self.vectors = vectors; self.notices = notices; self.explain = explain
+        self.searchedAs = searchedAs; self.searchLang = searchLang
     }
 }
 
@@ -207,6 +213,9 @@ public struct AskExplain: Hashable, Sendable, Codable {
         public var vectorRank: Int?
         public var keywordRank: Int?
         public var score: Double
+        /// The note's vector (CSLS) and keyword scores, which the relevance cutoff of "Other matching notes" reads.
+        public var vectorScore: Double?
+        public var keywordScore: Double?
     }
     public struct SentPassage: Hashable, Sendable, Codable {
         public var source: String

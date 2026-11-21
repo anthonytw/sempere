@@ -27,6 +27,9 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
         /// Answers questions (`answer`): given the question and the sources, what the model returns. Nil: the default,
         /// the best-matching passage sentence of the first two sources, each citing its own source.
         public var answer: (@Sendable (_ question: String, _ sources: [AskSource]) -> ModelAnswer)?
+        /// Translates (`translate`, `translateQuestion`, each sentence of `translateSentences`): given the text and the
+        /// target language, the translation. Nil: the default, the text tagged with the language (`[es] text`).
+        public var translation: (@Sendable (_ text: String, _ language: String) -> String)?
         public var identity = GenerationIdentity(model: "fake-model", os: "1.0", prompt: InsightsGenerator.promptRevision)
         public init() {}
     }
@@ -34,7 +37,8 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
     private let lock = NSLock()
     private var script: Script
     private var calls = 0
-    /// Every call made, in order: `extract`, `merge`, `summarize`, `title`, `translate`.
+    /// Every call made, in order: `extract`, `merge`, `summarize`, `title`, `translate`, `answer`, `translateQuestion`,
+    /// `translateSentences`.
     public private(set) var log: [String] = []
     /// Every `answer` request: the question and the sources the model was sent.
     public private(set) var askRequests: [(question: String, sources: [AskSource])] = []
@@ -112,6 +116,21 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
     /// A fake translation: the text tagged with the language (`[es] text`), unchanged when it already carries the tag.
     public func translate(_ text: String, to language: String) async throws -> String {
         try begin("translate", tokens: InsightsChunker.tokens(text))
+        return fakeTranslation(text, to: language)
+    }
+
+    public func translateQuestion(_ question: String, from source: String, to language: String) async throws -> String {
+        try begin("translateQuestion", tokens: InsightsChunker.tokens(question))
+        return fakeTranslation(question, to: language)
+    }
+
+    public func translateSentences(_ sentences: [String], from source: String, to language: String) async throws -> [String] {
+        try begin("translateSentences", tokens: sentences.map(InsightsChunker.tokens).reduce(0, +))
+        return sentences.map { fakeTranslation($0, to: language) }
+    }
+
+    private func fakeTranslation(_ text: String, to language: String) -> String {
+        if let scripted = lock.withLock({ script.translation }) { return scripted(text, language) }
         let tag = "[\(InsightsLanguage.primary(language))] "
         return text.hasPrefix(tag) ? text : tag + text
     }
