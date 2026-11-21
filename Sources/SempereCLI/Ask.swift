@@ -83,6 +83,12 @@ struct AskCommand: ParsableCommand {
         var o = AskOptions()
         o.limit = limit; o.filter = filter; o.language = lang; o.retrieveOnly = retrieveOnly; o.explain = explain
         o.detectLanguage = { AppleInsightsProviders.detectLanguage($0, among: $1) }
+        o.languageHypotheses = { AppleInsightsProviders.languageHypotheses($0, among: $1) }
+        #if DEBUG
+        // Debug builds only: the device language Ask assumes (a candidate for the question's language), for checks
+        // of a device in another language than this machine's.
+        if let device = ProcessInfo.processInfo.environment["SEMPERE_DEVICE_LANGUAGE"], !device.isEmpty { o.deviceLanguage = device }
+        #endif
         let options = o
         let q = question
         let result = try blockingThrowing { await engine.ask(q, options: options) }

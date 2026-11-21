@@ -2580,7 +2580,9 @@ Insights off or not set up for the question's language, no embedder here, or emb
 an error: the exit is 0 whatever the mode. On Linux there is no model and no embedder: `keyword` mode.
 
 - `--limit N` notes are listed (default 6); the model reads at most 6.
-- `--lang` is the question's language (default: detected on macOS, else the vault's main language). The embedder needs a
+- `--lang` is the question's language (default: detected on macOS from the question's own words, among the languages the
+  on-device model supports, when it has at least three words that are not names and the recognizer is at least 80% sure;
+  otherwise among the notes' and this machine's languages; else the vault's main language). The embedder needs a
   language the vault pins (`insights.embeddingRevision`); otherwise vector matching is skipped (a notice says so) and
   generation still runs if the model supports the language.
 - **A question in another language** (none of the notes is written in it, e.g. Spanish about English notes;

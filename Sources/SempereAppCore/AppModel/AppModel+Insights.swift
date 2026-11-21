@@ -33,6 +33,8 @@ public struct InsightsServices: Sendable {
     /// The language of a question (NaturalLanguage's recognizer, which lives outside the package); nil: the vault's main
     /// language (Ask, docs/design/1.3-ask.md §3.1).
     public var detectLanguage: (@Sendable (_ question: String, _ among: [String]) -> String?)?
+    /// The recognizer's hypotheses for an Ask question among languages (`AskOptions.languageHypotheses`); nil: none.
+    public var languageHypotheses: (@Sendable (_ question: String, _ among: [String]) -> [AskLanguage.Hypothesis])?
 
     public init(model: @escaping @Sendable () -> (any ModelProvider)?, embedder: @escaping @Sendable () -> (any EmbeddingProvider)?,
                 powerWindow: @escaping @MainActor @Sendable () -> Bool, maxGraphNotes: Int = 4000,

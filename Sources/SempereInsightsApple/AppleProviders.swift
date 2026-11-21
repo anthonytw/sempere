@@ -32,16 +32,21 @@ public enum AppleInsightsProviders {
     /// The language of `text` as a BCP 47 primary tag (NaturalLanguage's recognizer), nil when it is none of `candidates`
     /// (the vault's note languages and the device's) with at least `AskLanguage.minConfidence`, or unavailable.
     public static func detectLanguage(_ text: String, among candidates: [String]) -> String? {
+        let hypotheses = languageHypotheses(text, among: candidates).map { (language: $0.language, confidence: $0.confidence) }
+        return AskLanguage.choose(hypotheses: hypotheses, among: candidates).map(InsightsLanguage.primary)
+    }
+
+    /// NaturalLanguage's hypotheses for `text`, constrained to `candidates` (so a short question is not taken for a
+    /// language nobody here uses); empty where NaturalLanguage does not exist. `AskOptions.languageHypotheses`.
+    public static func languageHypotheses(_ text: String, among candidates: [String]) -> [AskLanguage.Hypothesis] {
         #if canImport(NaturalLanguage)
         let r = NLLanguageRecognizer()
-        // Constrained to the languages in play, so a short question is not taken for a language nobody here uses.
         let constraints = recognizerLanguages(for: candidates).map { NLLanguage(rawValue: $0) }
         if !constraints.isEmpty { r.languageConstraints = constraints }
         r.processString(text)
-        let hypotheses = r.languageHypotheses(withMaximum: max(5, candidates.count)).map { (language: $0.key.rawValue, confidence: $0.value) }
-        return AskLanguage.choose(hypotheses: hypotheses, among: candidates).map(InsightsLanguage.primary)
+        return r.languageHypotheses(withMaximum: max(5, candidates.count)).map { .init(language: $0.key.rawValue, confidence: $0.value) }
         #else
-        return nil
+        return []
         #endif
     }
 

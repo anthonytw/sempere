@@ -110,6 +110,7 @@ extension AppModelCore {
         let model = insightsRuntime.model, embedder = insightsRuntime.embedder
         let me = vault.writerDevice
         let detect = insightsServices.detectLanguage
+        let hypotheses = insightsServices.languageHypotheses
         let offerKey = Self.askOfferKey(vault.vaultId)
         ask.phase = .retrieving
         ask.result = nil
@@ -121,6 +122,7 @@ extension AppModelCore {
                 let notes = AskNote.notes(vault, summaries: summaries, titles: titles, defaultTitled: defaultTitled)
                 var options = AskOptions()
                 options.detectLanguage = detect
+                options.languageHypotheses = hypotheses
                 options.onRetrieved = { first in
                     Task { @MainActor in self?.askRetrieved(first, serial: serial, generation: gen) }
                 }

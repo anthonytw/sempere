@@ -20,6 +20,11 @@ public struct AskOptions: Sendable {
     /// languages worth choosing among (the vault's note languages and the device's, `AskLanguage.candidates`) and answers
     /// the one it is confident of, else nil (the vault's main language is used).
     public var detectLanguage: (@Sendable (_ question: String, _ among: [String]) -> String?)?
+    /// The platform's language recognizer's hypotheses for the question among `among` (NaturalLanguage, constrained to
+    /// them); nil where there is none. Used first, over the languages the model can answer in
+    /// (`AskLanguage.openCandidates`), so a question is recognized by its own words, not only among the vault's and the
+    /// device's languages; a short or unsure question falls back to `detectLanguage` (`AskLanguage.openChoice`).
+    public var languageHypotheses: (@Sendable (_ question: String, _ among: [String]) -> [AskLanguage.Hypothesis])?
     /// The device's language (BCP 47 primary tag), a candidate for the question's language; nil takes `Locale.current`'s.
     public var deviceLanguage: String?
     /// The model call's limit (design §4: 30 s, then `retrieval`).
@@ -36,6 +41,44 @@ public struct AskOptions: Sendable {
 public enum AskLanguage {
     /// The least confidence a hypothesis needs.
     public static let minConfidence = 0.5
+    /// The least confidence the open detection needs (over many languages, so it must be surer).
+    public static let openConfidence = 0.8
+    /// The open detection needs at least this many words of two letters or more that are not names (a capitalized word
+    /// after the first): one-word queries and names ("Kazuo Ishiguro", "Hotel Alfama Patio") say little about a language.
+    public static let openMinWords = 3
+    /// The languages the open detection considers (those the model supports, plus the closed candidates): the languages
+    /// of Apple's on-device model, as primary tags.
+    public static let commonLanguages = ["en", "es", "fr", "de", "it", "pt", "nl", "da", "sv", "nb", "fi", "tr", "pl", "ru",
+                                         "ja", "ko", "zh", "vi"]
+
+    /// A recognizer's hypothesis: a language tag and its probability.
+    public struct Hypothesis: Hashable, Sendable {
+        public var language: String
+        public var confidence: Double
+        public init(language: String, confidence: Double) { self.language = language; self.confidence = confidence }
+    }
+
+    /// The words of `question` the open detection counts: two letters or more, not a capitalized word after the first.
+    public static func wordsForDetection(_ question: String) -> Int {
+        let words = question.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "\u{2019}" }).filter { $0.count >= 2 }
+        return words.enumerated().filter { $0.offset == 0 || !($0.element.first?.isUppercase ?? false) }.count
+    }
+
+    /// The open detection's candidates: `candidates` (the vault's and the device's languages) first, then each of
+    /// `commonLanguages` that `supports` accepts (the model's languages; every one without a model), once each.
+    public static func openCandidates(_ candidates: [String], supports: (String) -> Bool) -> [String] {
+        var out = candidates
+        for l in commonLanguages where !out.contains(l) && supports(l) { out.append(l) }
+        return out
+    }
+
+    /// The question's language from the open detection: the most confident hypothesis among `candidates` with at least
+    /// `openConfidence`, when the question has `openMinWords` words; nil otherwise (the caller falls back to the closed
+    /// detection among the vault's and the device's languages, then to the vault's main language).
+    public static func openChoice(question: String, hypotheses: [Hypothesis], among candidates: [String]) -> String? {
+        guard wordsForDetection(question) >= openMinWords else { return nil }
+        return choose(hypotheses: hypotheses.map { ($0.language, $0.confidence) }, among: candidates, minConfidence: openConfidence)
+    }
 
     /// The device's language as a primary tag, nil when `Locale.current` names none.
     public static var currentDeviceLanguage: String? {
@@ -77,7 +120,8 @@ public enum AskLanguage {
 
     /// The most confident of `hypotheses` (a language tag and its probability) among `candidates`, nil when none reaches
     /// `minConfidence` (the caller falls back to the vault's main language). Ties go to the earlier candidate.
-    public static func choose(hypotheses: [(language: String, confidence: Double)], among candidates: [String]) -> String? {
+    public static func choose(hypotheses: [(language: String, confidence: Double)], among candidates: [String],
+                              minConfidence: Double = AskLanguage.minConfidence) -> String? {
         var best: (language: String, confidence: Double)?   // the candidate's tag
         for c in candidates {
             let p = hypotheses.filter { InsightsLanguage.primary($0.language) == c }.map(\.confidence).max() ?? 0
@@ -149,7 +193,15 @@ public struct AskEngine: Sendable {
         let main = InsightsUpdater.mainLanguage(notes.map(\.input))
         let candidates = AskLanguage.candidates(noteLanguages: notes.filter { !$0.input.deleted }.map(\.input.language),
                                                 device: o.deviceLanguage ?? AskLanguage.currentDeviceLanguage)
-        let lang = InsightsLanguage.primary(o.language ?? o.detectLanguage?(question, candidates) ?? main)
+        // The question's own words first (over every language the model answers in), then the closed choice among the
+        // vault's and the device's languages, then the vault's main language.
+        var open: String?
+        if o.language == nil, let hyps = o.languageHypotheses {
+            let supports: (String) -> Bool = { l in model.map { $0.availability.isAvailable ? $0.supports(language: l) : true } ?? true }
+            let wide = AskLanguage.openCandidates(candidates, supports: supports)
+            open = AskLanguage.openChoice(question: question, hypotheses: hyps(question, wide), among: wide)
+        }
+        let lang = InsightsLanguage.primary(o.language ?? open ?? o.detectLanguage?(question, candidates) ?? main)
 
         // Candidates: live notes inside the filters with text, the most recent 20,000.
         var pool = notes.filter { o.filter.allows($0.input) && !$0.parts.isEmpty }

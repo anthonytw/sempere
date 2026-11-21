@@ -464,6 +464,64 @@ final class AskTests: TempDirTestCase {
         XCTAssertFalse(model.log.contains("translateQuestion"))
     }
 
+    /// A Spanish question on an English device in an English-only vault: the closed choice (the vault's and the device's
+    /// languages) can only say English, so the question's own words decide (open detection over the model's languages),
+    /// and it is translated for searching. Short or unsure questions keep the closed choice.
+    func testTheQuestionsOwnWordsDecideItsLanguageOnAnEnglishDeviceWithEnglishNotes() async throws {
+        let notes = corpusNotes()
+        let vectors = notes.map { ($0, devA, key) }
+        var s = FakeModelProvider.Script(); s.translation = translator()
+        let model = FakeModelProvider(s)
+        var o = AskOptions(); o.deviceLanguage = "en"
+        let closedCalls = LockedList()
+        o.detectLanguage = { _, among in closedCalls.append(among.joined(separator: ",")); return among.first }
+        // A recognizer that is sure of Spanish for Spanish words, of English otherwise.
+        o.languageHypotheses = { question, among in
+            let spanish = question.contains("¿") || question.contains("amortiguamiento")
+            let lang = spanish ? "es" : "en"
+            return among.contains(lang) ? [.init(language: lang, confidence: 0.96), .init(language: "pt", confidence: 0.02)] : []
+        }
+        let r = await (try engine(notes, vectors: vectors, model: model)).ask(Self.spanishQuestion, options: o)
+        XCTAssertEqual(r.lang, "es", "recognized from the question, though neither the notes nor the device are Spanish")
+        XCTAssertEqual(r.searchedAs, q)
+        XCTAssertEqual(r.mode, .answer)
+        XCTAssertTrue(r.answer.allSatisfy { Self.spanish.values.contains($0.text) }, "\(r.answer)")
+        XCTAssertTrue(closedCalls.items.isEmpty, "the closed choice is the fallback only")
+        // Short questions and names: the closed choice (English here), no translation.
+        for short in ["¿amortiguamiento?", "Kazuo Ishiguro", "¿Hotel Alfama Patio?"] {
+            let r2 = await (try engine(notes, vectors: vectors, model: FakeModelProvider(s))).ask(short, options: o)
+            XCTAssertEqual(r2.lang, "en", short)
+            XCTAssertNil(r2.searchedAs, short)
+        }
+        XCTAssertEqual(closedCalls.items.first, "en", "the closed candidates: the notes' language and the device's")
+        // Unsure (below 0.8): the closed choice.
+        var unsure = o
+        unsure.languageHypotheses = { _, _ in [.init(language: "es", confidence: 0.6), .init(language: "pt", confidence: 0.4)] }
+        let r3 = await (try engine(notes, vectors: vectors, model: FakeModelProvider(s))).ask(Self.spanishQuestion, options: unsure)
+        XCTAssertEqual(r3.lang, "en")
+        // A language the model does not support is not offered to the open detection.
+        var noSpanish = s; noSpanish.unsupportedLanguages = ["es"]
+        let offered = LockedList()
+        var o4 = o
+        o4.languageHypotheses = { _, among in offered.append(among.joined(separator: ",")); return [] }
+        _ = await (try engine(notes, vectors: vectors, model: FakeModelProvider(noSpanish))).ask(Self.spanishQuestion, options: o4)
+        XCTAssertEqual(offered.items.count, 1)
+        XCTAssertFalse(offered.items[0].split(separator: ",").contains("es"), offered.items[0])
+        XCTAssertTrue(offered.items[0].split(separator: ",").contains("fr"))
+    }
+
+    func testOpenDetectionNeedsWordsAndConfidence() {
+        XCTAssertEqual(AskLanguage.wordsForDetection("¿Cuántos gramos de harina lleva mi receta?"), 7)
+        XCTAssertEqual(AskLanguage.wordsForDetection("Kazuo Ishiguro"), 1)
+        XCTAssertEqual(AskLanguage.wordsForDetection("Hotel Alfama Patio"), 1)
+        let es = [AskLanguage.Hypothesis(language: "es", confidence: 0.9)]
+        XCTAssertEqual(AskLanguage.openChoice(question: "¿qué libro leímos?", hypotheses: es, among: ["en", "es"]), "es")
+        XCTAssertNil(AskLanguage.openChoice(question: "¿libro?", hypotheses: es, among: ["en", "es"]))
+        XCTAssertNil(AskLanguage.openChoice(question: "¿qué libro leímos?", hypotheses: [.init(language: "es", confidence: 0.7)], among: ["en", "es"]))
+        XCTAssertNil(AskLanguage.openChoice(question: "¿qué libro leímos?", hypotheses: es, among: ["en"]))
+        XCTAssertEqual(AskLanguage.openCandidates(["en", "es"], supports: { $0 != "fr" }).prefix(3), ["en", "es", "de"])
+    }
+
     func testAnAnswerInTheNotesLanguageIsTranslatedIntoTheQuestions() async throws {
         // A Spanish note exists, so the question is searched as it is; the model answers from an English note in English.
         var notes = corpusNotes()
@@ -743,4 +801,12 @@ final class AskTests: TempDirTestCase {
         throw XCTSkip("FoundationModels is not available on this platform")
         #endif
     }
+}
+
+/// A list several closures append to (the engine's callbacks are `@Sendable`).
+final class LockedList: @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: [String] = []
+    func append(_ s: String) { lock.lock(); list.append(s); lock.unlock() }
+    var items: [String] { lock.lock(); defer { lock.unlock() }; return list }
 }
