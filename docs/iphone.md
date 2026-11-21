@@ -19,8 +19,8 @@ column at a time:
    The phone and the iPad draw these rows themselves (`PhoneNotebookRows`): an outline row's tap only
    folds it on the phone's stack, and on the iPad a top-level row with sub-notebooks is a header whose
    tap only folds it; neither selects it, so a notebook holding sub-notebooks could not be opened
-   (PR #27 listed the whole tree unfolded for that; the iPad followed in 1.2.0's owner report). Only
-   the Mac keeps the system outline. A notebook chosen elsewhere is listed, its parents
+   (PR #27 listed the whole tree unfolded for that; the iPad followed in 1.2.0's owner report, the Mac,
+   whose top-level rows are headers too, in 1.3.0's). A notebook chosen elsewhere is listed, its parents
    unfolded,
 2. the note list (`NoteListView`, search field with scopes; New Note stays in the bar, Select, Sort
    and Handwriting move into the overflow menu),

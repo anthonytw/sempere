@@ -153,13 +153,11 @@ final class SidebarDropUITests: XCTestCase {
         require(sidebarRow(app, child), "sidebar row \(child)", in: app)
     }
 
-    /// iPad (1.2.0, owner report): a tap on a top-level notebook that holds sub-notebooks selects it
-    /// instead of only folding it (the system outline made such a row a header); its chevron still folds.
+    /// iPad (1.2.0, owner report) and Mac (1.3.0 build 112, owner check): a tap or click on a top-level
+    /// notebook that holds sub-notebooks selects it instead of only folding it (the system outline made
+    /// such a row a header; the sidebar draws its own rows now); its chevron still folds.
     @MainActor
     func testTappingANotebookWithSubNotebooksOpensIt() throws {
-        #if targetEnvironment(macCatalyst)
-        throw XCTSkip("the Mac keeps the system outline, whose row click selects")
-        #else
         let app = launch()
         defer { app.terminate() }
         require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
@@ -169,13 +167,17 @@ final class SidebarDropUITests: XCTestCase {
         let cell = sidebarCell(app, "Work")
         XCTAssertFalse(sidebarRow(app, "Work/Atlas").exists, "folded at first: Atlas is not listed")
         // On the label, well short of the chevron at the row's end.
-        cell.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+        let label = cell.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
+        #if targetEnvironment(macCatalyst)
+        label.click()
+        #else
+        label.tap()
+        #endif
         let selected = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: cell)
         wait(for: [selected], timeout: 10)
         XCTAssertFalse(sidebarRow(app, "Work/Atlas").exists, "the tap opened Work without unfolding it")
         expand(app, "Work", showing: "Work/Atlas")
         XCTAssertTrue(cell.isSelected, "the chevron unfolded Work and left it selected")
-        #endif
     }
 
     /// A notebook inside another, dragged onto All Notes, goes to the top level with its notes
@@ -270,6 +272,16 @@ final class SidebarDropUITests: XCTestCase {
         XCTAssertTrue(made, "the new notebook is in the sidebar")
     }
 
+    #if targetEnvironment(macCatalyst)
+    /// Right-clicks the sidebar row `path` by coordinates, on its label: the identifier resolves to the row's
+    /// icon, which the clear drag view covers, and on a row with sub-notebooks (a chevron button of its own)
+    /// XCUITest judges that icon not hittable although a pointer there opens the row's menu.
+    @MainActor
+    private func rightClick(_ app: XCUIApplication, _ path: String) {
+        sidebarCell(app, path).coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).rightClick()
+    }
+    #endif
+
     /// Opens the context menu of the notebook row `path` and picks `title`.
     @MainActor
     private func pickFromMenu(_ app: XCUIApplication, row path: String, _ title: String) {
@@ -277,7 +289,7 @@ final class SidebarDropUITests: XCTestCase {
         require(row, "sidebar row \(path)", in: app)
         sleep(1)
         #if targetEnvironment(macCatalyst)
-        row.rightClick()
+        rightClick(app, path)
         let item = app.menuItems[title].firstMatch
         #else
         row.press(forDuration: 1.5)
@@ -324,7 +336,7 @@ final class SidebarDropUITests: XCTestCase {
         // A top-level notebook: no Move to Top Level.
         let work = sidebarRow(app, "Work")
         #if targetEnvironment(macCatalyst)
-        work.rightClick()
+        rightClick(app, "Work")
         XCTAssertTrue(app.menuItems["Move Notebook To…"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.menuItems["Move to Top Level"].firstMatch.exists)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
