@@ -209,9 +209,11 @@ ui_phone=(PhoneCanvasUITests PhoneParityUITests PhoneReadingScrollUITests PhoneC
 # 18 launches: only `scripts/app.sh pseudo` (local-ci.sh --release).
 ui_pseudo=(PseudoLanguageUITests)
 # Run by hand only, never in a gate or sweep: they drive other apps or system UI (Contacts' edit menu, the share sheet by
-# screen points), which a simulator update can change. Run one by name, e.g.
+# screen points, SpringBoard's Spotlight), which a simulator update can change. Run one by name, e.g.
 # `scripts/app.sh test-phone-ui -only-testing:SempereAppUITests/KeyReceiptShareUITests` (iPhone; `test-ui` for the iPad).
-ui_manual=(KeyReceiptShareUITests)
+# SpotlightSystemUITests needs an ad-hoc signed build (append CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-): the
+# simulator's Spotlight lists no items of the unsigned build, whose signature names it `Sempere`, not its bundle id.
+ui_manual=(KeyReceiptShareUITests SpotlightSystemUITests)
 # Screenshot generators (scripts/screenshots.sh): they assert nothing.
 ui_tooling=(ScreenshotTests DocsScreenshotTests InkAfterUndoUITests)
 # ui-lists:end
