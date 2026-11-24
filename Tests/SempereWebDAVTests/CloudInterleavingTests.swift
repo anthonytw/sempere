@@ -363,11 +363,11 @@ final class RacingStore: CloudRecordStore, @unchecked Sendable {
     func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
         try inner.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk)
     }
-    func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult {
+    func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
         if !fired.value, saves.contains(where: { $0.name == name }) {
             fired.value = true
             action()
         }
-        return try inner.modify(zone: zone, saves: saves, deletes: deletes)
+        return try inner.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic)
     }
 }

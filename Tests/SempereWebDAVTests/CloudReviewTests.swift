@@ -191,7 +191,7 @@ final class CloudReviewFixesTests: TempDirTestCase {
             func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
                 try inner.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk)
             }
-            func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult { try inner.modify(zone: zone, saves: saves, deletes: deletes) }
+            func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult { try inner.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic) }
         }
         let r = CloudRecordRemote(store: Stuck(fx.database), zone: fx.zone)
         XCTAssertThrowsError(try r.prepareRun()) {
@@ -296,4 +296,132 @@ final class CloudRecordNoAssetSizeConformanceTests: SyncRemoteConformanceCase {
     func testDownloadsAndResume() throws { try checkDownloadsAndResume() }
     func testErrorClassification() throws { try checkErrorClassification() }
     func testCapabilitiesAreHonest() throws { try checkCapabilitiesAreHonest() }
+}
+
+/// What the C0 spike measured against the real database (design §13), now in the fake, and the transport's answer to it.
+final class CloudSpikeLimitsTests: TempDirTestCase {
+    private let dir = ["notes", "n1"]
+
+    private func device(_ fx: CloudFixture, _ name: String = "A") throws -> CloudRecordRemote {
+        let r = fx.remote(for: name)
+        try r.createBase()
+        _ = try r.makeCollection(["notes"]); _ = try r.makeCollection(dir)
+        return r
+    }
+
+    func testTheFakeEnforcesTheMeasuredLimits() throws {
+        let db = MemoryCloudDatabase()
+        try db.createZone("z")
+        func save(_ i: Int, bytes: Int = 1, name: String? = nil) -> CloudSave {
+            CloudSave(name: name ?? "r\(i)", kind: .file, fields: CloudFields(bytes: Data(count: bytes)), precondition: .none)
+        }
+        // 400 items together, not 401.
+        XCTAssertEqual(try db.modify(zone: "z", saves: (0..<400).map { save($0) }, deletes: []).saves.count, 400)
+        XCTAssertThrowsError(try db.modify(zone: "z", saves: (0..<400).map { save($0) }, deletes: ["x"])) { XCTAssertEqual(($0 as? CloudStoreError)?.code, .limitExceeded) }
+        // About 5 MiB of plain fields in one request (55 x 100 KiB failed), assets not counted.
+        XCTAssertThrowsError(try db.modify(zone: "z", saves: (0..<55).map { save($0, bytes: 100 << 10) }, deletes: [])) { XCTAssertEqual(($0 as? CloudStoreError)?.code, .limitExceeded) }
+        var big = save(0); big.asset = .data(Data(count: 20 << 20)); big.fields.bytes = nil
+        XCTAssertNoThrow(try db.modify(zone: "z", saves: [big], deletes: []))
+        // A record is under 1 MiB, a name under 256 characters.
+        if case .failed(let e) = try db.modify(zone: "z", saves: [save(0, bytes: 1 << 20)], deletes: []).saves[0] { XCTAssertEqual(e.code, .limitExceeded) } else { XCTFail("over 1 MiB") }
+        XCTAssertThrowsError(try db.modify(zone: "z", saves: [save(0, name: String(repeating: "n", count: 256))], deletes: [])) { XCTAssertEqual(($0 as? CloudStoreError)?.code, .invalidArguments) }
+        XCTAssertNoThrow(try db.modify(zone: "z", saves: [save(0, name: String(repeating: "n", count: 255))], deletes: []))
+        // 200 records to a feed page.
+        XCTAssertEqual(try db.fetchChanges(zone: "z", since: nil).changed.count, 200)
+        // An atomic request with a failure applies nothing; the innocent members say so.
+        let ok = save(1000), clash = CloudSave(name: "r1", kind: .file, fields: CloudFields(), precondition: .mustNotExist)
+        let atomic = try db.modify(zone: "z", saves: [ok, clash], deletes: [], atomic: true)
+        guard case .failed(let batch) = atomic.saves[0], batch.code == .batchRequestFailed, case .conflict = atomic.saves[1] else { return XCTFail("\(atomic)") }
+        XCTAssertNil(db.rawRecord(zone: "z", "r1000"))
+        let loose = try db.modify(zone: "z", saves: [ok, clash], deletes: [])
+        guard case .saved = loose.saves[0], case .conflict = loose.saves[1] else { return XCTFail("\(loose)") }
+    }
+
+    func testSavesThatWaitTogetherGoInOneRequestAndConflictsStayWithTheirItem() throws {
+        var limits = MemoryCloudLimits()
+        limits.forceAtomic = true   // the worst case: a failure fails the rest of its request
+        let fx = CloudFixture(limits: limits)
+        let a = try device(fx)
+        XCTAssertTrue(try a.write(dir + ["taken"], .data(Data("t".utf8)), condition: .create))
+        // A slow server: saves that arrive meanwhile wait for the next request.
+        final class Slow: CloudRecordStore, @unchecked Sendable {
+            let inner: MemoryCloudDatabase
+            init(_ i: MemoryCloudDatabase) { inner = i }
+            func account() throws -> CloudAccount { try inner.account() }
+            func createZone(_ zone: String) throws { try inner.createZone(zone) }
+            func deleteZone(_ zone: String) throws { try inner.deleteZone(zone) }
+            func zones() throws -> [String] { try inner.zones() }
+            func fetchDatabaseChanges(since token: CloudChangeToken?) throws -> CloudDatabaseChanges { try inner.fetchDatabaseChanges(since: token) }
+            func fetchChanges(zone: String, since token: CloudChangeToken?) throws -> CloudZoneChanges { try inner.fetchChanges(zone: zone, since: token) }
+            func fetch(zone: String, name: String, payload: Bool) throws -> CloudRecord? { try inner.fetch(zone: zone, name: name, payload: payload) }
+            func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
+                try inner.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk)
+            }
+            func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
+                Thread.sleep(forTimeInterval: 0.15)
+                return try inner.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic)
+            }
+        }
+        let b = a.with(store: Slow(fx.database))
+        let results = Locked([String: Bool]())
+        let group = DispatchGroup()
+        for i in 0..<12 {
+            group.enter()
+            DispatchQueue.global().async {
+                defer { group.leave() }
+                // One of them meets a file that is there; the others are new.
+                let name = i == 5 ? "taken" : "f\(i)"
+                let ok = (try? b.write(self.dir + [name], .data(Data("\(i)".utf8)), condition: .create)) ?? false
+                results.value[name] = ok
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 60), .success)
+        XCTAssertEqual(results.value.filter(\.value).count, 11, "\(results.value)")
+        XCTAssertEqual(results.value["taken"], false)
+        XCTAssertLessThan(b.batcher.requests, 12, "saves that waited together were sent together")
+        XCTAssertGreaterThan(b.batcher.largest, 1)
+        XCTAssertLessThanOrEqual(b.batcher.largest, CloudStoreLimits.maxItemsPerRequest)
+        for i in 0..<12 where i != 5 { XCTAssertNotNil(fx.database.rawRecord(zone: fx.zone, CloudRecordNaming.fileName(dir + ["f\(i)"]))) }
+    }
+
+    func testASmallCreateAndAReplaceAskTheServerNotTheMirror() throws {
+        let fx = CloudFixture()
+        let a = try device(fx)
+        XCTAssertTrue(try a.write(dir + ["f"], .data(Data("one".utf8)), condition: .create))
+        let faults = CloudFaults(seed: 1)
+        fx.database.faults = faults
+        faults.resetCounts()
+        // A create that meets a record learns of it from the conflict, with no fetch.
+        let other = fx.remote(for: "B")
+        _ = try other.makeCollection(["notes"]); _ = try other.makeCollection(dir)
+        faults.resetCounts()
+        XCTAssertFalse(try other.write(dir + ["f"], .data(Data("two".utf8)), condition: .create))
+        XCTAssertNil(faults.requests[.fetch], "the conflict carried the server's record")
+        XCTAssertEqual(faults.requests[.modify], 1)
+        // A replace over a version this device knows is gone is refused without any request.
+        let etag = try XCTUnwrap(try a.stat(dir + ["f"])?.etag)
+        XCTAssertTrue(try a.write(dir + ["f"], .data(Data("three".utf8)), condition: .replace(etag: etag)))
+        faults.resetCounts()
+        XCTAssertFalse(try a.write(dir + ["f"], .data(Data("four".utf8)), condition: .replace(etag: etag)))
+        XCTAssertNil(faults.requests[.modify]); XCTAssertNil(faults.requests[.fetch])
+        // A replace over the right tag is one request.
+        let now = try XCTUnwrap(try a.stat(dir + ["f"])?.etag)
+        faults.resetCounts()
+        XCTAssertTrue(try a.write(dir + ["f"], .data(Data("five".utf8)), condition: .replace(etag: now)))
+        XCTAssertEqual(faults.requests[.modify], 1); XCTAssertNil(faults.requests[.fetch])
+    }
+
+    func testALargeCreateThatWouldLoseDoesNotUpload() throws {
+        var l = CloudRecordRemote.Layout()
+        l.inlineLimit = 50; l.partThreshold = 1000; l.partSize = 400
+        let fx = CloudFixture(layout: l)
+        let a = try device(fx)
+        XCTAssertTrue(try a.write(dir + ["big"], .data(syntheticBlob(2500, seed: 1)), condition: .create))
+        let b = fx.remote(for: "B")
+        _ = try b.makeCollection(["notes"]); _ = try b.makeCollection(dir)
+        let faults = CloudFaults(seed: 1)
+        fx.database.faults = faults
+        XCTAssertFalse(try b.write(dir + ["big"], .data(syntheticBlob(2500, seed: 9)), condition: .create))
+        XCTAssertNil(faults.requests[.modify], "no part was uploaded for a create that could not win")
+    }
 }

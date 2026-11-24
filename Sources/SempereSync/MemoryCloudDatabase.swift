@@ -18,15 +18,19 @@ import Foundation
 /// What `MemoryCloudDatabase` does like the real one, in numbers.
 public struct MemoryCloudLimits: Sendable, Equatable {
     /// Records one `modify` takes (CloudKit: 400).
-    public var maxBatchRecords = 400
+    public var maxBatchRecords = CloudStoreLimits.maxItemsPerRequest
     /// Bytes a record's plain fields take (CloudKit: about 1 MB outside assets).
-    public var maxInlineBytes = 1_000_000
+    public var maxInlineBytes = CloudStoreLimits.maxRecordBytes
     /// Bytes an asset takes (the real limit is documented loosely; phase 0 measures it).
     public var maxAssetBytes: Int64 = 256 << 20
     /// Records a feed page holds.
-    public var pageSize = 400
+    public var pageSize = 200
     /// The size of the pieces `readAsset` hands out.
     public var chunkBytes = 64 << 10
+    /// Plain field bytes one request may carry (CloudKit: about 5 MiB; assets do not count).
+    public var maxRequestBytes = 5 << 20
+    /// Every request is atomic whatever the caller asks (a record that fails fails the rest: `batchRequestFailed`).
+    public var forceAtomic = false
     /// Whether a fetched record says how big its asset is (a real `CKAsset` may not, without downloading it).
     public var reportsAssetSize = true
 
@@ -472,8 +476,10 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
         }
     }
 
-    public func modify(zone name: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult { try modify(zone: name, saves: saves, deletes: deletes, using: faults) }
-    func modify(zone name: String, saves: [CloudSave], deletes: [String], using f: CloudFaults?) throws -> CloudModifyResult {
+    public func modify(zone name: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
+        try modify(zone: name, saves: saves, deletes: deletes, atomic: atomic, using: faults)
+    }
+    func modify(zone name: String, saves: [CloudSave], deletes: [String], atomic: Bool, using f: CloudFaults?) throws -> CloudModifyResult {
         try requireAccount()
         let d = try begin(f, .modify, names: saves.map(\.name) + deletes,
                           paths: saves.map { $0.fields.path ?? "" } + deletes.map { pathHint(name, $0) }, writes: saves.count + deletes.count)
@@ -482,6 +488,15 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
             guard saves.count + deletes.count <= _limits.maxBatchRecords else {
                 throw CloudStoreError(.limitExceeded, "\(saves.count + deletes.count) records in one request")
             }
+            // A name over 255 characters is an exception in CloudKit; the store's contract keeps callers under it.
+            if (saves.map(\.name) + deletes).contains(where: { $0.count > CloudStoreLimits.maxNameLength }) {
+                throw CloudStoreError(.invalidArguments, "a record name over \(CloudStoreLimits.maxNameLength) characters")
+            }
+            // Plain field data in one request (assets do not count).
+            if saves.reduce(0, { $0 + ($1.fields.bytes?.count ?? 0) }) > _limits.maxRequestBytes {
+                throw CloudStoreError(.limitExceeded, "more than \(_limits.maxRequestBytes) bytes of fields in one request")
+            }
+            let snapshot = (records: z.records, deleted: z.deleted, seq: z.seq)
             var outcomes: [CloudSaveOutcome] = []
             for s in saves {
                 if let e = d.recordFailures[s.name] { outcomes.append(.failed(e)); continue }
@@ -496,6 +511,17 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
                     touch(name)
                 }
                 dels.append(.deleted)
+            }
+            // An atomic request that has a failure applies nothing, and the innocent members say so.
+            if atomic || _limits.forceAtomic {
+                let bad = outcomes.contains { if case .saved = $0 { return false } else { return true } }
+                    || dels.contains { if case .deleted = $0 { return false } else { return true } }
+                if bad {
+                    z.records = snapshot.records; z.deleted = snapshot.deleted; z.seq = snapshot.seq
+                    let batch = CloudStoreError(.batchRequestFailed, "another record in the request failed")
+                    outcomes = outcomes.map { if case .saved = $0 { return .failed(batch) } else { return $0 } }
+                    dels = dels.map { if case .deleted = $0 { return .failed(batch) } else { return $0 } }
+                }
             }
             return CloudModifyResult(saves: outcomes, deletes: dels)
         }
@@ -652,7 +678,7 @@ struct MemoryCloudView: CloudRecordStore {
     func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
         try db.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk, using: faults)
     }
-    func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult {
-        try db.modify(zone: zone, saves: saves, deletes: deletes, using: faults)
+    func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
+        try db.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic, using: faults)
     }
 }

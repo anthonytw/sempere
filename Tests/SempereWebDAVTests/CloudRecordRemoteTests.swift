@@ -716,6 +716,7 @@ final class CloudRecordRemoteTests: TempDirTestCase {
             Row(code: .changeTokenExpired, transient: true, status: .quiet),
             Row(code: .assetFileNotFound, transient: true, status: .quiet),
             Row(code: .assetNotAvailable, transient: true, status: .quiet),
+            Row(code: .batchRequestFailed, transient: true, status: .quiet),
             Row(code: .quotaExceeded, transient: true, status: .problem(.storageFull)),
             Row(code: .zoneNotFound, transient: false, status: .problem(.zoneGone)),
             Row(code: .userDeletedZone, transient: false, status: .problem(.zoneDeletedByUser)),
@@ -913,7 +914,7 @@ final class InterposingStore: CloudRecordStore, @unchecked Sendable {
     func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
         try inner.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk)
     }
-    func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult {
-        try inner.modify(zone: zone, saves: saves, deletes: deletes)
+    func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
+        try inner.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic)
     }
 }

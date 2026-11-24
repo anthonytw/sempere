@@ -40,7 +40,7 @@ extension CloudRecordError: TransientRemoteError {
         case .store(let e):
             switch e.code {
             case .networkUnavailable, .networkFailure, .serverResponseLost, .serviceUnavailable, .requestRateLimited, .zoneBusy,
-                 .assetFileNotFound, .assetNotAvailable, .quotaExceeded, .changeTokenExpired, .limitExceeded, .serverRecordChanged:
+                 .assetFileNotFound, .assetNotAvailable, .quotaExceeded, .changeTokenExpired, .limitExceeded, .serverRecordChanged, .batchRequestFailed:
                 return true
             default:
                 return false
@@ -160,7 +160,7 @@ public enum CloudStatus: Sendable, Equatable {
         switch e.code {
         case .networkUnavailable: return .offline
         case .networkFailure, .serverResponseLost, .serviceUnavailable, .zoneBusy, .assetFileNotFound, .assetNotAvailable,
-             .changeTokenExpired, .limitExceeded, .serverRecordChanged, .unknownItem:
+             .changeTokenExpired, .limitExceeded, .serverRecordChanged, .unknownItem, .batchRequestFailed:
             return .quiet
         case .requestRateLimited:
             return e.retryAfterSeconds.map { .throttled(until: now.addingTimeInterval($0)) } ?? .quiet

@@ -194,6 +194,8 @@ public enum CloudErrorCode: String, Sendable, Hashable, CaseIterable {
     case notAuthenticated
     case incompatibleVersion
     case badContainer, missingEntitlement, permissionFailure, invalidArguments, internalError, serverRejectedRequest
+    /// An atomic request failed because another record in it did: this record was fine, ask again without the other.
+    case batchRequestFailed
     /// A different iCloud account than the one the target was made with.
     case accountChanged
 }
@@ -241,7 +243,30 @@ public protocol CloudRecordStore: Sendable {
     /// - Throws: `.assetNotAvailable`, `.assetFileNotFound`, `.unknownItem`; what `chunk` throws, as it is.
     func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws
 
-    /// Saves and deletes in one request. A whole-request failure throws; each record's own result is in the
-    /// answer. Deletes ignore preconditions (CloudKit has no conditional delete, design §2.4).
-    func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult
+    /// Saves and deletes in one request: at most `CloudStoreLimits.maxItemsPerRequest` of them together, at most
+    /// `CloudStoreLimits.maxInlineBytesPerRequest` of plain field data (assets do not count), record names at most
+    /// `CloudStoreLimits.maxNameLength` characters (a longer one is an exception in CloudKit). A whole-request failure
+    /// throws; each record's own result is in the answer. With `atomic`, one record failing fails the others
+    /// (`batchRequestFailed`) and nothing is applied; without it, each record has its own result. Deletes ignore
+    /// preconditions (CloudKit has no conditional delete, design §2.4).
+    func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult
+}
+
+extension CloudRecordStore {
+    /// `modify` with each record's own result (not atomic).
+    public func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult {
+        try modify(zone: zone, saves: saves, deletes: deletes, atomic: false)
+    }
+}
+
+/// What the private database accepts (measured against the real one, design §13).
+public enum CloudStoreLimits {
+    /// Saves and deletes together in one request.
+    public static let maxItemsPerRequest = 400
+    /// Plain (non-asset) field bytes in one request: the real limit is about 5 MiB; requests stay under 4.
+    public static let maxInlineBytesPerRequest = 4 << 20
+    /// A record's own plain fields stay under 1 MiB.
+    public static let maxRecordBytes = (1 << 20) - 1
+    /// A record name over 255 characters raises an exception in CloudKit.
+    public static let maxNameLength = 255
 }

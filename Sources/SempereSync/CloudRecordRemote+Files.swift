@@ -68,6 +68,25 @@ extension CloudRecordRemote {
         return f.size == 0 ? .empty : .asset
     }
 
+    // MARK: Requests that group (design §13: a save takes 0.4 s and a zone takes about 2.5 a second, so saves that are
+    // waiting at the same time go in one request of at most 400 items and 4 MiB of fields)
+
+    /// One save, grouped with the others that wait with it; its own result.
+    func submitSave(_ save: CloudSave) throws -> CloudSaveOutcome {
+        do {
+            let o = try batcher.submit(save: save) { saves, deletes in
+                try self.call { try self.store.modify(zone: self.zone, saves: saves, deletes: deletes, atomic: false) }
+            }
+            switch o {
+            case .saved(let r): return .saved(r)
+            case .conflict(let r): return .conflict(r)
+            case .deleted: return .failed(CloudStoreError(.internalError, "a delete answered a save"))
+            }
+        } catch let e as CloudStoreError {
+            throw map(e)
+        }
+    }
+
     // MARK: Reads
 
     /// Streams a live file's bytes, checked against the record's SHA-256, and returns its change tag. A record that
@@ -275,11 +294,10 @@ extension CloudRecordRemote {
             }
             let save = CloudSave(name: name, kind: .part, fields: CloudFields(schema: CloudSchema.current, sha256: p.partHashes[i], size: length),
                                  asset: p.range(offset, length), precondition: .none)
-            let result = try perform { try store.modify(zone: zone, saves: [save], deletes: []) }
-            switch result.saves.first {
-            case .saved(let r)?: noteSaved(part: r, name: name)
-            case .failed(let e)?: throw map(e)
-            default: throw CloudRecordError.store(CloudStoreError(.serverRecordChanged, "part \(i)"))
+            switch try submitSave(save) {
+            case .saved(let r): noteSaved(part: r, name: name)
+            case .failed(let e): throw map(e)
+            case .conflict: throw CloudRecordError.store(CloudStoreError(.serverRecordChanged, "part \(i)"))
             }
         }
     }
@@ -296,8 +314,7 @@ extension CloudRecordRemote {
         let name = CloudRecordNaming.fileName(path)
         var save = CloudSave(name: name, kind: .file, fields: fields(path, p), precondition: dropped(precondition))
         if p.inline == nil, p.partCount == 0 { save.asset = p.range(0, p.size) }
-        let result = try perform { try store.modify(zone: zone, saves: [save], deletes: []) }
-        guard let outcome = result.saves.first else { throw CloudRecordError.corrupt(path: shown(path), reason: "no answer to a save") }
+        let outcome = try submitSave(save)
         if case .saved(let r) = outcome { noteServerTime(r.modified) }
         if case .saved(let r) = outcome, CloudRecordNaming.isValidTag(r.changeTag), !Self.mutations.contains(.ownWritesNotMirrored) {
             core.with { m in
@@ -325,30 +342,51 @@ extension CloudRecordRemote {
         func parts() throws {
             if !partsDone { try uploadParts(name, prepared); partsDone = true }
         }
+        // A small create asks the server straight away (`.mustNotExist`): a record that is there comes back with its tag and
+        // fields in the conflict, so nothing is fetched first. A replace over the tag it names needs no fetch either. Only a
+        // create that must upload an asset or parts looks first, so a lost race does not cost the upload (design §13).
+        let fastCreate = condition == .create && prepared.inline != nil && !Self.mutations.contains(.createOverTombstoneRefused)
+        let fastReplace = !Self.mutations.contains(.replaceIgnoresTag)
+        var known: CloudMirror.File??   // nil: fetch; .some(x): the server's record is x (nil: there is none)
+        if fastCreate { known = .some(nil) }
         for _ in 0..<4 {
-            let current = try fetchFile(path, payload: false)?.file
-            if let f = current, f.isNewer { throw CloudRecordError.newerSchema(path: path.joined(separator: "/")) }
             let precondition: CloudPrecondition
+            var current: CloudMirror.File?
+            func server() throws -> CloudMirror.File? {
+                if let k = known { known = nil; return k }
+                return try fetchFile(path, payload: false)?.file
+            }
             switch condition {
+            case .replace(let etag) where fastReplace:
+                guard etag.count > 2, etag.hasPrefix("\""), etag.hasSuffix("\"") else { return false }
+                // The mirror already knows it moved on (or that it is gone): the answer is no, and nothing is uploaded.
+                if let m = core.with({ $0.file(path) }), Self.quote(m.tag) != etag || m.tomb { return false }
+                precondition = .ifTag(String(etag.dropFirst().dropLast()))
+                current = nil
             case .create:
+                current = try server()
                 if let f = current {
+                    if f.isNewer { throw CloudRecordError.newerSchema(path: path.joined(separator: "/")) }
                     if f.tomb {
                         if Self.mutations.contains(.createOverTombstoneRefused) { return false }
                         precondition = .ifTag(f.tag)
                     } else if Self.mutations.contains(.createReplacesExisting) {
                         precondition = .ifTag(f.tag)
                     } else {
-                        // There already (a create that lost its answer is settled in `commit`).
-                        return false
+                        return false   // there already (the engine reads it and finds its own bytes if it was its own)
                     }
                 } else {
                     precondition = .mustNotExist
                 }
             case .replace(let etag):
+                current = try server()
                 guard let f = current, !f.tomb else { return false }
+                if f.isNewer { throw CloudRecordError.newerSchema(path: path.joined(separator: "/")) }
                 if Self.quote(f.tag) != etag, !Self.mutations.contains(.replaceIgnoresTag) { return false }
                 precondition = .ifTag(f.tag)
             case .unconditional:
+                current = try server()
+                if let f = current, f.isNewer { throw CloudRecordError.newerSchema(path: path.joined(separator: "/")) }
                 precondition = current.map { .ifTag($0.tag) } ?? .mustNotExist
             }
             try parts()
@@ -357,7 +395,13 @@ extension CloudRecordRemote {
                 // The replaced version's parts are named by nothing now; they stay for the sweep (a reader of the old
                 // version may be between its record and its parts).
                 return true
-            case .conflict: continue
+            case .conflict(let found):
+                if case .replace = condition, fastReplace { return false }
+                if fastCreate, let r = found, case .file(let f) = CloudMirror.ingest(r) {
+                    core.with { $0.upsert(f) }
+                    known = .some(f)
+                }
+                continue
             case .failed(let e): throw map(e)
             }
         }
@@ -369,8 +413,7 @@ extension CloudRecordRemote {
     private func tombstone(_ path: [String], _ f: CloudMirror.File) throws -> CloudSaveOutcome {
         let save = CloudSave(name: f.name, kind: .file, fields: CloudFields(schema: CloudSchema.current, path: path.joined(separator: "/"), tomb: 1),
                              precondition: dropped(.ifTag(f.tag)))
-        let result = try perform { try store.modify(zone: zone, saves: [save], deletes: []) }
-        guard let outcome = result.saves.first else { throw CloudRecordError.corrupt(path: shown(path), reason: "no answer to a save") }
+        let outcome = try submitSave(save)
         if case .saved(let r) = outcome { noteServerTime(r.modified) }
         if case .saved(let r) = outcome, CloudRecordNaming.isValidTag(r.changeTag), !Self.mutations.contains(.ownWritesNotMirrored) {
             core.with { m in

@@ -109,6 +109,8 @@ public struct CloudRecordRemote: SyncRemote {
     public var interrupt: (@Sendable () -> (any Error)?)?
     let store: any CloudRecordStore
     let core: CloudRemoteCore
+    /// Saves waiting together go in one request (`CloudBatcher`); one per store, so a copy through another store has its own.
+    let batcher = CloudBatcher()
     let now: @Sendable () -> Date
     let pause: (@Sendable (TimeInterval) -> Void)?
 
