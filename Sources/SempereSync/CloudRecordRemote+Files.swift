@@ -359,8 +359,10 @@ extension CloudRecordRemote {
             switch condition {
             case .replace(let etag) where fastReplace:
                 guard etag.count > 2, etag.hasPrefix("\""), etag.hasSuffix("\"") else { return false }
-                // The mirror already knows it moved on (or that it is gone): the answer is no, and nothing is uploaded.
-                if let m = core.with({ $0.file(path) }), Self.quote(m.tag) != etag || m.tomb { return false }
+                // An upload is not started for a replace that cannot win: the server is asked first (the mirror may be behind).
+                if prepared.inline == nil {
+                    guard let f = try fetchFile(path, payload: false)?.file, !f.tomb, Self.quote(f.tag) == etag else { return false }
+                }
                 precondition = .ifTag(String(etag.dropFirst().dropLast()))
                 current = nil
             case .create:

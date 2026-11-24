@@ -398,12 +398,12 @@ final class CloudSpikeLimitsTests: TempDirTestCase {
         XCTAssertFalse(try other.write(dir + ["f"], .data(Data("two".utf8)), condition: .create))
         XCTAssertNil(faults.requests[.fetch], "the conflict carried the server's record")
         XCTAssertEqual(faults.requests[.modify], 1)
-        // A replace over a version this device knows is gone is refused without any request.
+        // A replace over a version that is gone is one request, answered by the conflict.
         let etag = try XCTUnwrap(try a.stat(dir + ["f"])?.etag)
         XCTAssertTrue(try a.write(dir + ["f"], .data(Data("three".utf8)), condition: .replace(etag: etag)))
         faults.resetCounts()
         XCTAssertFalse(try a.write(dir + ["f"], .data(Data("four".utf8)), condition: .replace(etag: etag)))
-        XCTAssertNil(faults.requests[.modify]); XCTAssertNil(faults.requests[.fetch])
+        XCTAssertEqual(faults.requests[.modify], 1); XCTAssertNil(faults.requests[.fetch])
         // A replace over the right tag is one request.
         let now = try XCTUnwrap(try a.stat(dir + ["f"])?.etag)
         faults.resetCounts()
