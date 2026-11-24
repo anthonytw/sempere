@@ -40,11 +40,13 @@ final class EpochTarget: @unchecked Sendable {
         let target = EpochTarget(name)
         target.inspector = t.inspector
         let counter = Locked(UInt64(0))
-        target.reach = { _ in
+        target.reach = { device in
             let p = faults()
-            guard p > 0 else { return t.remote }
+            // A transport whose devices keep state of their own (a CloudKit mirror) gives each device its remote.
+            guard p > 0 else { return t.forDevice?(device) ?? t.remote }
             counter.value &+= 1
-            return t.faulty(seed &* 1_000_003 &+ counter.value, .all(p))
+            let s = seed &* 1_000_003 &+ counter.value
+            return t.faultyForDevice?(device, s, .all(p)) ?? t.faulty(s, .all(p))
         }
         return target
     }

@@ -26,19 +26,25 @@ public enum CloudRecordNaming {
     /// `f-` + the path's hash: 66 ASCII characters whatever the path.
     public static func fileName(_ path: [String]) -> String { "f-" + pathHash(path) }
 
-    /// `p-<file record's hash>-<n>`.
-    public static func partName(fileName: String, index: Int) -> String { "p-" + String(fileName.dropFirst(2)) + "-\(index)" }
+    /// `p-<file record's hash>-<first 8 bytes of the file's SHA-256, hex>-<n>`. The parts of one content have one set
+    /// of names, so a cut upload resumes by name; a replacement's parts have other names, so a replace that is cut
+    /// (or loses an answer) never touches the parts of the version still in place.
+    public static func partName(fileName: String, fileSha: Data, index: Int) -> String {
+        "p-" + String(fileName.dropFirst(2)) + "-" + Hex.encode(fileSha.prefix(8)) + "-\(index)"
+    }
 
-    /// The hash and index a part name carries; nil for any other name.
-    public static func parsePartName(_ name: String) -> (fileHash: String, index: Int)? {
+    /// The path hash, content generation (16 hex digits) and index a part name carries; nil for any other name.
+    public static func parsePartName(_ name: String) -> (fileHash: String, gen: String, index: Int)? {
         let u = Array(name.utf8)
-        guard u.count > 67, u[0] == UInt8(ascii: "p"), u[1] == UInt8(ascii: "-"), u[66] == UInt8(ascii: "-") else { return nil }
+        guard u.count >= 85, u.count <= 84 + 9, u[0] == UInt8(ascii: "p"), u[1] == UInt8(ascii: "-"),
+              u[66] == UInt8(ascii: "-"), u[83] == UInt8(ascii: "-") else { return nil }
         let hash = String(decoding: u[2..<66], as: UTF8.self)
-        guard isHex64(hash), u.count <= 66 + 1 + 9 else { return nil }
-        let digits = u[67...]
+        let gen = String(decoding: u[67..<83], as: UTF8.self)
+        guard isHex64(hash), gen.utf8.count == 16, gen.utf8.allSatisfy({ ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66) }) else { return nil }
+        let digits = u[84...]
         guard digits.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }), digits.first != 0x30 || digits.count == 1,
               let n = Int(String(decoding: digits, as: UTF8.self)) else { return nil }
-        return (hash, n)
+        return (hash, gen, n)
     }
 
     /// The hash of a `f-<hex>` file record name; nil for any other name.
@@ -107,6 +113,8 @@ struct CloudMirror: Equatable {
     struct Part: Equatable {
         var name: String
         var fileHash: String
+        /// The content generation: the first 8 bytes of the file's SHA-256, hex.
+        var gen: String
         var index: Int
         var tag: String
         var modified: Int64
@@ -269,7 +277,7 @@ struct CloudMirror: Equatable {
         switch r.kind {
         case .part:
             guard let p = CloudRecordNaming.parsePartName(r.name) else { return .skipped(.name) }
-            return .part(Part(name: r.name, fileHash: p.fileHash, index: p.index, tag: r.changeTag, modified: modified))
+            return .part(Part(name: r.name, fileHash: p.fileHash, gen: p.gen, index: p.index, tag: r.changeTag, modified: modified))
         case .file:
             if r.name == CloudRecordNaming.zoneInfoName {
                 guard let s = r.fields.schema, s >= 1 else { return .skipped(.schema) }
@@ -378,7 +386,7 @@ struct CloudMirror: Equatable {
                 guard let p = CloudRecordNaming.parsePartName(cols[1]), CloudRecordNaming.isValidTag(cols[2]), let mod = Int64(cols[3]) else {
                     throw bad("part row")
                 }
-                mirror.upsert(Part(name: cols[1], fileHash: p.fileHash, index: p.index, tag: cols[2], modified: mod))
+                mirror.upsert(Part(name: cols[1], fileHash: p.fileHash, gen: p.gen, index: p.index, tag: cols[2], modified: mod))
             default:
                 throw bad("unknown row")
             }

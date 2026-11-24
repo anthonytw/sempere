@@ -71,7 +71,7 @@ public final class CloudFaults: @unchecked Sendable {
         case recordError(CloudStoreError)
     }
 
-    private struct Scripted { var op: CloudOp; var name: String?; var times: Int; var fault: Fault }
+    private struct Scripted { var op: CloudOp; var name: String?; var skip: Int; var times: Int; var fault: Fault }
     /// What `decide` chose for one operation.
     struct Decision {
         var kind: Kind?
@@ -115,9 +115,10 @@ public final class CloudFaults: @unchecked Sendable {
         set { withLock { _eligible = newValue } }
     }
 
-    /// Scripts the next `times` operations `op` (on the record `name` when given: a `modify` naming it) to fail.
-    public func script(_ op: CloudOp, name: String? = nil, times: Int = 1, _ fault: Fault) {
-        withLock { scripts.append(Scripted(op: op, name: name, times: times, fault: fault)) }
+    /// Scripts operations `op` (on the record `name` when given: a `modify` naming it) to fail: `times` of them, after
+    /// `after` matching ones went through.
+    public func script(_ op: CloudOp, name: String? = nil, after: Int = 0, times: Int = 1, _ fault: Fault) {
+        withLock { scripts.append(Scripted(op: op, name: name, skip: after, times: times, fault: fault)) }
     }
 
     public func clearScripts() { withLock { scripts = [] } }
@@ -178,6 +179,7 @@ public final class CloudFaults: @unchecked Sendable {
             // A script first.
             for i in scripts.indices where scripts[i].op == op && scripts[i].times > 0 {
                 if let n = scripts[i].name, !names.contains(n) { continue }
+                if scripts[i].skip > 0 { scripts[i].skip -= 1; continue }
                 scripts[i].times -= 1
                 _scripted += 1
                 var d = Decision()

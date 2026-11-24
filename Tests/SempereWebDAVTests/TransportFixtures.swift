@@ -140,6 +140,7 @@ final class CloudFixture: @unchecked Sendable {
     init(layout: CloudRecordRemote.Layout = CloudRecordRemote.Layout(), limits: MemoryCloudLimits = MemoryCloudLimits(),
          zone: String = "sempere-" + UUID().uuidString.lowercased()) {
         database = MemoryCloudDatabase(limits: limits)
+        database.clock = { [clock] in clock.value }
         self.zone = zone
         self.layout = layout
     }
@@ -152,6 +153,8 @@ final class CloudFixture: @unchecked Sendable {
         var layout = self.layout
         // The inspector is a reader with no run model: it lists what is there now.
         layout.refreshesBeforeListing = name == "inspector"
+        // ...and never changes what it looks at: tombstones stay for the devices' sweeps.
+        if name == "inspector" { layout.sweepLimit = 0 }
         let r = CloudRecordRemote(store: database, zone: zone, stateDirectory: stateRoot?.appendingPathComponent(name), layout: layout,
                                   now: { clock.value }, pause: { _ in })
         devices[name] = r

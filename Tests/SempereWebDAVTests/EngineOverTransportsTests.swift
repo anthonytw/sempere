@@ -41,7 +41,7 @@ class EngineScenarioCase: SyncTestCase {
         o.firstPullIdentities = [identity]
         tune(&o)
         edit(&o)
-        return try SyncEngine(directory: dir(name), vault: v, remote: remote ?? t.remote,
+        return try SyncEngine(directory: dir(name), vault: v, remote: remote ?? t.forDevice?(name) ?? t.remote,
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 
@@ -608,4 +608,25 @@ final class BeforeWriteRemote: SyncRemote, @unchecked Sendable {
     func createBase() throws { try inner.createBase() }
     func delete(_ path: [String], ifETag: String?) throws -> Bool { try inner.delete(path, ifETag: ifETag) }
     func missingCollectionError(_ path: [String]) -> any Error { inner.missingCollectionError(path) }
+}
+
+/// The engine over CloudKit records (`CloudRecordRemote` on `MemoryCloudDatabase`): each device keeps a mirror of its own.
+final class EngineOverCloudTests: EngineScenarioCase {
+    override func transport() throws -> TransportUnderTest { .cloud() }
+    func testFirstUploadPullAndIdle() throws { try scenarioFirstUploadPullAndIdle() }
+    func testConcurrentDeltasConverge() throws { try scenarioConcurrentDeltasConverge() }
+    func testNeverOverwritesExistingFiles() throws { try scenarioNeverOverwritesExistingFiles() }
+    func testHostileFileIsQuarantined() throws { try scenarioHostileFileIsQuarantined() }
+    func testCompactionDeletesPropagate() throws { try scenarioCompactionDeletesPropagate() }
+    func testUnexplainedRemoteDeletionIsRestored() throws { try scenarioUnexplainedRemoteDeletionIsRestored() }
+    func testWipedRemoteNeverDeletesHistory() throws { try scenarioWipedRemoteNeverDeletesHistory() }
+    func testRefusesAnotherVault() throws { try scenarioRefusesAnotherVault() }
+    func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
+    func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
+    func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testRevisionWaitsForItsBlobs() throws { try scenarioRevisionWaitsForItsBlobs() }
+    func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
+    func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
+    func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }
+    func testQuarantineKeepsEveryCopy() throws { try scenarioQuarantineKeepsEveryCopy() }
 }
