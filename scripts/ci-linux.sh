@@ -164,6 +164,7 @@ job_static() {
 }
 
 in_docker() {   # JOB or JOB:ARG (static:x86_64)
+  source scripts/container.sh; container_setup || exit 1
   command -v docker >/dev/null || { echo "error: need Docker" >&2; exit 1; }
   local job=${1%%:*} arg="" image=$TEST_IMAGE caps=()
   [[ $1 == *:* ]] && arg=${1#*:}

@@ -260,9 +260,19 @@ final_cleanup() {
   local j
   for j in $(jobs -p 2>/dev/null); do kill_tree "$j"; done
   run_tmp_end
+  container_teardown 2>/dev/null || true
 }
 trap final_cleanup EXIT
 trap on_signal INT TERM
+# The Linux steps' containers run in the Lima VM on a Mac (scripts/container.sh); the export reaches ci-linux.sh and lane_stop.
+# After the traps, so a failure here still posts an error and removes the temp folder.
+for st in "${steps[@]}" ${lane[@]+"${lane[@]}"}; do
+  if [[ $st == linux || $st == webdav || $st == static ]]; then
+    source scripts/container.sh
+    container_setup || { status "$context" error "no container engine on $host"; exit 1; }
+    break
+  fi
+done
 if [[ ${#lane[@]} -gt 0 ]]; then
   rm -f build/local-ci/lane.result
   echo "local-ci: ${lane[*]} run in Docker beside the Mac steps (logs build/local-ci/<step>.log, result at the end)"

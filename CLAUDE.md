@@ -11,7 +11,7 @@ swift build                 # macOS or Linux
 swift test --skip 'Benchmarks\.'   # every target but the benchmarks (`just test`); a gate never runs them
 swift test --filter AgeTests
 scripts/bench.sh [MODULE]   # the benchmark targets (`just bench`; docs/ci.md "Benchmarks"): on a schedule and before a release
-scripts/test-linux.sh       # on a Mac with Docker, or in a cloud VM: run tests in swift:6.4-noble
+scripts/test-linux.sh       # on a Mac (a Lima VM, started by itself), or in a cloud VM: run tests in swift:6.4-noble
 scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 27+ simulator
 scripts/app.sh test -only-testing:SempereAppTests/FooTests   # one suite (any test-* subcommand)
 scripts/app.sh catalyst     # iPad app: unsigned Mac Catalyst build
@@ -132,7 +132,7 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   CLI-only release (`release-prep --no-app`) needs no sweep, only `local/cli-suite` on the tagged commit
   (`scripts/local-ci.sh --cli`).
 - **Linux jobs**: `scripts/ci-linux.sh` (`test`, `webdav`, `static`); the workflow runs `test` and `webdav` in the pinned
-  swift image, and `local-ci.sh` runs them in Docker (hash skipping on both). Nothing runs on Gitea.
+  swift image, and `local-ci.sh` runs them in Docker (on a Mac in a Lima VM, `scripts/container.sh`; hash skipping on both). Nothing runs on Gitea.
 
 ### Parallel agents
 

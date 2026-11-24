@@ -465,6 +465,30 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   nothing a test job wrote can reach a release binary. If a Linux build fails in a way a clean build would
   not, `docker volume rm` the volume and re-run.
 
+## Containers on a Mac
+
+Every script that runs `docker` (`ci-linux.sh docker`, `test-linux.sh`, `local-ci.sh`'s Linux lane, `release-build.sh`,
+`release-build-all.sh`) sources `scripts/container.sh` and calls `container_setup`. On a Mac that creates (first run: a few
+minutes), starts and points `DOCKER_HOST` at the Lima VM `sempere-docker` (`scripts/lima/sempere-docker.yaml`: Lima's `docker`
+template's blocks copied in, rootless dockerd, vz with Rosetta, 6 CPUs, 8 GiB, 40 GiB; needs Lima 2.0+ and the docker CLI). Lima is CLI-only and runs as the calling user, so
+a headless account builds without Docker Desktop's GUI login. On Linux nothing changes, and on a Mac neither does a set
+`DOCKER_HOST` or `SEMPERE_CONTAINER=docker` (Docker Desktop, any context). `SEMPERE_LIMA_VM=NAME` picks another VM.
+
+- **Mounts.** The VM sees host paths at the same path, so `-v "$PWD:/src"` is unchanged. It mounts `~/dev` writable (every
+  checkout and worktree: `dev/sempere`, `dev/sempere-wt-*`; never all of `$HOME`), `~/.cache/sempere-ci-pass` writable (the
+  pass records) and `~/.cache/sempere` read-only (the SDK archive), and nothing else (the yaml does not inherit Lima's default
+  `$HOME` read-only mount; `SEMPERE_CI_PASS_DIR` and `SEMPERE_SDK_CACHE` outside these fail the mount check). A checkout elsewhere fails with the fix; edit the mounts
+  in the yaml and `limactl stop sempere-docker && limactl delete sempere-docker` (the next run recreates it).
+  Files written by a container belong to the host user.
+- **Resource hygiene.** A VM the script started is stopped when the last sempere script using it exits (pid + start-time
+  files in `~/.cache/sempere-lima/VM/users`, setup and teardown serialized by one lock); one already running is left alone;
+  `SEMPERE_LIMA_KEEP=1` never stops it. A starter killed with SIGKILL leaves its "started" marker, so the next run's exit stops the VM.
+- **Rosetta.** `--platform linux/amd64` containers run through Rosetta, not qemu, and are native-speed for most work. It does
+  not fix Ubuntu 26.04's x86_64 `tar` ("Cannot stat: Function not implemented", seen under Docker Desktop's qemu):
+  `tar -cf - /etc/passwd` (an absolute path argument) fails, while `tar -C /etc -cf - passwd` and a directory
+  walk with `-C DIR .` work, as does Ubuntu 24.04's `tar`. Inside an amd64 container use relative paths with `-C`. `tar xzf` of the release tarball in `ubuntu:26.04` x86_64 fails the same way
+  ("Cannot open"), which `release-build.sh` reports as a warning only, as it always did for the emulated architecture.
+
 ## Cleaning up after a run
 
 `scripts/app.sh` and `scripts/local-ci.sh` leave the Mac as they found it (EXIT traps, so a failed step, `set -e`, SIGINT and
