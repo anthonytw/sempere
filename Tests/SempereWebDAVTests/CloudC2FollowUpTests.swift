@@ -104,12 +104,18 @@ final class CloudC2FollowUpTests: TempDirTestCase {
         let gate = DispatchSemaphore(value: 0)
         let group = DispatchGroup()
         let ok = Mut(0)
+        // The first request, whoever's thread sends it, waits until every other save has queued behind it, so the next
+        // request is the whole rest (7 > 3) on any scheduler; a fixed "item 0 sends first" was not true on a slow runner.
+        let first = Mut(true), queued = Mut(0)
         for i in 0..<8 {
             group.enter()
             DispatchQueue.global().async {
                 defer { group.leave() }
+                queued.mutate { $0 += 1 }
                 let r = try? batcher.submit(save: cloudItem("r\(i)")) { saves, deletes in
-                    if i == 0 { gate.wait() }
+                    var isFirst = false
+                    first.mutate { isFirst = $0; $0 = false }
+                    if isFirst { gate.wait() }
                     sizes.mutate { $0.append(saves.count) }
                     // Over 3 records the commit is too big: every record of the request fails alone.
                     if saves.count > 3 { return CloudModifyResult(saves: saves.map { _ in .failed(CloudStoreError(.limitExceeded, "commit size")) }, deletes: []) }
@@ -117,9 +123,9 @@ final class CloudC2FollowUpTests: TempDirTestCase {
                 }
                 if case .saved? = r { ok.mutate { $0 += 1 } }
             }
-            Thread.sleep(forTimeInterval: i == 0 ? 0.05 : 0.005)
         }
-        Thread.sleep(forTimeInterval: 0.1)
+        while queued.value < 8 { Thread.sleep(forTimeInterval: 0.01) }
+        Thread.sleep(forTimeInterval: 0.2)   // the last ones go from `queued` into the batcher's queue
         gate.signal()
         group.wait()
         XCTAssertEqual(ok.value, 8, "every save arrived; sizes asked: \(sizes.value)")
