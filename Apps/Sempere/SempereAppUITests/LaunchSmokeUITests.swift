@@ -223,6 +223,9 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("webdavConnectSheet", titled: "Add WebDAV Server", "Add WebDAV Server sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "add webdav server sheet")
+        // iCloud (CloudKit) comes first (docs/design/1.4-cloudkit.md §9); this build is not signed for the container, so only
+        // its presence is checked, never an add.
+        require(app.descendants(matching: .any)["syncTargetsAddCloudKit"].firstMatch, "Add iCloud (CloudKit) button", in: app)
         let details = app.descendants(matching: .any)["syncTargetsDetails"].firstMatch
         require(details, "Details and Repair link", in: app)
         details.click()
@@ -240,6 +243,12 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("openVaultSheet", titled: "Open Vault", "Open Vault sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "open vault sheet")
+        let icloud = app.buttons["openICloud"].firstMatch
+        require(icloud, "Open from iCloud… button", in: app)
+        icloud.click()
+        requireSheet("openFromICloudSheet", titled: "Open from iCloud", "Open from iCloud sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "open from iCloud sheet")
         let webdav = app.buttons["openWebDAV"].firstMatch
         require(webdav, "Open from WebDAV… button", in: app)
         webdav.click()

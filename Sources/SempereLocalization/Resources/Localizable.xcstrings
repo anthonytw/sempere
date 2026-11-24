@@ -1453,6 +1453,19 @@
         }
       }
     },
+    "%lld files, %@" : {
+      "comment" : "Vault Details of an iCloud target: files in the zone and their size",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archivos, %@"
+          }
+        }
+      }
+    },
     "%lld items, %@" : {
       "comment" : "Settings ▸ Storage: number of unused attachments and their total size",
       "extractionState" : "manual",
@@ -3780,6 +3793,18 @@
         }
       }
     },
+    "A WebDAV server, such as one you run yourself." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un servidor WebDAV, por ejemplo uno que gestionas tú."
+          }
+        }
+      }
+    },
     "A backup copies the encrypted vault to another place. It helps when a folder is lost or damaged; it does not replace the key." : {
       "comment" : "About Your Key",
       "extractionState" : "manual",
@@ -3878,6 +3903,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un dispositivo cercano tiene esta petición. Si es el dispositivo que gestiona los dispositivos, apruébala allí."
+          }
+        }
+      }
+    },
+    "A folder in iCloud Drive, on a drive or a share." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una carpeta en iCloud Drive, en una unidad o en un recurso compartido."
           }
         }
       }
@@ -8607,6 +8644,30 @@
         }
       }
     },
+    "Delete from iCloud" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar de iCloud"
+          }
+        }
+      }
+    },
+    "Delete from iCloud…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar de iCloud…"
+          }
+        }
+      }
+    },
     "Delete the held Watch notes?" : {
       "comment" : "Confirmation title: delete every held Watch voice note",
       "extractionState" : "manual",
@@ -8703,6 +8764,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "¿Eliminar esta herramienta guardada?"
+          }
+        }
+      }
+    },
+    "Delete “%@” from iCloud?" : {
+      "comment" : "Vault Details: asks before deleting the vault's iCloud data; %@ is the vault's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Borrar «%@» de iCloud?"
           }
         }
       }
@@ -12179,6 +12253,18 @@
         }
       }
     },
+    "In iCloud" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En iCloud"
+          }
+        }
+      }
+    },
     "In the group “%@”." : {
       "comment" : "%@ is a group's label words",
       "extractionState" : "manual",
@@ -13226,6 +13312,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Último informe de importación…"
+          }
+        }
+      }
+    },
+    "Last Problem" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último problema"
           }
         }
       }
@@ -15337,6 +15435,18 @@
         }
       }
     },
+    "No vaults were found in this Apple Account's iCloud. A vault appears here once a device with Sempere has added iCloud (CloudKit) to it in Sync Targets." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontró ninguna bóveda en el iCloud de esta cuenta de Apple. Una bóveda aparece aquí cuando un dispositivo con Sempere le añade iCloud (CloudKit) en Sincronización."
+          }
+        }
+      }
+    },
     "No voice note is being recorded." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -15575,6 +15685,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fuera de la lista"
+          }
+        }
+      }
+    },
+    "Not on this device yet" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no está en este dispositivo"
           }
         }
       }
@@ -16296,6 +16418,19 @@
         }
       }
     },
+    "Offline. Changes are kept on this device and sync with iCloud when it can be reached." : {
+      "comment" : "Sync status of an iCloud (CloudKit) target with no connection",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión. Los cambios se guardan en este dispositivo y se sincronizarán con iCloud cuando haya conexión."
+          }
+        }
+      }
+    },
     "Old recovery key (optional)" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -16433,6 +16568,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En el dispositivo nuevo: elige Abrir desde WebDAV… en la pantalla de inicio, conéctate a %@ y luego elige Unir este dispositivo."
+          }
+        }
+      }
+    },
+    "On this device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En este dispositivo"
           }
         }
       }
@@ -16882,6 +17029,19 @@
         }
       }
     },
+    "Open Settings" : {
+      "comment" : "Sync Targets: opens the system's Settings (iCloud sign-in)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ajustes"
+          }
+        }
+      }
+    },
     "Open System Settings" : {
       "comment" : "Button: open the system Settings app",
       "extractionState" : "manual",
@@ -17051,6 +17211,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir desde WebDAV…"
+          }
+        }
+      }
+    },
+    "Open from iCloud" : {
+      "comment" : "Title of the sheet listing the vaults in the user's iCloud",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir desde iCloud"
+          }
+        }
+      }
+    },
+    "Open from iCloud…" : {
+      "comment" : "Welcome: lists the vaults in the user's iCloud",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir desde iCloud…"
           }
         }
       }
@@ -22215,6 +22401,18 @@
         }
       }
     },
+    "Set Up Backup" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurar copia"
+          }
+        }
+      }
+    },
     "Set Up Voice Notes" : {
       "comment" : "Widget and control title when quick voice notes are not set up",
       "extractionState" : "manual",
@@ -22774,6 +22972,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Primero inicia sesión en iCloud en Ajustes."
+          }
+        }
+      }
+    },
+    "Sign in to iCloud in Settings to sync this vault." : {
+      "comment" : "Sync status: no iCloud account is signed in",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia sesión en iCloud en Ajustes para sincronizar esta bóveda."
           }
         }
       }
@@ -24197,6 +24408,18 @@
         }
       }
     },
+    "Sync with iCloud" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizar con iCloud"
+          }
+        }
+      }
+    },
     "Synced with %@ %@" : {
       "comment" : "Welcome list: %1$@ is the sync targets' names, %2$@ when the last sync ended (a relative date)",
       "extractionState" : "manual",
@@ -24206,6 +24429,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sincronizada con %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "Synced with iCloud" : {
+      "comment" : "Sync status of an iCloud (CloudKit) target",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizado con iCloud"
+          }
+        }
+      }
+    },
+    "Synced with iCloud · %@" : {
+      "comment" : "Sync status of an iCloud (CloudKit) target; %@ is when, e.g. “2 min. ago”",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizado con iCloud · %@"
           }
         }
       }
@@ -24283,6 +24532,19 @@
         }
       }
     },
+    "Syncing with iCloud…" : {
+      "comment" : "Sync status of an iCloud (CloudKit) target while a run goes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizando con iCloud…"
+          }
+        }
+      }
+    },
     "Syncing with the folder…" : {
       "comment" : "Sync status of a folder target",
       "extractionState" : "manual",
@@ -24328,6 +24590,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sincronizando…"
+          }
+        }
+      }
+    },
+    "Syncs this vault through your Apple Account. Apple devices only." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincroniza esta bóveda con tu cuenta de Apple. Solo dispositivos Apple."
           }
         }
       }
@@ -26755,6 +27029,18 @@
         }
       }
     },
+    "The vault was created, but it does not sync with iCloud yet: sign in to iCloud in Settings, then add iCloud (CloudKit) in Sync Targets." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda se creó, pero aún no se sincroniza con iCloud: inicia sesión en iCloud en Ajustes y añade iCloud (CloudKit) en Sincronización."
+          }
+        }
+      }
+    },
     "The vault was not completely downloaded: %@\n\nOpen it again to continue the download." : {
       "comment" : "The value is the first problems (English)",
       "extractionState" : "manual",
@@ -26950,6 +27236,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estas no son las palabras de la aprobación de esta bóveda. Compruébalas en el otro dispositivo."
+          }
+        }
+      }
+    },
+    "These are the vaults of the Apple Account signed in on this device. Sempere copies the one you choose onto this device and keeps it syncing with iCloud; to read it, join this device with its words or code." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estas son las bóvedas de la cuenta de Apple con la sesión iniciada en este dispositivo. Sempere copia la que elijas a este dispositivo y la mantiene sincronizada con iCloud; para leerla, une este dispositivo con sus palabras o su código."
           }
         }
       }
@@ -27410,6 +27708,18 @@
         }
       }
     },
+    "This deletes the vault's data from your iCloud. Other devices that sync it with iCloud stop syncing. The copy on this device and its other sync targets are not touched." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto borra los datos de la bóveda de tu iCloud. Los demás dispositivos que la sincronizan con iCloud dejan de sincronizarla. La copia de este dispositivo y sus otros destinos de sincronización no se tocan."
+          }
+        }
+      }
+    },
     "This device" : {
       "comment" : "History: a version saved on this device",
       "extractionState" : "manual",
@@ -27645,6 +27955,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo no está en la lista de dispositivos más reciente de la bóveda. No se escribe ni se sincroniza nada."
+          }
+        }
+      }
+    },
+    "This device is signed in to a different Apple Account. Syncing with iCloud is paused; nothing was deleted." : {
+      "comment" : "Sync status: the signed-in Apple Account is not the one this target was made with",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo tiene la sesión iniciada con otra cuenta de Apple. La sincronización con iCloud está en pausa; no se ha borrado nada."
           }
         }
       }
@@ -28548,6 +28871,19 @@
         }
       }
     },
+    "This vault is in iCloud (CloudKit). Sync with it here too?" : {
+      "comment" : "Sync Targets: the vault's iCloud zone exists (another device made it) and this device has no target for it",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda está en iCloud (CloudKit). ¿Quieres sincronizarla también aquí?"
+          }
+        }
+      }
+    },
     "This vault is locked, so it cannot be copied." : {
       "comment" : "Make a Copy: the vault is locked",
       "extractionState" : "manual",
@@ -28557,6 +28893,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta bóveda está bloqueada, así que no se puede copiar."
+          }
+        }
+      }
+    },
+    "This vault is no longer in your iCloud." : {
+      "comment" : "Open from iCloud: the vault's data is gone",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda ya no está en tu iCloud."
           }
         }
       }
@@ -28649,6 +28998,19 @@
         }
       }
     },
+    "This vault's data was deleted in iCloud settings. Nothing here was deleted." : {
+      "comment" : "Sync status: the user deleted Sempere's iCloud data in Settings",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de esta bóveda se borraron en los ajustes de iCloud. Aquí no se ha borrado nada."
+          }
+        }
+      }
+    },
     "This vault's device list does not check on this device, so nothing is changed." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -28683,6 +29045,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El formato de esta bóveda se cambió sin su clave"
+          }
+        }
+      }
+    },
+    "This vault's iCloud data is gone. Nothing here was deleted." : {
+      "comment" : "Sync status: the vault's iCloud zone is missing on a target that synced before",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de esta bóveda en iCloud ya no están. Aquí no se ha borrado nada."
           }
         }
       }
@@ -29896,6 +30271,19 @@
         }
       }
     },
+    "Update Sempere to keep syncing with iCloud." : {
+      "comment" : "Sync status: another device wrote a newer layout",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza Sempere para seguir sincronizando con iCloud."
+          }
+        }
+      }
+    },
     "Updated from another device" : {
       "comment" : "Notice over the canvas after another device's changes were merged into the open note",
       "extractionState" : "manual",
@@ -29931,6 +30319,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Actualizando desde iCloud"
+          }
+        }
+      }
+    },
+    "Upload Again" : {
+      "comment" : "Sync Targets: make the iCloud target again; the vault is uploaded as a union",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a subir"
           }
         }
       }
@@ -30024,6 +30425,19 @@
         }
       }
     },
+    "Use This Account" : {
+      "comment" : "Sync Targets: sync with the Apple Account signed in now",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar esta cuenta"
+          }
+        }
+      }
+    },
     "Use This Model" : {
       "comment" : "Settings ▸ Handwritten Math: choose the model that reads handwriting",
       "extractionState" : "manual",
@@ -30084,6 +30498,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usar por omisión en notas nuevas"
+          }
+        }
+      }
+    },
+    "Use iCloud (CloudKit) Instead" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar iCloud (CloudKit) en su lugar"
           }
         }
       }
@@ -31372,6 +31798,16 @@
         }
       }
     },
+    "iCloud" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "shouldTranslate" : false
+    },
+    "iCloud (CloudKit)" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "shouldTranslate" : false
+    },
     "iCloud (CloudKit) is not available in this build of Sempere." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -31380,6 +31816,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud (CloudKit) no está disponible en esta versión de Sempere."
+          }
+        }
+      }
+    },
+    "iCloud (CloudKit) syncs more reliably than a folder in iCloud Drive." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud (CloudKit) sincroniza de forma más fiable que una carpeta de iCloud Drive."
           }
         }
       }
@@ -31454,6 +31902,32 @@
         }
       }
     },
+    "iCloud has not accepted changes since %@." : {
+      "comment" : "Sync status: no run succeeded for a day; %@ is the time of the last success",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud no ha aceptado los cambios desde %@."
+          }
+        }
+      }
+    },
+    "iCloud has not accepted changes." : {
+      "comment" : "Sync status: no run succeeded for a day",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud no ha aceptado los cambios."
+          }
+        }
+      }
+    },
     "iCloud has not uploaded this folder's files for a while. Changes are kept on this device. iCloud reports: %@" : {
       "comment" : "Sync status; the value is iCloud's error message",
       "extractionState" : "manual",
@@ -31491,6 +31965,19 @@
         }
       }
     },
+    "iCloud keeps your vault on Apple's servers. To open it without Sempere (with the recovery kit and age), keep a backup or a folder copy too." : {
+      "comment" : "Sync Targets: shown under a vault whose only copy besides this device is iCloud (CloudKit); age is the encryption tool's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud guarda tu bóveda en los servidores de Apple. Para abrirla sin Sempere (con el kit de recuperación y age), guarda también una copia de seguridad o una copia en una carpeta."
+          }
+        }
+      }
+    },
     "iCloud storage is full, so iCloud is not uploading this folder's files. Changes are kept on this device. Free up iCloud storage in Settings." : {
       "comment" : "Sync status: a folder target in iCloud Drive whose uploads fail for a full iCloud storage",
       "extractionState" : "manual",
@@ -31500,6 +31987,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El almacenamiento de iCloud está lleno, así que iCloud no está subiendo los archivos de esta carpeta. Los cambios se conservan en este dispositivo. Libera espacio de iCloud en Ajustes."
+          }
+        }
+      }
+    },
+    "iCloud storage is full. Free up space or upgrade iCloud+, then Sync Now." : {
+      "comment" : "Sync status: the Apple Account's iCloud storage is full",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El almacenamiento de iCloud está lleno. Libera espacio o mejora a iCloud+ y pulsa Sincronizar ahora."
           }
         }
       }

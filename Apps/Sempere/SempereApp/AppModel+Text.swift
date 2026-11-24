@@ -180,6 +180,8 @@ extension CloudKitTargetProblem {
             return SyncTargetProblem.notAStoreVault.text
         case .duplicate:
             return String(localized: "This vault already syncs with iCloud.")
+        case .noSuchVault:
+            return String(localized: "This vault is no longer in your iCloud.", comment: "Open from iCloud: the vault's data is gone")
         case .other(let message):
             return SyncTargetProblem.other(message).text
         }

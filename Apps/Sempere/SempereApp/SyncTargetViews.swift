@@ -18,6 +18,10 @@ struct SyncTargetsSheet: View {
     @State private var rechoosing: SyncTarget?
     @State private var showingRechoose = false
     @State private var problem: String?
+    /// iCloud (CloudKit): no account is signed in (the alert offers Settings), the suggestion for this vault, the backup sheet.
+    @State private var needsSignIn = false
+    @State private var suggesting = false
+    @State private var settingUpBackup = false
 
     var body: some View {
         NavigationStack {
@@ -35,31 +39,57 @@ struct SyncTargetsSheet: View {
                         }
                         ForEach(model.openVaultTargets) { target in
                             SyncTargetRow(target: target, session: model.syncSessions.first { $0.locationID == target.id },
-                                          rechoose: { rechoosing = target; showingRechoose = true }, remove: { removing = target })
+                                          rechoose: { rechoosing = target; showingRechoose = true }, remove: { removing = target },
+                                          remedy: { remedy($0, for: target) })
                         }
                     } footer: {
                         Text("Every target gets the same two-way sync. Adding one to a vault with notes copies what either side lacks; nothing is deleted. Removing one never deletes anything there. Backups are something else: a snapshot for recovery, in Settings ▸ Backups.")
                     }
-                    Section {
-                        // The minimal door to the CloudKit target (docs/design/1.4-cloudkit.md §9; the sheet's real design is C3).
-                        if model.services.cloudKit != nil {
-                            Button("Add iCloud (CloudKit)", systemImage: "icloud") {
-                                guard let vault = model.vault?.vaultId else { return }
-                                Task {
-                                    do { _ = try await model.addCloudKitTarget(to: vault); CloudKitLive.activate() } catch let e as CloudKitTargetProblem { problem = e.text } catch { problem = AppModel.describe(error) }
-                                }
+                    if suggesting {
+                        // Another device put this vault in iCloud (CloudKit): suggested once, never added by itself (design §8).
+                        Section {
+                            Text("This vault is in iCloud (CloudKit). Sync with it here too?",
+                                 comment: "Sync Targets: the vault's iCloud zone exists (another device made it) and this device has no target for it")
+                            Button("Sync with iCloud", systemImage: "icloud", action: addICloud)
+                                .accessibilityIdentifier("syncTargetsSuggestionAccept")
+                            Button("Not Now") {
+                                suggesting = false
+                                if let vault = model.vault?.vaultId { model.cloudKitSuggestionAnswered(for: vault) }
                             }
-                            .accessibilityIdentifier("syncTargetsAddCloudKit")
+                            .accessibilityIdentifier("syncTargetsSuggestionDismiss")
                         }
-                        Button("Add Folder…", systemImage: "folder.badge.plus") { pickingFolder = true }
+                        .accessibilityIdentifier("syncTargetsSuggestion")
+                    }
+                    Section {
+                        // iCloud (CloudKit) first on Apple devices, then a folder, then a server (design §9).
+                        if model.services.cloudKit != nil {
+                            AddTargetRow(title: "Add iCloud (CloudKit)", systemImage: "icloud",
+                                         subtitle: "Syncs this vault through your Apple Account. Apple devices only.",
+                                         action: addICloud)
+                                .accessibilityIdentifier("syncTargetsAddCloudKit")
+                        }
+                        AddTargetRow(title: "Add Folder…", systemImage: "folder.badge.plus",
+                                     subtitle: "A folder in iCloud Drive, on a drive or a share.") { pickingFolder = true }
                             .accessibilityIdentifier("syncTargetsAddFolder")
-                        Button("Add WebDAV Server…", systemImage: "server.rack") { addingServer = true }
+                        AddTargetRow(title: "Add WebDAV Server…", systemImage: "server.rack",
+                                     subtitle: "A WebDAV server, such as one you run yourself.") { addingServer = true }
                             .accessibilityIdentifier("syncTargetsAddServer")
                         if !model.syncSessions.isEmpty {
                             Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") {
                                 Task { await model.syncAllTargetsNow() }
                             }
                         }
+                    }
+                    if onlyICloudCopy {
+                        // CloudKit holds records, not files: the stock-CLI recovery path cannot read it (design §7).
+                        Section {
+                            Text("iCloud keeps your vault on Apple's servers. To open it without Sempere (with the recovery kit and age), keep a backup or a folder copy too.",
+                                 comment: "Sync Targets: shown under a vault whose only copy besides this device is iCloud (CloudKit); age is the encryption tool's name")
+                                .foregroundStyle(.secondary)
+                            Button("Set Up Backup", systemImage: "externaldrive.badge.plus") { settingUpBackup = true }
+                                .accessibilityIdentifier("syncTargetsSetUpBackup")
+                        }
+                        .accessibilityIdentifier("syncTargetsBackupNote")
                     }
                     if let vault = model.vault?.vaultId {
                         Section {
@@ -79,6 +109,23 @@ struct SyncTargetsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }.accessibilityIdentifier("syncTargetsDone")
+                }
+            }
+            .task(id: model.openVaultTargets.map(\.id)) {
+                guard let vault = model.vault?.vaultId else { return }
+                suggesting = await model.cloudKitSuggestion(for: vault)
+            }
+            .alert("iCloud", isPresented: $needsSignIn) {
+                Button("Open Settings") { ICloudSettings.open() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Sign in to iCloud in Settings first.")
+            }
+            .sheet(isPresented: $settingUpBackup) {
+                NavigationStack {
+                    Form { BackupSettingsSection(restoring: .constant(false)) }
+                        .navigationTitle("Backups")
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { settingUpBackup = false } } }
                 }
             }
             .sheet(isPresented: $addingServer) {
@@ -116,6 +163,82 @@ struct SyncTargetsSheet: View {
         }
         .accessibilityIdentifier("syncTargetsSheet")
     }
+
+    /// The vault's only copy besides this device's is iCloud (CloudKit), and no backup is set (design §7).
+    private var onlyICloudCopy: Bool {
+        let targets = model.openVaultTargets
+        return !targets.isEmpty && targets.allSatisfy { $0.kind == .cloudkit } && model.backupRecord()?.bookmark == nil
+    }
+
+    /// Add iCloud (CloudKit), or take the suggestion.
+    private func addICloud() {
+        guard let vault = model.vault?.vaultId else { return }
+        Task {
+            do {
+                _ = try await model.addCloudKitTarget(to: vault)
+                model.cloudKitSuggestionAnswered(for: vault)
+                suggesting = false
+                CloudKitLive.activate()
+            } catch CloudKitTargetProblem.account(.noAccount) {
+                needsSignIn = true
+            } catch let e as CloudKitTargetProblem {
+                problem = e.text
+            } catch {
+                problem = AppModel.describe(error)
+            }
+        }
+    }
+
+    /// The button a CloudKit problem offers (Upload Again, Use This Account: the target is made again for the account signed
+    /// in now, a union that deletes nothing; Open Settings).
+    private func remedy(_ remedy: CloudProblem.Remedy, for target: SyncTarget) {
+        switch remedy {
+        case .openSettings:
+            ICloudSettings.open()
+        case .uploadAgain, .useThisAccount:
+            guard let vault = model.vault?.vaultId else { return }
+            Task {
+                do {
+                    _ = try await model.restartCloudKitTarget(target.id, of: vault)
+                    CloudKitLive.activate()
+                } catch let e as CloudKitTargetProblem {
+                    problem = e.text
+                } catch {
+                    problem = AppModel.describe(error)
+                }
+            }
+        }
+    }
+}
+
+/// One way to add a target: a title and a line under it saying what it is.
+private struct AddTargetRow: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let subtitle: LocalizedStringKey
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label(title, systemImage: systemImage)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .help(subtitle)
+    }
+}
+
+/// Where the system's iCloud sign-in is.
+enum ICloudSettings {
+    static func open() {
+        #if targetEnvironment(macCatalyst)
+        let text = "x-apple.systempreferences:com.apple.preferences.AppleIDPrefPane"
+        #else
+        let text = UIApplication.openSettingsURLString
+        #endif
+        if let url = URL(string: text) { UIApplication.shared.open(url) }
+    }
 }
 
 /// One target: its kind, place and status line.
@@ -125,6 +248,7 @@ private struct SyncTargetRow: View {
     let session: SyncSession?
     let rechoose: () -> Void
     let remove: () -> Void
+    let remedy: (CloudProblem.Remedy) -> Void
     /// The provider syncs the folder as one item, or it has whole-folder conflict versions (docs/io.md "A vault folder
     /// held as a package"): a warning, never a block.
     @State private var packageWarning: FolderTargetPackageWarning?
@@ -136,12 +260,18 @@ private struct SyncTargetRow: View {
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(target.name)
-                Text(target.kind == .webdav ? (target.url ?? "") : (target.kind == .cloudkit ? "" : (target.path ?? "")))
+                Text(verbatim: target.place)
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 if let session {
                     // A problem stays in view while the next run goes (`settledKind`); otherwise syncing, synced, waiting.
                     Text(session.needsAttention ? session.attentionHeadline : session.headline).font(.caption)
                         .foregroundStyle(session.needsAttention ? .orange : .secondary)
+                    if case .problem(.cloud(let problem)) = session.status.settledKind, let kind = problem.remedy {
+                        Button(kind.title) { remedy(kind) }
+                            .font(.caption)
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("syncTargetRemedy")
+                    }
                     // A folder that went away, or a saved permission that no longer opens it (review of #72, G5).
                     if target.kind == .folder, session.status.kind == .problem(.notFound) || session.status.kind == .problem(.writeGrantLapsed) {
                         Button("Choose Again…", action: rechoose)
@@ -290,5 +420,15 @@ struct OpenVaultSheet: View {
             }
         }
         .accessibilityIdentifier("openVaultSheet")
+    }
+}
+
+extension CloudProblem.Remedy {
+    var title: String {
+        switch self {
+        case .openSettings: return String(localized: "Open Settings", comment: "Sync Targets: opens the system's Settings (iCloud sign-in)")
+        case .uploadAgain: return String(localized: "Upload Again", comment: "Sync Targets: make the iCloud target again; the vault is uploaded as a union")
+        case .useThisAccount: return String(localized: "Use This Account", comment: "Sync Targets: sync with the Apple Account signed in now")
+        }
     }
 }

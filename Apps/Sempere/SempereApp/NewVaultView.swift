@@ -36,6 +36,8 @@ struct NewVaultView: View {
     @State private var created: CreatedVault?
     /// "Sync With": the folder the vault also syncs with (a sync target), if any.
     @State private var copyFolder: URL?
+    /// "Sync With" iCloud (CloudKit): the vault's zone in the Apple Account's private database (nothing preselected).
+    @State private var syncWithICloud = false
     /// "Back Up To": the folder the vault's backups go into (as Settings ▸ Backups sets it), if any.
     @State private var backupFolder: URL?
     /// Which of the two folders the one folder picker is choosing. Kept apart from `showingFolderPicker`: the
@@ -135,6 +137,15 @@ struct NewVaultView: View {
     /// A WebDAV server is added afterwards in Sync Targets (its sheet needs the vault to exist).
     private var copySection: some View {
         Section {
+            if model.services.cloudKit != nil {
+                Toggle(isOn: $syncWithICloud) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("iCloud (CloudKit)", systemImage: "icloud")
+                        Text("Syncs this vault through your Apple Account. Apple devices only.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("newVault.iCloud")
+            }
             if let copyFolder {
                 HStack {
                     Label(copyFolder.lastPathComponent, systemImage: "folder")
@@ -147,6 +158,18 @@ struct NewVaultView: View {
             }
             Button(copyFolder == nil ? "Choose Folder…" : "Choose Another Folder…") { pick(.sync) }
                 .accessibilityIdentifier("newVault.copyFolder")
+            if let copyFolder, model.services.cloudKit != nil, FolderLocation.classify(copyFolder) == .iCloudDrive {
+                // A folder in iCloud Drive: iCloud (CloudKit) syncs more reliably, one tap to switch (owner decision 2, design §12).
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("iCloud (CloudKit) syncs more reliably than a folder in iCloud Drive.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Use iCloud (CloudKit) Instead") {
+                        self.copyFolder = nil
+                        syncWithICloud = true
+                    }
+                    .accessibilityIdentifier("newVault.useICloud")
+                }
+            }
         } header: {
             Text("Sync With", comment: "New Vault: section of the folder the vault syncs with")
         } footer: {
@@ -383,6 +406,17 @@ struct NewVaultView: View {
                 }
                 if let copyFolder, let vault = model.vault?.vaultId {
                     do { try model.addPickedFolderTarget(copyFolder, to: vault) } catch {
+                        model.alert = .error(error)
+                    }
+                }
+                if syncWithICloud, let vault = model.vault?.vaultId {
+                    do {
+                        _ = try await model.addCloudKitTarget(to: vault)
+                        CloudKitLive.activate()
+                    } catch CloudKitTargetProblem.account(.noAccount) {
+                        // The vault exists; Sync Targets offers iCloud again once someone is signed in.
+                        model.alert = .worded(String(localized: "The vault was created, but it does not sync with iCloud yet: sign in to iCloud in Settings, then add iCloud (CloudKit) in Sync Targets."))
+                    } catch {
                         model.alert = .error(error)
                     }
                 }

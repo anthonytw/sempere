@@ -6,6 +6,7 @@ import SwiftUI
 /// joining, one list with each vault's sync status), recent WebDAV vaults, and the ways to open or create one.
 struct WelcomeView: View {
     @AppEnvironmentObject private var library: VaultLibrary
+    @AppModelEnvironment private var model
     var openFolder: () -> Void
     var newVault: () -> Void
     var openRecent: (RecentVault) -> Void
@@ -13,6 +14,7 @@ struct WelcomeView: View {
 
     @State private var restoring = false
     @State private var connectingWebDAV = false
+    @State private var openingICloud = false
     /// The removal being confirmed: the list's own, never a row's (`WelcomeRemovals`).
     @State private var removals = WelcomeRemovals()
 
@@ -22,6 +24,10 @@ struct WelcomeView: View {
                 Section {
                     Button("New Vault…", systemImage: "plus.circle", action: newVault)
                     Button("Open Vault…", systemImage: "folder", action: openFolder)
+                    if model.services.cloudKit != nil {
+                        Button("Open from iCloud…", systemImage: "icloud") { openingICloud = true }
+                            .accessibilityIdentifier("openICloud")
+                    }
                     Button("Open from WebDAV…", systemImage: "server.rack") { connectingWebDAV = true }
                         .accessibilityIdentifier("openWebDAV")
                     Button("Restore from Backup…", systemImage: "clock.arrow.circlepath") { restoring = true }
@@ -55,6 +61,7 @@ struct WelcomeView: View {
             .navigationTitle("Sempere")
             .task { await library.refreshStoredVaults() }
             .sheet(isPresented: $connectingWebDAV) { WebDAVConnectSheet() }
+            .sheet(isPresented: $openingICloud) { OpenFromICloudSheet() }
             .sheet(isPresented: $restoring) {
                 RestoreBackupView()
             }

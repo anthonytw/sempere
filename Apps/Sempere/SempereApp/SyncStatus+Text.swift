@@ -24,8 +24,13 @@ extension SyncStatus {
     private func headline(for kind: Kind) -> String {
         switch kind {
         case .syncing:
+            if cloudKit { return String(localized: "Syncing with iCloud…", comment: "Sync status of an iCloud (CloudKit) target while a run goes") }
             return folder ? String(localized: "Syncing with the folder…") : String(localized: "Syncing with the server…")
         case .offline:
+            if cloudKit {
+                return String(localized: "Offline. Changes are kept on this device and sync with iCloud when it can be reached.",
+                              comment: "Sync status of an iCloud (CloudKit) target with no connection")
+            }
             if folder {
                 return String(localized: "The folder cannot be reached now. Changes are kept on this device and sync when it is back. If it is on a share, Sync Now connects it.")
             }
@@ -59,6 +64,13 @@ extension SyncStatus {
             }
             return Self.text(for: p)
         case .synced:
+            if cloudKit {
+                // "A write the server accepted is synced": never "waiting for iCloud to upload" (design §9).
+                guard let lastSuccess else { return String(localized: "Synced with iCloud", comment: "Sync status of an iCloud (CloudKit) target") }
+                let when = lastSuccess.formatted(.relative(presentation: .named))
+                return String(localized: "Synced with iCloud · \(when)",
+                              comment: "Sync status of an iCloud (CloudKit) target; %@ is when, e.g. “2 min. ago”")
+            }
             return arriving > 0
                 ? String(localized: "Synced. \(arriving) files are still on their way.", comment: "Sync status; a count of files")
                 : (folder ? String(localized: "Synced with the folder") : String(localized: "Synced with the server"))
@@ -92,6 +104,8 @@ extension SyncStatus {
         case .notWritable:
             // Not "errno 13" (build 12): what it means and what to do.
             return String(localized: "Sempere cannot write to this sync folder: this account has no permission to change it (it belongs to another user, or is read-only). The notes on this device are kept. Remove the folder in Sync Targets, or add one you can write to.")
+        case .cloud(let problem):
+            return problem.text
         case .failures(let lines):
             return String(localized: "Some files could not be synced: \(lines.joined(separator: "; "))",
                           comment: "The value lists file paths and errors (English)")
@@ -141,4 +155,52 @@ extension CertificateDate {
 
     /// The reason `PinnedServerTrust` refuses with: the marker, then `reason`.
     static var refusal: String { marker + reason }
+}
+
+extension CloudProblem {
+    /// What the bar says about an iCloud (CloudKit) target's definite problem (docs/design/1.4-cloudkit.md §4). The
+    /// library's `message` is the same words in English, for the CLI.
+    var text: String {
+        switch self {
+        case .storageFull:
+            return String(localized: "iCloud storage is full. Free up space or upgrade iCloud+, then Sync Now.",
+                          comment: "Sync status: the Apple Account's iCloud storage is full")
+        case .zoneGone:
+            return String(localized: "This vault's iCloud data is gone. Nothing here was deleted.",
+                          comment: "Sync status: the vault's iCloud zone is missing on a target that synced before")
+        case .zoneDeletedByUser:
+            return String(localized: "This vault's data was deleted in iCloud settings. Nothing here was deleted.",
+                          comment: "Sync status: the user deleted Sempere's iCloud data in Settings")
+        case .signedOut:
+            return String(localized: "Sign in to iCloud in Settings to sync this vault.",
+                          comment: "Sync status: no iCloud account is signed in")
+        case .restricted:
+            return String(localized: "iCloud is restricted on this device (Screen Time or device management).")
+        case .otherAccount:
+            return String(localized: "This device is signed in to a different Apple Account. Syncing with iCloud is paused; nothing was deleted.",
+                          comment: "Sync status: the signed-in Apple Account is not the one this target was made with")
+        case .updateNeeded:
+            return String(localized: "Update Sempere to keep syncing with iCloud.",
+                          comment: "Sync status: another device wrote a newer layout")
+        case .notAccepted(let since):
+            guard let since else {
+                return String(localized: "iCloud has not accepted changes.", comment: "Sync status: no run succeeded for a day")
+            }
+            let when = since.formatted(date: .abbreviated, time: .shortened)
+            return String(localized: "iCloud has not accepted changes since \(when).",
+                          comment: "Sync status: no run succeeded for a day; %@ is the time of the last success")
+        }
+    }
+
+    /// The button that goes with the problem, when there is one (nil: nothing to press, the text says what to do).
+    enum Remedy { case openSettings, uploadAgain, useThisAccount }
+
+    var remedy: Remedy? {
+        switch self {
+        case .signedOut: return .openSettings
+        case .zoneGone, .zoneDeletedByUser: return .uploadAgain
+        case .otherAccount: return .useThisAccount
+        case .storageFull, .restricted, .updateNeeded, .notAccepted: return nil
+        }
+    }
 }

@@ -565,7 +565,7 @@ public final class SyncSession {
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
                    staged: staged, networkDown: networkDown && kind.usesNetwork, continuing: continuing,
                    providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
-                   targetName: targetName, added: added == .distantPast ? nil : added, now: now())
+                   targetName: targetName, added: added == .distantPast ? nil : added, now: now(), cloudKit: kind == .cloudkit)
     }
 
     /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
@@ -601,9 +601,11 @@ public struct SyncStatus: Equatable, Sendable {
     public var unconfirmed: Int
     public var arriving: Int
     var twoWay: Bool
-    var lastSuccess: Date?
+    public var lastSuccess: Date?
     /// The target is a folder (iCloud Drive, any folder), not a server: the wording says so.
     public var folder = false
+    /// The target is iCloud (CloudKit): the wording says so, and there is no "waiting for iCloud to upload" (design §9).
+    public var cloudKit = false
     /// The last run waited for the device's first unlock (its password could not be read yet).
     var deviceLocked = false
     /// Files from other devices staged for the next unlock (`LockedStaging`).
@@ -634,7 +636,8 @@ public struct SyncStatus: Equatable, Sendable {
                 folder: Bool = false, deviceLocked: Bool = false, staged: Int = 0, networkDown: Bool = false,
                 continuing: Bool = false, providerPending: Int = 0, viaICloud: Bool = false,
                 providerError: ProviderUploads.State? = nil, targetName: String = "", added: Date? = nil,
-                now: Date = Date()) {
+                now: Date = Date(), cloudKit: Bool = false) {
+        self.cloudKit = cloudKit
         self.syncing = syncing
         self.problems = problems
         self.unconfirmed = unconfirmed
