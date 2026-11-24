@@ -19,7 +19,7 @@ test *ARGS:
 bench *MODULES:
     scripts/bench.sh {{MODULES}}
 
-# Run tests the way Linux CI does (Docker on macOS)
+# Run tests the way Linux CI does (a Lima VM on macOS)
 test-linux *ARGS:
     scripts/test-linux.sh {{ARGS}}
 

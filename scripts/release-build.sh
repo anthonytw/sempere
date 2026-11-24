@@ -62,6 +62,7 @@ drop=${SEMPERE_SIGN_DROP:-/Users/Shared/sempere-release}
 scripts/release-signature.sh owned "$drop" "$(id -u)" >&2 || die "the hand-off folder $drop must be owned by this account and not writable by group or world"
 [[ -e $drop/$tag ]] || mkdir -m 755 "$drop/$tag"
 scripts/release-signature.sh owned "$drop/$tag" "$(id -u)" >&2 || die "the hand-off folder $drop/$tag must be owned by this account and not writable by group or world"
+source scripts/container.sh; container_setup || die "no container engine (scripts/container.sh)"
 command -v docker >/dev/null || die "Docker is needed for the Linux builds"
 out=$repo/build/release/$tag
 src=$repo/build/release/$tag-src
@@ -89,7 +90,7 @@ echo "ok    Version.swift and CHANGELOG.md say $version"
 step "worktree of $tag"
 git worktree remove --force "$src" 2>/dev/null || rm -rf "$src"
 git worktree add -q --detach "$src" "$sha"
-trap 'git -C "$repo" worktree remove --force "$src" 2>/dev/null || true' EXIT
+trap 'git -C "$repo" worktree remove --force "$src" 2>/dev/null || true; container_teardown' EXIT
 cd "$src"
 # The release tooling is this checkout's (a tag may predate it; checked above to be main's); the sources are the tag's.
 for f in "${TOOLING[@]}"; do cp "$repo/$f" "$f"; done
@@ -100,7 +101,7 @@ step "The three builds, at once: Linux x86_64, Linux aarch64, macOS universal"
 # downloaded once and verified (scripts/static-sdk-cache.sh). Run in the background and waited for, so a TERM or HUP to this
 # script reaches the trap below at once: it stops the builds (their containers included) before the worktree goes.
 all_pid=
-trap 'if [[ -n $all_pid ]]; then kill "$all_pid" 2>/dev/null || true; wait "$all_pid" 2>/dev/null || true; fi; git -C "$repo" worktree remove --force "$src" 2>/dev/null || true' EXIT
+trap 'if [[ -n $all_pid ]]; then kill "$all_pid" 2>/dev/null || true; wait "$all_pid" 2>/dev/null || true; fi; git -C "$repo" worktree remove --force "$src" 2>/dev/null || true; container_teardown' EXIT
 trap 'exit 143' TERM HUP INT
 scripts/release-build-all.sh "$out/logs" & all_pid=$!
 wait "$all_pid" || { all_pid=; die "a build failed (see above)"; }

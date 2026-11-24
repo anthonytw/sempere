@@ -64,8 +64,8 @@ Merge these two PRs once; B.4 and B.7 depend on them:
    xcodebuild -runFirstLaunch
    xcodebuild -downloadPlatform iOS          # the iOS simulator runtime, about 8 GB (ci-release needs it)
    ```
-2. **Command-line tools:** `brew install just gh pnpm node` (and `tea` for the Gitea statuses), and **Docker Desktop** (the Linux builds and
-   tests). Python 3 comes with Xcode's tools.
+2. **Command-line tools:** `brew install just gh pnpm node` (and `tea` for the Gitea statuses), and **Lima** (`brew install lima` plus the `docker` CLI; the Linux builds and
+   tests run in a Lima VM that `scripts/container.sh` creates and starts by itself, docs/ci.md "Containers on a Mac"; no Docker Desktop, no GUI login). Python 3 comes with Xcode's tools.
 3. **Gitea:** `tea login add --url https://git.lab.gulwertz.net` with a token that can write commit statuses.
    The suites post commit statuses with it, and the TestFlight and tag checks read them (`scripts/forge.sh`;
    `SEMPERE_FORGE_TOKEN` instead of tea works too). **GitHub CLI** (`gh auth login`, write access to
@@ -461,7 +461,7 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    `CHANGELOG.md` has a non-empty `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)`
    (`scripts/changelog-section.sh`). The push needs write access to the repository, not admin, and a tag ruleset that
    forbids creating tags would stop it: allow the owner to create `v*` tags.
-2. **Build the binaries here.** `just release-build 1.0.0` (about 20 minutes, Docker running; as the build account, once
+2. **Build the binaries here.** `just release-build 1.0.0` (about 20 minutes; the Lima VM starts by itself; as the build account, once
    the maintainer's signed tag is on GitHub). From a clean
    worktree of the tag it re-runs the checks, builds the fully static Linux binaries for x86_64 and aarch64
    (Static Linux SDK in `swift:6.4.2-noble`, `scripts/build-linux-static.sh`) and the macOS universal binary, all three

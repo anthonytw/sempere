@@ -1,0 +1,23 @@
+# The Lima VM that runs sempere's Linux containers on a Mac (scripts/container.sh creates it from this file; docs/ci.md
+# "Containers on a Mac"). Rootless dockerd in the stock `docker` template's Ubuntu guest, vz + Rosetta for x86_64 images.
+# Host paths appear at the SAME path in the guest, so `docker run -v "$PWD:/src"` works unchanged.
+base: template:docker
+vmType: vz
+vmOpts:
+  vz:
+    rosetta:
+      enabled: true
+      binfmt: true
+cpus: 6
+memory: 8GiB
+disk: 40GiB
+mounts:
+# Every checkout and worktree lives under ~/dev (dev/sempere, dev/sempere-wt-*): one writable mount instead of one per
+# worktree. Not $HOME: a container never sees keys, mail or other projects' secrets outside ~/dev.
+- location: "{{.Home}}/dev"
+  writable: true
+# ci-linux.sh's pass records (read-write) and the host's cached Static Linux SDK archive (scripts/static-sdk-cache.sh).
+- location: "{{.Home}}/.cache/sempere-ci-pass"
+  writable: true
+- location: "{{.Home}}/.cache/sempere"
+  writable: false

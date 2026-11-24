@@ -22,18 +22,20 @@ unset SEMPERE_LINUX_BUILD_VOLUME
 id=${SEMPERE_BUILD_ID:-release-$$}
 export SEMPERE_CI_RUN_ID=$id
 
+source scripts/container.sh; container_setup || exit 1
 scripts/static-sdk-cache.sh >/dev/null || { echo "error: cannot get a verified Static Linux SDK archive" >&2; exit 1; }
 
 pids=() names=()
 cleanup() {
   trap - EXIT TERM HUP INT
-  [[ ${#pids[@]} -gt 0 ]] || return 0
+  [[ ${#pids[@]} -gt 0 ]] || { container_teardown; return 0; }
   local i
   for i in "${!pids[@]}"; do [[ ${names[$i]} == macos-universal ]] && kill "${pids[$i]}" 2>/dev/null || true; done
   if command -v docker >/dev/null; then
     docker ps -q --filter "label=sempere-ci-run=$id" | xargs docker kill >/dev/null 2>&1 || true
   fi
   wait 2>/dev/null || true
+  container_teardown
 }
 trap cleanup EXIT
 trap 'exit 143' TERM HUP INT
