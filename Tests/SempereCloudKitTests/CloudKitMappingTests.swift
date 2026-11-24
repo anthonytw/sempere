@@ -128,5 +128,40 @@ final class CloudKitMappingTests: XCTestCase {
         XCTAssertEqual(CloudKitDatabase.availability(), .missingEntitlement)
         #endif
     }
+
+    // A conditional save over system fields the process kept, for a record another device deleted since: not a failure.
+    func testASaveThatFindsItsRecordGoneIsAConflictWithNothingAndForgetsTheFields() {
+        let cache = SystemFieldsCache()
+        let r = CloudKitDatabase.saveOutcome(.failure(CKError(.unknownItem)), kind: .file, name: "f-x", zone: "z", cache: cache)
+        XCTAssertEqual(r, .conflict(nil))
+        let other = CloudKitDatabase.saveOutcome(.failure(CKError(.quotaExceeded)), kind: .file, name: "f-x", zone: "z", cache: cache)
+        XCTAssertEqual(other, .failed(CloudStoreError(.quotaExceeded, "CKError \(CKError.Code.quotaExceeded.rawValue)")))
+        XCTAssertEqual(CloudKitDatabase.saveOutcome(nil, kind: .file, name: "f-x", zone: "z", cache: cache),
+                       .failed(CloudStoreError(.internalError, "no answer for a save")))
+    }
+
+    func testAConflictCarriesTheServersRecordWithoutItsBytes() {
+        let server = CKRecord(recordType: "VaultFile", recordID: CKRecord.ID(recordName: "f-x", zoneID: zone))
+        server.encryptedValues["bytes"] = Data("secret".utf8)
+        server["size"] = NSNumber(value: 6)
+        let error = CKError(.serverRecordChanged, userInfo: [CKRecordChangedErrorServerRecordKey: server])
+        guard case .conflict(let rec?) = CloudKitDatabase.saveOutcome(.failure(error), kind: .file, name: "f-x", zone: "z", cache: SystemFieldsCache()) else {
+            return XCTFail("a conflict with the server's record")
+        }
+        XCTAssertEqual(rec.fields.size, 6)
+        XCTAssertNil(rec.fields.bytes)
+    }
+
+    func testAnAtomicRequestIsRefusedNotQuietlySplit() throws {
+        // No container is touched: the refusal comes first (and a process with no entitlement must not create one).
+        guard CloudKitDatabase.availability() == .available else { return }
+        XCTAssertThrowsError(try CloudKitDatabase().modify(zone: "z", saves: [], deletes: [], atomic: true))
+    }
+
+    func testTheSystemFieldsCacheIsEmptiedByAnAccountChange() {
+        let cache = SystemFieldsCache()
+        cache.removeAll()
+        XCTAssertNil(cache.record(zone: "z", name: "f-x", tag: "1"))
+    }
 }
 #endif

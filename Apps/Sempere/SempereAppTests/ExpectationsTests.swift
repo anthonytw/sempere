@@ -51,7 +51,7 @@ struct ExpectationsTests {
         #expect(!shown.joined().contains("release-check"))
         #expect(shown.contains { $0.hasPrefix("## Network connections") })
         // Lists render as items, a continued line joined to its item.
-        let list = try #require(shown.compactMap(AboutInfo.listItems).first { $0.count == 3 })
+        let list = try #require(shown.compactMap(AboutInfo.listItems).first { $0.count == 4 })
         #expect(list.allSatisfy { !$0.hasPrefix("- ") && !$0.contains("\n") })
     }
 

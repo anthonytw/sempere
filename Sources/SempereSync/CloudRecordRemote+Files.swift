@@ -154,9 +154,10 @@ extension CloudRecordRemote {
     }
 
     /// The part records of a split file, checked, in order (`from`: the first one wanted; the sizes before it still count).
-    private func partRecord(_ f: CloudMirror.File, _ i: Int, _ path: [String]) throws -> (name: String, size: Int64, sha: Data) {
+    private func partRecord(_ f: CloudMirror.File, _ i: Int, _ path: [String], known: CloudRecord?? = nil) throws -> (name: String, size: Int64, sha: Data) {
         let name = CloudRecordNaming.partName(fileName: f.name, fileSha: f.sha256 ?? Data(), index: i)
-        guard let part = try perform({ try store.fetch(zone: zone, name: name, payload: false) }), part.kind == .part,
+        let fetched: CloudRecord? = try known ?? perform({ try store.fetch(zone: zone, name: name, payload: false) })
+        guard let part = fetched, part.kind == .part,
               let size = part.fields.size, size > 0, size <= Int64(layout.partSize) * 4,
               let sha = part.fields.sha256, sha.count == 32, (part.fields.schema ?? 0) <= CloudSchema.current else {
             throw CloudRecordError.corrupt(path: shown(path), reason: "part \(i) is missing or invalid")
@@ -169,9 +170,13 @@ extension CloudRecordRemote {
     private func keptParts(_ f: CloudMirror.File, count n: Int, _ path: [String], resume r: Resume, skip: (Data) -> Void) throws -> (bytes: Int64, parts: Int) {
         var offset: Int64 = 0
         var count = 0
-        for i in 0..<n {
+        // The part records that can matter (those that fit in what was received, and the next), in one request, not one each.
+        let wanted = min(n, Int(r.from / Int64(max(layout.partSize, 1))) + 1)
+        let names = (0..<wanted).map { CloudRecordNaming.partName(fileName: f.name, fileSha: f.sha256 ?? Data(), index: $0) }
+        let records = try perform { try store.fetchMany(zone: zone, names: names, payload: false) }
+        for i in 0..<wanted {
             try checkInterrupt()
-            let part = try partRecord(f, i, path)
+            let part = try partRecord(f, i, path, known: .some(records[names[i]]))
             guard offset + part.size <= r.from, offset + part.size <= f.size, part.size <= Int64(Int32.max),
                   let have = try r.local(offset, Int(part.size)), Int64(have.count) == part.size,
                   Data(SHA256.hash(data: have)) == part.sha else { break }

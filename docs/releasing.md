@@ -172,8 +172,8 @@ your own account, in the same command that signs `SHA256SUMS`. What it needs, on
 
 `SEMPERE_SIGN_IDENTITY` (default `Developer ID Application`), `SEMPERE_SIGN_KEYCHAIN` and `SEMPERE_NOTARY_PROFILE`
 (default `sempere-notary`) in the same file or the environment change the names. A dry run with a development identity and
-profile (`SEMPERE_SIGN_DEV=1`, `SEMPERE_CLI_PROFILE` a development profile for the CLI App ID) goes through everything up
-to Apple's service and writes to `…/v1.1.0.dry-run/`, a folder `release-publish` never reads.
+profile (`SEMPERE_SIGN_DEV=1`, exactly that value; `SEMPERE_CLI_PROFILE` a development profile for the CLI App ID) goes through everything up
+to Apple's service and writes to `…/v1.1.0.dry-run/`, a folder `release-publish` never reads; it makes no SSH signature at all.
 
 ### Check the setup
 
@@ -519,12 +519,12 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    hashes), checks your key is a signer (before the minutes of notarization), then takes the macOS tarball from the same folder
    (it must be the file the list names, owned by the build account) and runs `scripts/release-sign-macos.sh` on it: the
    tarball is only data (every entry must be a plain file below `sempere-1.1.0-macos-universal/`, none is a link, and only the
-   binary and fonts are used: the bundle's `Info.plist` and entitlements are `packaging/cli/`'s), the bundle is made again
+   binary is used (it must be universal; fonts too come from your checkout): the bundle's `Info.plist` and entitlements are `packaging/cli/`'s), the bundle is made again
    with your profile embedded, signed with your Developer ID (hardened runtime, secure timestamp), notarized (`xcrun notarytool
    submit --wait --keychain-profile sempere-notary`; a few minutes), stapled, checked with `codesign` and `spctl`, and repacked.
    The list's macOS line becomes the signed tarball's hash (the Linux lines stay the build's). Then it shows the list, signs
    it (namespace `file`), verifies it against the signers, and only then moves the macOS tarball, `SHA256SUMS` and
-   `SHA256SUMS.sig` into `/Users/Shared/sempere-sign/v1.1.0/` (`SEMPERE_SIGN_OUT` moves it), which only you can write. Compare the list it shows with the one `release-build` printed in its "SHA256SUMS" step. You cannot check
+   `SHA256SUMS.sig` into `/Users/Shared/sempere-sign/v1.1.0/` (`SEMPERE_SIGN_OUT` moves it), which only you can write. Compare the list it shows with the one `release-build` printed in its "SHA256SUMS" step: the two Linux lines must be identical, and the macOS line is the one that differs (the script prints "build hash -> signed hash" for it, the build hash checked against the hand-off file). You cannot check
    the hashes without rebuilding, so the signature means "the maintainer approved what the build account produced"; it keeps
    other local accounts and stale lists out. A `user.signingkey` that is a `.pub` path needs ssh-agent to hold the key
    (or pass `-k key::ssh-ed25519 AAAA…`). Then, in the build account, `just release-publish` takes the `.sig` from your
@@ -566,6 +566,17 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    ```
    `just formula 1.0.0` alone prints the formula, from the local build's `SHA256SUMS` (else the published one). It
    fails if `SHA256SUMS` lacks a platform.
+   **One-time check of the bundle through Homebrew [you]**, the first release that ships `sempere.app` (nothing has shown that
+   Homebrew's install leaves a signed bundle intact; it relocates files and may touch Mach-O binaries). After the tap has
+   the formula:
+   ```bash
+   brew install anthonytw/tap/sempere                      # or --build-from-source ./Formula/sempere.rb from the tap checkout
+   app="$(brew --prefix sempere)/sempere.app"
+   codesign --verify --strict --deep --verbose=2 "$app" && spctl --assess --type execute --verbose=2 "$app" && xcrun stapler validate "$app"
+   sempere --version && sempere store target add --help | grep -- --cloudkit
+   ```
+   If `codesign` fails after the install, Homebrew modified the bundle: say so in the PR that fixes the formula (for example by
+   installing the bundle with `prefix.install` and an `install_name_tool`-free path) before the next release.
 5. **[you] Release the app:** App Store Connect ▸ each platform's version ▸ **Release This Version**. It reaches
    the store within a few hours.
 6. **Website.** If the changelog changed since B.4 (a date fix, a curated section), repeat B.4's `just sync-docs`,

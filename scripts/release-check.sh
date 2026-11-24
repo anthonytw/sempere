@@ -504,6 +504,11 @@ except FileNotFoundError:
 except Exception as e:
     errors.append(f"SempereAdHoc.entitlements or Sempere.entitlements is not a valid plist ({e})")
 
+# The ad hoc file is for scripts/app.sh's command-line signing only: the project must never point a build at it (a shipped build
+# without iCloud and push).
+if "SempereAdHoc.entitlements" in pbx:
+    errors.append("project.pbxproj mentions SempereAdHoc.entitlements: it is for ad hoc signed test runs only (scripts/app.sh), never a build setting")
+
 # The push environment: development in every Debug configuration that sets it, production in every Release one, never unset
 # for the app (the entitlements name $(APS_ENVIRONMENT)).
 uses_aps = any(os.path.isfile(p) and "$(APS_ENVIRONMENT)" in read(p) for p in ent_files)

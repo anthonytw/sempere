@@ -136,6 +136,10 @@ rm "$drop/SHA256SUMS"; cp "$t/sums.good" "$drop/SHA256SUMS"
 echo '# dirty' >> scripts/release-sign.sh
 signit; check "the owner script refuses scripts that differ from origin/main" '[[ $rc != 0 && $out == *"differ from origin/main"* ]]'
 git checkout -q -- scripts/release-sign.sh
+SEMPERE_SIGN_DEV=1 signit; check "a dry run (SEMPERE_SIGN_DEV=1) makes no SSH signature and writes only to the dry-run folder" '[[ $rc == 0 && $out == *"NO signature was made"* && ! -e $signed/SHA256SUMS.sig && -f $signed.dry-run/SHA256SUMS && ! -e $signed.dry-run/SHA256SUMS.sig ]]'
+rm -rf "$signed.dry-run"
+SEMPERE_SIGN_DEV=0 signit; check "SEMPERE_SIGN_DEV=0 is not a dry run" '[[ $rc == 0 && $out == *"done: "* && -f $signed/SHA256SUMS.sig && ! -e $signed.dry-run ]]'
+rm -rf "$signed"
 signit; check "the owner script signs and verifies with the test key (from the checkout, not the drop)" '[[ $rc == 0 && $out == *"done: "* && $out == *"signed by maintainer"* && -f $signed/SHA256SUMS.sig && -f $signed/SHA256SUMS ]]'
 run scripts/release-publish.sh 1.2.3; check "publish takes the .sig, the signed list and the signed macOS tarball from the maintainer's folder" '[[ $rc == 0 && $out == *"took SHA256SUMS.sig, SHA256SUMS and the signed, notarized sempere-1.2.3-macos-universal.tar.gz from"* && -f $d/SHA256SUMS.sig && -f $d/unsigned/sempere-1.2.3-macos-universal.tar.gz ]] && tail -1 $d/sempere-1.2.3-macos-universal.tar.gz | grep -q "signed by the stub" && cmp -s $d/SHA256SUMS $signed/SHA256SUMS'
 rm $d/SHA256SUMS.sig; SEMPERE_MAINTAINER_USER=nobody run scripts/release-publish.sh 1.2.3

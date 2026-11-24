@@ -159,6 +159,8 @@ fresh; edit "Apps/Sempere/SempereAdHoc.entitlements" 's.replace("\t<key>com.appl
 expect "the ad hoc entitlements differ from the app's by more than iCloud and push" fail "SempereAdHoc.entitlements must equal Sempere.entitlements without"
 fresh; rm "$tmp/root/Apps/Sempere/SempereAdHoc.entitlements"
 expect "no ad hoc entitlements" fail "SempereAdHoc.entitlements is missing"
+fresh; edit "$pbx" 's.replace("CODE_SIGN_ENTITLEMENTS[sdk=macosx*]\" = Sempere.entitlements;", "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]\" = SempereAdHoc.entitlements;", 1)'
+expect "the project builds with the ad hoc entitlements" fail "project.pbxproj mentions SempereAdHoc.entitlements"
 fresh; edit "Apps/Sempere/SempereInfo.plist" 's.replace("<string>remote-notification</string>", "")'
 expect "no remote-notification background mode" fail "UIBackgroundModes must hold remote-notification"
 fresh; edit "packaging/cli/entitlements.plist" 's.replace("</dict>", "\t<key>com.apple.developer.aps-environment</key>\n\t<string>production</string>\n</dict>")'
@@ -187,7 +189,7 @@ expect "YES without a compliance code warns" warn "without ITSEncryptionExportCo
 
 fresh; edit "docs/privacy/index.html" 're.sub(r"\d{4}-\d{2}-\d{2}</span>", "2099-01-01</span>", s) if (re:=__import__("re")) else s'
 expect "privacy policy copies out of date" fail "privacy policy copies differ in date"
-fresh; edit "docs/appstore/privacy-policy.md" 's.replace("(iPad, iPhone and Mac; the system asks)", "(iPad; the system asks)").replace("your own devices\nnearby", "your own devices\nwherever they are")'
+fresh; edit "docs/appstore/privacy-policy.md" 's.replace("(iPad, iPhone and Mac; the system asks)", "(iPad; the system asks)").replace("your own devices nearby. It connects", "your own devices wherever they are. It connects")'
 expect "privacy policy Network sections differ" fail "differ in their \"Network connections\" section"
 
 # Networking: only the allow-listed model downloader, and only while its catalog is empty.

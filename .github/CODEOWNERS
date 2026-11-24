@@ -31,6 +31,9 @@
 /scripts/build-linux-static.sh  @anthonytw
 /scripts/static-sdk-cache.sh    @anthonytw
 /scripts/package-cli.sh         @anthonytw
+/scripts/cli-bundle.sh          @anthonytw
+/scripts/release-sign-macos.sh  @anthonytw
+/packaging/cli/                 @anthonytw
 /scripts/smoke-linux-cli.sh     @anthonytw
 /scripts/swiftpm-quarantine.sh  @anthonytw
 /scripts/forge.sh               @anthonytw

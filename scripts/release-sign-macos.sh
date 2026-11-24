@@ -6,12 +6,13 @@
 #   scripts/release-sign-macos.sh [--dev] --version X.Y.Z IN.tar.gz OUT.tar.gz
 #
 # IN is the build account's tarball: DATA. Nothing in it is executed. It is checked entry by entry (only the files the build
-# makes, no link, no path outside the folder), and only its `sempere` binary and fonts are taken: the bundle's Info.plist, the
+# makes, no link, no path outside the folder), and only its `sempere` binary is taken: the bundle's Info.plist, the
 # entitlements and the provisioning profile are this checkout's (packaging/cli) and the maintainer's (SEMPERE_CLI_PROFILE), so
 # the build account cannot change what the signature vouches for beyond the binary itself, which is what the maintainer
 # approves by signing. Steps:
 #   1. checks the tarball's entries and unpacks them in a private folder
-#   2. makes the bundle again (scripts/cli-bundle.sh) from the binary and fonts, embeds the provisioning profile, and checks the
+#   2. makes the bundle again (scripts/cli-bundle.sh) from the binary alone (it must be universal; fonts, Info.plist and entitlements
+#      are this checkout's), embeds the provisioning profile, and checks the
 #      profile: the CLI's App ID, the iCloud container, a Developer ID profile (no device list), not expired
 #   3. entitlements from packaging/cli/entitlements.plist, the team and App ID taken from the profile (no team identifier lives
 #      in the repository), the container environment Production
@@ -68,6 +69,8 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 chmod 700 "$tmp"
 
 # 1. The tarball is data: every entry is a plain file or folder below $name/, with names from a short list.
+[[ $(head -c2 "$in" | od -An -tx1 | tr -d ' \n') == 1f8b ]] || die "$in is not gzip data (bad magic)"
+[[ $(gzip -dc < "$in" 2>/dev/null | dd bs=1 skip=257 count=5 2>/dev/null) == ustar ]] || die "$in does not hold a tar archive (no ustar header after gunzip)"
 tar -tzf "$in" > "$tmp/names" || die "$in is not a readable tar.gz"
 tar -tvzf "$in" | cut -c1 | sort -u > "$tmp/types"
 if grep -vqE '^[-d]$' "$tmp/types"; then die "$in holds an entry that is not a plain file or folder (a link or a device): refused"; fi
@@ -77,19 +80,24 @@ while IFS= read -r n; do
     "$name/sempere.app/"*|"$name/docs/"*|"$name/docs"|"$name/LICENSE"|"$name/LICENSE-EXCEPTION"|"$name/README.md"|"$name/CHANGELOG.md") ;;
     *) die "$in holds $(printf '%q' "$n"), which a release tarball does not: refused" ;;
   esac
+  case $n in */._*|._*) die "$in holds an AppleDouble entry ($(printf '%q' "$n")): refused" ;; esac
   case $n in *..*|/*) die "$in holds a path with .. or a leading /: refused" ;; esac
 done < "$tmp/names"
 mkdir "$tmp/in"
-tar -xzf "$in" -C "$tmp/in" --no-same-owner --no-same-permissions
+tar -xzf "$in" -C "$tmp/in" --no-same-owner --no-same-permissions --no-xattrs --no-mac-metadata
 src=$tmp/in/$name
 bin=$src/sempere.app/Contents/MacOS/sempere
 [[ -f $bin && ! -L $bin ]] || die "$in has no sempere.app/Contents/MacOS/sempere"
 file "$bin" | grep -q 'Mach-O' || die "the sempere in $in is not a Mach-O executable"
-fonts=$src/sempere.app/Contents/Resources/fonts
+# Only the binary comes from the build account: the fonts are this checkout's, the Info.plist and entitlements too.
+$dev || { lipo -archs "$bin" | tr ' ' '\n' | grep -qx arm64 && lipo -archs "$bin" | tr ' ' '\n' | grep -qx x86_64; } \
+  || die "the binary is not universal (arm64 and x86_64): $(lipo -archs "$bin" 2>&1)"
+fonts=Sources/SempereFonts/Fonts
+[[ -f $fonts/NotoSans-Bold.ttf ]] || die "no fonts in $fonts: run this from a full checkout of origin/main"
 
-# 2. The bundle again, from the binary and fonts alone; this checkout's Info.plist.
+# 2. The bundle again, from the binary alone; this checkout's fonts and Info.plist.
 mkdir "$tmp/out"
-scripts/cli-bundle.sh "$bin" "$version" "$tmp/out" "$([[ -d $fonts ]] && echo "$fonts")" >/dev/null
+scripts/cli-bundle.sh "$bin" "$version" "$tmp/out" "$fonts" >/dev/null
 app=$tmp/out/sempere.app
 security cms -D -i "$profile" > "$tmp/profile.plist" 2>/dev/null || die "$profile is not a provisioning profile (security cms cannot read it)"
 pl() { plutil -extract "$1" raw -o - "$tmp/profile.plist" 2>/dev/null || true; }
