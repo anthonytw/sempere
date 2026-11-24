@@ -118,6 +118,9 @@ struct CloudMirror: Equatable {
         var index: Int
         var tag: String
         var modified: Int64
+        /// The part record's layout version: a newer one is never swept.
+        var schema: Int64 = CloudSchema.current
+        var isNewer: Bool { schema > CloudSchema.current }
     }
 
     /// Where a skipped record went wrong, for the counts.
@@ -277,7 +280,8 @@ struct CloudMirror: Equatable {
         switch r.kind {
         case .part:
             guard let p = CloudRecordNaming.parsePartName(r.name) else { return .skipped(.name) }
-            return .part(Part(name: r.name, fileHash: p.fileHash, gen: p.gen, index: p.index, tag: r.changeTag, modified: modified))
+            guard let schema = r.fields.schema, schema >= 1 else { return .skipped(.schema) }
+            return .part(Part(name: r.name, fileHash: p.fileHash, gen: p.gen, index: p.index, tag: r.changeTag, modified: modified, schema: schema))
         case .file:
             if r.name == CloudRecordNaming.zoneInfoName {
                 guard let s = r.fields.schema, s >= 1 else { return .skipped(.schema) }
@@ -321,7 +325,7 @@ struct CloudMirror: Equatable {
 
     // MARK: Persisting
 
-    private static let header = "sempere-cloud-mirror/1"
+    private static let header = "sempere-cloud-mirror/2"
     private static let maxLine = 4 * (CloudRecordNaming.maxDepth * (CloudRecordNaming.maxComponentBytes + 1)) + 256
 
     /// The mirror as a file (a line per record).
@@ -335,7 +339,7 @@ struct CloudMirror: Equatable {
                     f.tomb ? "1" : "0", String(f.parts), String(f.schema)].joined(separator: "\t") + "\n"
         }
         for p in parts.values.sorted(by: { $0.name < $1.name }) {
-            out += ["P", p.name, p.tag, String(p.modified)].joined(separator: "\t") + "\n"
+            out += ["P", p.name, p.tag, String(p.modified), String(p.schema)].joined(separator: "\t") + "\n"
         }
         return Data(out.utf8)
     }
@@ -382,11 +386,12 @@ struct CloudMirror: Equatable {
                 if cols[5] != "-" { guard let h = Hex.decode(cols[5]) else { throw bad("hash") }; sha = h }
                 mirror.upsert(File(name: CloudRecordNaming.fileName(path), path: path, tag: cols[2], modified: mod, size: size,
                                    sha256: sha, tomb: cols[6] == "1", parts: parts, schema: schema))
-            case "P" where cols.count == 4:
-                guard let p = CloudRecordNaming.parsePartName(cols[1]), CloudRecordNaming.isValidTag(cols[2]), let mod = Int64(cols[3]) else {
+            case "P" where cols.count == 5:
+                guard let p = CloudRecordNaming.parsePartName(cols[1]), CloudRecordNaming.isValidTag(cols[2]), let mod = Int64(cols[3]),
+                      let schema = Int64(cols[4]), schema >= 1 else {
                     throw bad("part row")
                 }
-                mirror.upsert(Part(name: cols[1], fileHash: p.fileHash, gen: p.gen, index: p.index, tag: cols[2], modified: mod))
+                mirror.upsert(Part(name: cols[1], fileHash: p.fileHash, gen: p.gen, index: p.index, tag: cols[2], modified: mod, schema: schema))
             default:
                 throw bad("unknown row")
             }

@@ -19,6 +19,11 @@ enum CloudRemoteMutation: Hashable, Sendable, CaseIterable {
     case deleteSkipsTombstone
     /// A tombstone is listed as a live file.
     case tombstonesListAsPresent
+    /// The save of a replace or a tombstone does not ask the server to check the tag (the transport's own earlier check
+    /// is all that is left, which another device can beat between the fetch and the save).
+    case serverConditionsDropped
+    /// The sweep takes every old part for an orphan, whatever file names it.
+    case orphanRuleIgnoresFiles
     /// A device's own saves and deletes are not recorded in its mirror (a run does not read its own writes).
     case ownWritesNotMirrored
 }
@@ -58,12 +63,9 @@ extension CloudRecordRemote {
             guard Int64(b.count) == f.size else { throw CloudRecordError.corrupt(path: shown(path), reason: "inline size") }
             return b.isEmpty ? .empty : .inline(b)
         }
-        if let a = record.fields.assetSize {
-            guard a == f.size else { throw CloudRecordError.corrupt(path: shown(path), reason: "asset size") }
-            return .asset
-        }
-        if f.size == 0 { return .empty }
-        throw CloudRecordError.corrupt(path: shown(path), reason: "no content")
+        // Not inline: an asset (its size is the record's `size`; a store may not say what an asset weighs without
+        // downloading it, so it is read bounded by `size` and checked against the SHA-256).
+        return f.size == 0 ? .empty : .asset
     }
 
     // MARK: Reads
@@ -112,7 +114,7 @@ extension CloudRecordRemote {
             try checkInterrupt()
             let name = CloudRecordNaming.partName(fileName: f.name, fileSha: f.sha256 ?? Data(), index: i)
             guard let part = try perform({ try store.fetch(zone: zone, name: name, payload: false) }), part.kind == .part,
-                  let size = part.fields.size, size > 0, size <= Int64(layout.partSize) * 4, part.fields.assetSize == size,
+                  let size = part.fields.size, size > 0, size <= Int64(layout.partSize) * 4,
                   let sha = part.fields.sha256, sha.count == 32, (part.fields.schema ?? 0) <= CloudSchema.current else {
                 throw CloudRecordError.corrupt(path: shown(path), reason: "part \(i) is missing or invalid")
             }
@@ -176,6 +178,11 @@ extension CloudRecordRemote {
 
     // MARK: Writes
 
+    private func dropped(_ c: CloudPrecondition) -> CloudPrecondition {
+        if Self.mutations.contains(.serverConditionsDropped), case .ifTag = c { return .none }
+        return c
+    }
+
     /// A file's content prepared for a save: its size and hash, and where the bytes come from.
     private struct Prepared {
         enum Source { case data(Data), file(URL) }
@@ -188,7 +195,7 @@ extension CloudRecordRemote {
 
         func range(_ offset: Int64, _ length: Int64) -> CloudAssetBody {
             switch source {
-            case .data(let d): return .data(d.subdata(in: Int(offset) ..< Int(offset + length)))
+            case .data(let d): return .data(Data(d[(d.startIndex + Int(offset)) ..< (d.startIndex + Int(offset + length))]))
             case .file(let url): return .file(url, offset: offset, length: length)
             }
         }
@@ -260,9 +267,9 @@ extension CloudRecordRemote {
             let offset = Int64(i) * partSize
             let length = min(partSize, p.size - offset)
             if let have = try perform({ try store.fetch(zone: zone, name: name, payload: false) }), have.kind == .part,
-               have.fields.sha256 == p.partHashes[i], have.fields.assetSize == length, (have.fields.schema ?? 0) == CloudSchema.current,
+               have.fields.sha256 == p.partHashes[i], have.fields.size == length, (have.fields.schema ?? 0) == CloudSchema.current,
                // Not one a sweep may be about to take as an orphan (it is deleted after `orphanPartAge`): older ones are saved again.
-               have.modified.map({ now().timeIntervalSince($0) < layout.orphanPartAge / 2 }) ?? false {
+               have.modified.map({ (serverNow() ?? $0).timeIntervalSince($0) < layout.orphanPartAge / 2 }) ?? false {
                 noteSaved(part: have, name: name)
                 continue
             }
@@ -278,6 +285,7 @@ extension CloudRecordRemote {
     }
 
     private func noteSaved(part r: CloudRecord, name: String) {
+        noteServerTime(r.modified)
         guard let parsed = CloudRecordNaming.parsePartName(name), CloudRecordNaming.isValidTag(r.changeTag) else { return }
         core.with { $0.upsert(.init(name: name, fileHash: parsed.fileHash, gen: parsed.gen, index: parsed.index, tag: r.changeTag,
                                     modified: r.modified.map(CloudMirror.millis) ?? 0)) }
@@ -286,10 +294,11 @@ extension CloudRecordRemote {
     /// Saves the file's record under `precondition`; the mirror learns the new tag when it was saved.
     private func commit(_ path: [String], _ p: Prepared, _ precondition: CloudPrecondition) throws -> CloudSaveOutcome {
         let name = CloudRecordNaming.fileName(path)
-        var save = CloudSave(name: name, kind: .file, fields: fields(path, p), precondition: precondition)
+        var save = CloudSave(name: name, kind: .file, fields: fields(path, p), precondition: dropped(precondition))
         if p.inline == nil, p.partCount == 0 { save.asset = p.range(0, p.size) }
         let result = try perform { try store.modify(zone: zone, saves: [save], deletes: []) }
         guard let outcome = result.saves.first else { throw CloudRecordError.corrupt(path: shown(path), reason: "no answer to a save") }
+        if case .saved(let r) = outcome { noteServerTime(r.modified) }
         if case .saved(let r) = outcome, CloudRecordNaming.isValidTag(r.changeTag), !Self.mutations.contains(.ownWritesNotMirrored) {
             core.with { m in
                 m.upsert(.init(name: name, path: path, tag: r.changeTag, modified: r.modified.map(CloudMirror.millis) ?? 0, size: p.size,
@@ -305,6 +314,8 @@ extension CloudRecordRemote {
         try checkInterrupt()
         try refreshIfNeeded()
         try requireWritable(path: path)
+        try requireRoom()
+        try sweepIfDue()
         guard core.with({ $0.collectionExists(Array(path.dropLast())) }) else {
             throw CloudRecordError.missingParent(shown(Array(path.dropLast())))
         }
@@ -343,8 +354,8 @@ extension CloudRecordRemote {
             try parts()
             switch try commit(path, prepared, precondition) {
             case .saved:
-                // A replaced split file's parts are not named by anything now (the sweep would take them in a week).
-                if let old = current, !old.tomb, old.parts > 0, old.sha256 != prepared.sha { try? deleteRecords(partNames(of: old)) }
+                // The replaced version's parts are named by nothing now; they stay for the sweep (a reader of the old
+                // version may be between its record and its parts).
                 return true
             case .conflict: continue
             case .failed(let e): throw map(e)
@@ -357,9 +368,10 @@ extension CloudRecordRemote {
 
     private func tombstone(_ path: [String], _ f: CloudMirror.File) throws -> CloudSaveOutcome {
         let save = CloudSave(name: f.name, kind: .file, fields: CloudFields(schema: CloudSchema.current, path: path.joined(separator: "/"), tomb: 1),
-                             precondition: .ifTag(f.tag))
+                             precondition: dropped(.ifTag(f.tag)))
         let result = try perform { try store.modify(zone: zone, saves: [save], deletes: []) }
         guard let outcome = result.saves.first else { throw CloudRecordError.corrupt(path: shown(path), reason: "no answer to a save") }
+        if case .saved(let r) = outcome { noteServerTime(r.modified) }
         if case .saved(let r) = outcome, CloudRecordNaming.isValidTag(r.changeTag), !Self.mutations.contains(.ownWritesNotMirrored) {
             core.with { m in
                 m.upsert(.init(name: f.name, path: path, tag: r.changeTag, modified: r.modified.map(CloudMirror.millis) ?? 0, size: 0,
@@ -403,6 +415,7 @@ extension CloudRecordRemote {
         try checkInterrupt()
         try refreshIfNeeded()
         try requireWritable(path: path)
+        try sweepIfDue()
         // A collection: every file below it (a folder's version token is the digest of what is below).
         let isCollection = core.with { $0.liveFile(path) == nil && $0.collectionExists(path) }
         if isCollection { return try deleteCollection(path, ifETag: ifETag) }
@@ -461,7 +474,10 @@ extension CloudRecordRemote {
     @discardableResult
     public func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool {
         try check(destination)
-        let (data, etag) = try read(path, maxBytes: 256 << 20)
+        // The engine creates at the final name (`atomicCreate`); a move is only for small files, read whole.
+        guard let size = try stat(path)?.size else { throw CloudRecordError.notFound(shown(path)) }
+        guard size <= layout.inlineLimit else { throw CloudRecordError.unsupported("a move of a file over \(layout.inlineLimit) bytes") }
+        let (data, etag) = try read(path, maxBytes: layout.inlineLimit)
         guard try write(destination, .data(data), condition: .create) else { return false }
         try delete(path, ifETag: etag)
         return true
@@ -469,15 +485,26 @@ extension CloudRecordRemote {
 
     // MARK: The sweep (design §2.4, §2.5)
 
+    /// Runs the sweep once per run, at the first write or delete (which a pull-only, held or dry run never makes).
+    func sweepIfDue() throws {
+        guard core.locked({ let d = core.sweepDue; core.sweepDue = false; return d }) else { return }
+        try sweep()
+    }
+
     /// Deletes the tombstones it finds after fetching each again and finding the same tag, and the parts no file
-    /// names after `orphanPartAge`. Best effort: a failure is for a later run (the tombstone stays, listed as absent).
+    /// names after `orphanPartAge` (by the server's clock). Best effort: a failure is for a later run (the tombstone
+    /// stays, listed as absent). Never in a zone of a newer layout, and never a record of a newer layout.
     func sweep() throws {
-        let cutoff = CloudMirror.millis(now().addingTimeInterval(-layout.orphanPartAge))
+        if (core.with { $0.zoneSchema ?? 0 }) > CloudSchema.current { return }
+        let cutoff = serverNow().map { CloudMirror.millis($0.addingTimeInterval(-layout.orphanPartAge)) }
+        let ignoreFiles = Self.mutations.contains(.orphanRuleIgnoresFiles)
         let (tombs, orphans) = core.with { m -> ([CloudMirror.File], [CloudMirror.Part]) in
             let tombs = m.tombstones.filter { !$0.isNewer }.sorted { $0.name < $1.name }.prefix(layout.sweepLimit)
             let orphans = m.parts.values.filter { p in
-                guard p.modified > 0, p.modified < cutoff else { return false }
+                guard let cutoff, !p.isNewer, p.modified > 0, p.modified < cutoff else { return false }
+                if ignoreFiles { return true }
                 guard let f = m.file(named: "f-" + p.fileHash) else { return true }
+                if f.isNewer { return false }
                 return f.tomb || p.index >= f.parts || f.sha256.map({ Hex.encode($0.prefix(8)) }) != p.gen
             }.sorted { $0.name < $1.name }.prefix(layout.sweepLimit)
             return (Array(tombs), Array(orphans))

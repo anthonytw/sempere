@@ -27,6 +27,8 @@ public struct MemoryCloudLimits: Sendable, Equatable {
     public var pageSize = 400
     /// The size of the pieces `readAsset` hands out.
     public var chunkBytes = 64 << 10
+    /// Whether a fetched record says how big its asset is (a real `CKAsset` may not, without downloading it).
+    public var reportsAssetSize = true
 
     public init() {}
 }
@@ -420,7 +422,7 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
                 case .rec(let s):
                     var r = s.record
                     r.fields.bytes = nil
-                    r.fields.assetSize = s.asset.map { Int64($0.count) }
+                    r.fields.assetSize = s.asset.flatMap { _limits.reportsAssetSize ? Int64($0.count) : nil }
                     changed.append(r)
                 case .gone(let n, _): deleted.append(n)
                 }
@@ -440,7 +442,7 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
             guard let s = z.records[record] else { return nil }
             var r = s.record
             if !payload { r.fields.bytes = nil }
-            r.fields.assetSize = s.asset.map { Int64($0.count) }
+            r.fields.assetSize = s.asset.flatMap { _limits.reportsAssetSize ? Int64($0.count) : nil }
             return r
         }
     }
@@ -508,7 +510,7 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
             guard let e else { return nil }
             var r = e.record
             r.fields.bytes = nil
-            r.fields.assetSize = e.asset.map { Int64($0.count) }
+            r.fields.assetSize = e.asset.flatMap { _limits.reportsAssetSize ? Int64($0.count) : nil }
             return r
         }
         switch s.precondition {

@@ -1781,27 +1781,44 @@ public final class SyncEngine {
     func placeWriteOnce(_ final: [String], _ body: RemoteBody, taken: TakenRule, damaged: RemoteEntry? = nil,
                         written: ((Error?) -> Void)? = nil) throws -> WriteOncePlacement {
         let label = final.joined(separator: "/")
-        let temp = Array(final.dropLast()) + [FileIO.tempPrefix + UUID().uuidString.lowercased()]
-        let tempRel = temp.joined(separator: "/")
-        locked { state.remoteTemps.append(tempRel) }
-        checkpoint()
-        var moved = false
-        defer {
-            // Gone after a MOVE; otherwise removed now, or by the next run if that fails.
-            if moved || (try? transport.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
+        let moved: Bool
+        if transport.capabilities.atomicCreate {
+            // A store whose create appears whole or not at all (records, `FolderRemote`'s link(2)): no temporary name, no
+            // second copy. A cut upload leaves nothing under the final name, and a large file's parts stay for the next
+            // attempt to reuse. With `damaged`, the server's copy is removed first (only that version when its tag is strong).
+            if let damaged {
+                let etag = damaged.etag.flatMap { Self.isStrong($0) ? $0 : nil }
+                guard try transport.delete(final, ifETag: etag) else { return .changed }
+            }
+            do { moved = try transport.write(final, body, condition: .create) } catch {
+                written?(error)
+                throw error
+            }
+            written?(nil)
+        } else {
+            let temp = Array(final.dropLast()) + [FileIO.tempPrefix + UUID().uuidString.lowercased()]
+            let tempRel = temp.joined(separator: "/")
+            locked { state.remoteTemps.append(tempRel) }
+            checkpoint()
+            var done = false
+            defer {
+                // Gone after a MOVE; otherwise removed now, or by the next run if that fails.
+                if done || (try? transport.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
+            }
+            let created: Bool
+            do { created = try transport.write(temp, body, condition: .create) } catch {
+                written?(error)
+                throw error
+            }
+            guard created else { throw SyncError.io("\(label): the temporary upload name already exists on the server") }
+            written?(nil)
+            if let damaged {
+                let etag = damaged.etag.flatMap { Self.isStrong($0) ? $0 : nil }
+                guard try transport.delete(final, ifETag: etag) else { return .changed }
+            }
+            done = try transport.moveNoOverwrite(temp, to: final)
+            moved = done
         }
-        let created: Bool
-        do { created = try transport.write(temp, body, condition: .create) } catch {
-            written?(error)
-            throw error
-        }
-        guard created else { throw SyncError.io("\(label): the temporary upload name already exists on the server") }
-        written?(nil)
-        if let damaged {
-            let etag = damaged.etag.flatMap { Self.isStrong($0) ? $0 : nil }
-            guard try transport.delete(final, ifETag: etag) else { return .changed }
-        }
-        moved = try transport.moveNoOverwrite(temp, to: final)
         if moved { return .placed }
         let same: Bool
         switch taken {

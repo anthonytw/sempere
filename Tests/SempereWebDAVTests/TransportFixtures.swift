@@ -163,6 +163,11 @@ final class CloudFixture: @unchecked Sendable {
 
     /// Device `name`'s remote through faults: its mirror, other failures.
     func faulty(for name: String, seed: UInt64, _ f: TransportFaults) -> CloudRecordRemote {
+        remote(for: name).with(store: database.view(faults: faults(seed: seed, f)))
+    }
+
+    /// The faults `TransportFaults` asks for, as the fake database injects them.
+    func faults(seed: UInt64, _ f: TransportFaults) -> CloudFaults {
         var rates: [CloudFaults.Kind: Double] = [:]
         rates[.networkFailure] = f.dropBefore
         rates[.internalError] = f.serverError
@@ -171,7 +176,7 @@ final class CloudFixture: @unchecked Sendable {
         rates[.cutUpload] = f.cutBody
         let faults = CloudFaults(seed: seed, rates: rates)
         if let only = f.only { faults.eligible = { _, _, path in only(path.split(separator: "/").map(String.init)) } }
-        return remote(for: name).with(store: database.view(faults: faults))
+        return faults
     }
 }
 

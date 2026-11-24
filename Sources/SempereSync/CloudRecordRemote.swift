@@ -39,13 +39,20 @@ final class CloudRemoteCore: @unchecked Sendable {
     var loaded = false
     /// The user deleted the zone: it is never made again by itself.
     var userDeletedZone = false
+    /// The newest modification time (ms) any record the server showed us carries: the server's clock, for the sweep's ages.
+    var serverMillis: Int64 = 0
+    /// A sweep is due on the first write or delete of this run (never from `prepareRun`: a pull-only, held or dry run
+    /// must not change the server, and only writes and deletes reach the gate that stops them).
+    var sweepDue = false
+    /// The account is full: uploads stop for the rest of the run (design §4).
+    var quotaFull = false
     var diagnostics = CloudRemoteDiagnostics()
     var continuations: [UUID: AsyncStream<RemoteChange>.Continuation] = [:]
     let stateURL: URL?
     let expectedUser: String?
 
     init(stateDirectory: URL?, expectedUser: String?) {
-        stateURL = stateDirectory?.appendingPathComponent("mirror-1.txt")
+        stateURL = stateDirectory?.appendingPathComponent("mirror-2.txt")
         self.expectedUser = expectedUser
     }
 
@@ -209,6 +216,9 @@ public struct CloudRecordRemote: SyncRemote {
             core.locked { core.userDeletedZone = true }
             core.with { $0.reset(zoneExists: false) }
             return .zoneGone(userDeleted: true)
+        case .quotaExceeded:
+            core.locked { core.quotaFull = true }
+            return .store(e)
         default:
             return .store(e)
         }
@@ -220,6 +230,23 @@ public struct CloudRecordRemote: SyncRemote {
         let (zoneSchema, newer) = core.with { m in (m.zoneSchema ?? 0, path.flatMap { m.file($0)?.isNewer } ?? false) }
         if zoneSchema > CloudSchema.current { throw CloudRecordError.newerSchema(path: nil) }
         if newer { throw CloudRecordError.newerSchema(path: path.map { $0.joined(separator: "/") }) }
+    }
+
+    /// The server's time: the newest modification date it has shown (nil before any).
+    func serverNow() -> Date? {
+        let ms = core.locked { core.serverMillis }
+        return ms > 0 ? Date(timeIntervalSince1970: Double(ms) / 1000) : nil
+    }
+
+    func noteServerTime(_ d: Date?) {
+        guard let d else { return }
+        let ms = CloudMirror.millis(d)
+        core.locked { if ms > core.serverMillis { core.serverMillis = ms } }
+    }
+
+    /// Refuses an upload once the account said it is full this run.
+    func requireRoom() throws {
+        if core.locked({ core.quotaFull }) { throw CloudRecordError.store(CloudStoreError(.quotaExceeded, "the account is full (this run)")) }
     }
 
     func check(_ path: [String], allowEmpty: Bool = false) throws {
@@ -248,7 +275,13 @@ public struct CloudRecordRemote: SyncRemote {
         var hintOverflow = false
         var expired = 0
         var first = true
+        // A feed that never ends is a failure, not work: pages and records seen are bounded, and a page that says more
+        // is coming must move the token.
+        var pages = 0, seen = 0
+        core.locked { core.quotaFull = false }
         fetching: while true {
+            pages += 1
+            guard pages <= 100_000 else { throw CloudRecordError.corrupt(path: "zone feed", reason: "more than 100000 pages") }
             let token = core.with { $0.token }
             let page: CloudZoneChanges
             do {
@@ -270,6 +303,10 @@ public struct CloudRecordRemote: SyncRemote {
                     throw map(e)
                 }
             }
+            seen += page.changed.count + page.deleted.count
+            if seen > layout.maxRecords + 100_000 { throw CloudRecordError.tooManyRecords(layout.maxRecords) }
+            if page.moreComing, page.token == token { throw CloudRecordError.corrupt(path: "zone feed", reason: "the change token did not advance") }
+            for r in page.changed { noteServerTime(r.modified) }
             if first || token == nil {
                 if token == nil { core.locked { core.diagnostics.fullFetches += 1 } }
                 first = false
@@ -306,9 +343,8 @@ public struct CloudRecordRemote: SyncRemote {
         core.locked {
             core.diagnostics.newerSchemaFiles = core.mirror.files.values.filter { $0.isNewer && !$0.tomb }.count
         }
-        try sweep()
         persistMirror()
-        core.locked { core.prepared = true }
+        core.locked { core.prepared = true; core.sweepDue = true }
         if hintOverflow { core.yield(.unknown) } else if !changedPaths.isEmpty { core.yield(.paths(changedPaths)) }
     }
 

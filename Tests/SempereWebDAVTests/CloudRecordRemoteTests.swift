@@ -28,6 +28,11 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         return r
     }
 
+    /// What a run's first write or delete does first: the sweep.
+    private func sweep(_ r: CloudRecordRemote) throws {
+        _ = try r.delete(dir + ["_nothing_"], ifETag: nil)
+    }
+
     private func put(_ r: CloudRecordRemote, _ name: String, _ data: Data) throws {
         XCTAssertTrue(try r.write(dir + [name], .data(data), condition: .create), name)
     }
@@ -156,9 +161,12 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         XCTAssertEqual(try a.read(dir + ["big"], maxBytes: 4096).data, data)
     }
 
-    func testOrphanPartsAreSweptAfterSevenDays() throws {
+    func testOrphanPartsAreSweptAfterSevenDaysOfTheServersClock() throws {
         let fx = CloudFixture(layout: small())
         let a = try device(fx)
+        let b = fx.remote(for: "B")
+        try b.prepareRun()
+        _ = try b.makeCollection(["notes"]); _ = try b.makeCollection(dir)
         let faults = CloudFaults(seed: 1)
         fx.database.faults = faults
         faults.script(.modify, after: 3, .error(CloudStoreError(.networkFailure, "cut")))
@@ -166,13 +174,14 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         fx.database.faults = nil
         let parts = { fx.database.recordNames(zone: fx.zone).filter { $0.hasPrefix("p-") }.count }
         XCTAssertEqual(parts(), 3)
-        try a.prepareRun()
+        try a.prepareRun(); try sweep(a)
         XCTAssertEqual(parts(), 3, "young parts may belong to an upload that goes on")
-        fx.clock.value = fx.clock.value.addingTimeInterval(6 * 24 * 3600)
-        try a.prepareRun()
-        XCTAssertEqual(parts(), 3)
-        fx.clock.value = fx.clock.value.addingTimeInterval(2 * 24 * 3600)
-        try a.prepareRun()
+        // Time is the server's: it moves when the server shows a newer record, not when this device's clock does.
+        fx.clock.value = fx.clock.value.addingTimeInterval(8 * 24 * 3600)
+        try a.prepareRun(); try sweep(a)
+        XCTAssertEqual(parts(), 3, "no newer record has been seen")
+        try put(b, "later", Data("x".utf8))
+        try a.prepareRun(); try sweep(a)
         XCTAssertEqual(parts(), 0, "after 7 days no file names them")
         XCTAssertEqual(a.diagnostics.partsSwept, 3)
     }
@@ -192,9 +201,9 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         XCTAssertEqual(try fx.remote(for: "inspector").read(dir + ["big"], maxBytes: 4096).data, old, "still the old version, whole")
         XCTAssertTrue(try a.write(dir + ["big"], .data(new), condition: .replace(etag: etag)))
         XCTAssertEqual(try a.read(dir + ["big"], maxBytes: 4096).data, new)
-        // The old version's parts are gone (not left for a week).
+        // The old version's parts stay for the sweep: a reader may be between the old record and them.
         let sha = FileDigest.sha256(old)
-        XCTAssertTrue(fx.database.recordNames(zone: fx.zone).filter { $0.contains("-" + sha.prefix(16) + "-") }.isEmpty)
+        XCTAssertEqual(fx.database.recordNames(zone: fx.zone).filter { $0.contains("-" + sha.prefix(16) + "-") }.count, 7)
     }
 
     // MARK: Tombstones
@@ -231,6 +240,8 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         XCTAssertEqual(try b.list(dir) ?? [], [])
         let c = fx.remote(for: "C")
         try c.prepareRun()
+        XCTAssertNotNil(record(fx, dir + ["f"]), "a run that has not written has not swept")
+        try sweep(c)
         XCTAssertNil(record(fx, dir + ["f"]), "swept")
         XCTAssertEqual(c.diagnostics.tombstonesSwept, 1)
     }
@@ -261,6 +272,7 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         }
         let c = CloudRecordRemote(store: interposed, zone: fx.zone, layout: fx.layout)
         try c.prepareRun()
+        try sweep(c)
         XCTAssertEqual(record(fx, dir + ["f"])?.fields.tomb, nil)
         XCTAssertEqual(try c.read(dir + ["f"], maxBytes: 100).data, Data("two".utf8))
         XCTAssertEqual(c.diagnostics.tombstonesSwept, 0)
@@ -370,7 +382,7 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         let a = try device(fx)
         for i in 0..<5 { try put(a, "f\(i)", Data("\(i)".utf8)) }
         try a.prepareRun()
-        let file = tmp.appendingPathComponent("A/mirror-1.txt")
+        let file = tmp.appendingPathComponent("A/mirror-2.txt")
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
         let again = CloudRecordRemote(store: fx.database, zone: fx.zone, stateDirectory: tmp.appendingPathComponent("A"), layout: fx.layout)
         try again.prepareRun()
@@ -523,6 +535,7 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         let a = try device(fx)
         fx.database.putRaw(zone: fx.zone, tombstone(path: dir + ["t"], schema: 2))
         try a.prepareRun()
+        try sweep(a)
         XCTAssertNotNil(record(fx, dir + ["t"]))
         XCTAssertEqual(a.diagnostics.tombstonesSwept, 0)
     }
@@ -538,6 +551,7 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         fx.database.faults = faults
         for i in 0..<10 { fx.database.putRaw(zone: fx.zone, tombstone(path: dir + ["t\(i)"])) }
         try a.prepareRun()
+        try sweep(a)
         XCTAssertEqual(Set(fx.database.recordNames(zone: fx.zone)), [CloudRecordNaming.zoneInfoName])
         XCTAssertEqual(a.diagnostics.tombstonesSwept, 10)
     }
@@ -551,8 +565,10 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         let bad = CloudRecordNaming.fileName(dir + ["t2"])
         faults.script(.modify, name: bad, .recordError(CloudStoreError(.serverRejectedRequest, "no")))
         try a.prepareRun()
+        try sweep(a)
         XCTAssertEqual(Set(fx.database.recordNames(zone: fx.zone)), [CloudRecordNaming.zoneInfoName, bad], "the others are deleted; this one waits for a later sweep")
         try a.prepareRun()
+        try sweep(a)
         XCTAssertEqual(Set(fx.database.recordNames(zone: fx.zone)), [CloudRecordNaming.zoneInfoName])
     }
 
