@@ -54,6 +54,8 @@ public final class CloudFaults: @unchecked Sendable {
         case loseAnswer
         /// An asset body cut midway (`networkFailure` after a prefix): `readAsset` only.
         case cutAsset
+        /// An upload cut midway: nothing is saved (`modify` with saves only).
+        case cutUpload
         case internalError
         /// One record of a `modify` fails alone (a `partialFailure` mix): the rest apply.
         case recordRejected
@@ -107,7 +109,7 @@ public final class CloudFaults: @unchecked Sendable {
     public func setRate(_ kind: Kind, _ p: Double) { withLock { rates[kind] = p } }
     public func setRates(_ all: [Kind: Double]) { withLock { rates = all } }
 
-    /// Which (fault, operation, record name or "") may happen; all by default.
+    /// Which (fault, operation, vault path or "") may happen; all by default.
     public var eligible: @Sendable (Kind, CloudOp, String) -> Bool {
         get { withLock { _eligible } }
         set { withLock { _eligible = newValue } }
@@ -147,14 +149,14 @@ public final class CloudFaults: @unchecked Sendable {
         case .changeTokenExpired: return op == .fetchChanges
         case .assetNotAvailable, .assetFileNotFound, .cutAsset: return op == .readAsset
         case .loseAnswer: return op == .modify || op == .createZone || op == .deleteZone
-        case .recordRejected: return op == .modify && writes > 0
+        case .recordRejected, .cutUpload: return op == .modify && writes > 0
         }
     }
 
     static func error(for kind: Kind) -> CloudStoreError {
         switch kind {
         case .networkUnavailable: return CloudStoreError(.networkUnavailable, "injected")
-        case .networkFailure, .cutAsset: return CloudStoreError(.networkFailure, "injected")
+        case .networkFailure, .cutAsset, .cutUpload: return CloudStoreError(.networkFailure, "injected")
         case .serviceUnavailable: return CloudStoreError(.serviceUnavailable, "injected")
         case .rateLimited: return CloudStoreError(.requestRateLimited, retryAfterSeconds: 0.01, "injected")
         case .zoneBusy: return CloudStoreError(.zoneBusy, retryAfterSeconds: 0.01, "injected")
@@ -170,7 +172,7 @@ public final class CloudFaults: @unchecked Sendable {
     }
 
     /// Decides the faults of one operation. `names`: the records it names (a `modify`'s saves, in order); `writes`: how many saves.
-    func decide(_ op: CloudOp, names: [String], writes: Int) -> Decision {
+    func decide(_ op: CloudOp, names: [String], paths: [String], writes: Int) -> Decision {
         withLock {
             _requests[op, default: 0] += 1
             // A script first.
@@ -199,7 +201,7 @@ public final class CloudFaults: @unchecked Sendable {
             for kind in Kind.allCases where kind != .recordRejected && Self.applies(kind, to: op, writes: writes) {
                 edge += rates[kind] ?? 0
                 if roll < edge {
-                    if _eligible(kind, op, names.first ?? "") {
+                    if _eligible(kind, op, paths.first ?? "") {
                         d.kind = kind
                         _counts[kind, default: 0] += 1
                         if kind == .loseAnswer { d.applyThenFail = true }
@@ -210,7 +212,7 @@ public final class CloudFaults: @unchecked Sendable {
                 }
             }
             if d.kind == nil, op == .modify, let p = rates[.recordRejected], p > 0 {
-                for name in names where uniform() < p && _eligible(.recordRejected, op, name) {
+                for (i, name) in names.enumerated() where uniform() < p && _eligible(.recordRejected, op, i < paths.count ? paths[i] : "") {
                     d.recordFailures[name] = Self.error(for: .recordRejected)
                     _counts[.recordRejected, default: 0] += 1
                 }
@@ -296,8 +298,8 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
     // MARK: Fault plumbing
 
     /// Starts an operation: decides its faults and throws the ones that stop it before it is applied.
-    private func begin(_ op: CloudOp, names: [String] = [], writes: Int = 0) throws -> CloudFaults.Decision {
-        let d = faults?.decide(op, names: names, writes: writes) ?? .none
+    private func begin(_ f: CloudFaults?, _ op: CloudOp, names: [String] = [], paths: [String] = [], writes: Int = 0) throws -> CloudFaults.Decision {
+        let d = f?.decide(op, names: names, paths: paths, writes: writes) ?? .none
         if !d.applyThenFail, let e = d.error { throw e }
         return d
     }
@@ -313,6 +315,14 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
         return z
     }
 
+    /// The vault path a record holds (for faults that pick files by path), else "".
+    private func pathHint(_ zone: String, _ name: String) -> String {
+        withLock { zonesByName[zone]?.records[name]?.record.fields.path ?? "" }
+    }
+
+    /// The same database seen through other faults: one device's connection (its own failures, the shared records).
+    public func view(faults: CloudFaults?) -> any CloudRecordStore { MemoryCloudView(db: self, faults: faults) }
+
     private func nextTag() -> String { tagCounter += 1; return "t\(tagCounter)" }
 
     private func touch(_ zone: String) {
@@ -322,14 +332,16 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
 
     // MARK: CloudRecordStore
 
-    public func account() throws -> CloudAccount {
-        _ = try begin(.account)
+    public func account() throws -> CloudAccount { try account(using: faults) }
+    func account(using f: CloudFaults?) throws -> CloudAccount {
+        _ = try begin(f, .account)
         return withLock { _account }
     }
 
-    public func createZone(_ name: String) throws {
+    public func createZone(_ name: String) throws { try createZone(name, using: faults) }
+    func createZone(_ name: String, using f: CloudFaults?) throws {
         try requireAccount()
-        let d = try begin(.createZone, names: [name])
+        let d = try begin(f, .createZone, names: [name])
         withLock {
             userDeleted.remove(name)
             if zonesByName[name] == nil {
@@ -341,9 +353,10 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
         if d.applyThenFail, let e = d.error { throw e }
     }
 
-    public func deleteZone(_ name: String) throws {
+    public func deleteZone(_ name: String) throws { try deleteZone(name, using: faults) }
+    func deleteZone(_ name: String, using f: CloudFaults?) throws {
         try requireAccount()
-        let d = try begin(.deleteZone, names: [name])
+        let d = try begin(f, .deleteZone, names: [name])
         withLock {
             if zonesByName.removeValue(forKey: name) != nil {
                 dbSeq += 1
@@ -354,15 +367,17 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
         if d.applyThenFail, let e = d.error { throw e }
     }
 
-    public func zones() throws -> [String] {
+    public func zones() throws -> [String] { try zones(using: faults) }
+    func zones(using f: CloudFaults?) throws -> [String] {
         try requireAccount()
-        _ = try begin(.zones)
+        _ = try begin(f, .zones)
         return withLock { zonesByName.keys.sorted() }
     }
 
-    public func fetchDatabaseChanges(since token: CloudChangeToken?) throws -> CloudDatabaseChanges {
+    public func fetchDatabaseChanges(since token: CloudChangeToken?) throws -> CloudDatabaseChanges { try fetchDatabaseChanges(since: token, using: faults) }
+    func fetchDatabaseChanges(since token: CloudChangeToken?, using f: CloudFaults?) throws -> CloudDatabaseChanges {
         try requireAccount()
-        _ = try begin(.databaseChanges)
+        _ = try begin(f, .databaseChanges)
         return try withLock {
             var since: UInt64 = 0
             if let token {
@@ -375,9 +390,10 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
         }
     }
 
-    public func fetchChanges(zone name: String, since token: CloudChangeToken?) throws -> CloudZoneChanges {
+    public func fetchChanges(zone name: String, since token: CloudChangeToken?) throws -> CloudZoneChanges { try fetchChanges(zone: name, since: token, using: faults) }
+    func fetchChanges(zone name: String, since token: CloudChangeToken?, using f: CloudFaults?) throws -> CloudZoneChanges {
         try requireAccount()
-        _ = try begin(.fetchChanges, names: [name])
+        _ = try begin(f, .fetchChanges, names: [name])
         return try withLock {
             let z = try zone(name)
             var since: UInt64 = 0
@@ -413,9 +429,10 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
         }
     }
 
-    public func fetch(zone name: String, name record: String, payload: Bool) throws -> CloudRecord? {
+    public func fetch(zone name: String, name record: String, payload: Bool) throws -> CloudRecord? { try fetch(zone: name, name: record, payload: payload, using: faults) }
+    func fetch(zone name: String, name record: String, payload: Bool, using f: CloudFaults?) throws -> CloudRecord? {
         try requireAccount()
-        _ = try begin(.fetch, names: [record])
+        _ = try begin(f, .fetch, names: [record], paths: [pathHint(name, record)])
         return try withLock {
             let z = try zone(name)
             guard let s = z.records[record] else { return nil }
@@ -427,8 +444,11 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
     }
 
     public func readAsset(zone name: String, name record: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
+        try readAsset(zone: name, name: record, maxBytes: maxBytes, chunk: chunk, using: faults)
+    }
+    func readAsset(zone name: String, name record: String, maxBytes: Int64, chunk: (Data) throws -> Void, using f: CloudFaults?) throws {
         try requireAccount()
-        let d = try begin(.readAsset, names: [record])
+        let d = try begin(f, .readAsset, names: [record], paths: [pathHint(name, record)])
         let (data, size): (Data, Int) = try withLock {
             let z = try zone(name)
             guard let s = z.records[record] else { throw CloudStoreError(.unknownItem, record) }
@@ -448,9 +468,11 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
         }
     }
 
-    public func modify(zone name: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult {
+    public func modify(zone name: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult { try modify(zone: name, saves: saves, deletes: deletes, using: faults) }
+    func modify(zone name: String, saves: [CloudSave], deletes: [String], using f: CloudFaults?) throws -> CloudModifyResult {
         try requireAccount()
-        let d = try begin(.modify, names: saves.map(\.name) + deletes, writes: saves.count + deletes.count)
+        let d = try begin(f, .modify, names: saves.map(\.name) + deletes,
+                          paths: saves.map { $0.fields.path ?? "" } + deletes.map { pathHint(name, $0) }, writes: saves.count + deletes.count)
         let result: CloudModifyResult = try withLock {
             let z = try zone(name)
             guard saves.count + deletes.count <= _limits.maxBatchRecords else {
@@ -604,4 +626,29 @@ public final class MemoryCloudDatabase: CloudRecordStore, @unchecked Sendable {
 
     /// Whether the zone exists.
     public func hasZone(_ name: String) -> Bool { withLock { zonesByName[name] != nil } }
+}
+
+/// One device's view of a `MemoryCloudDatabase`: the same records, its own faults (`MemoryCloudDatabase.view`).
+struct MemoryCloudView: CloudRecordStore {
+    let db: MemoryCloudDatabase
+    let faults: CloudFaults?
+    func account() throws -> CloudAccount { try db.account(using: faults) }
+    func createZone(_ zone: String) throws { try db.createZone(zone, using: faults) }
+    func deleteZone(_ zone: String) throws { try db.deleteZone(zone, using: faults) }
+    func zones() throws -> [String] { try db.zones(using: faults) }
+    func fetchDatabaseChanges(since token: CloudChangeToken?) throws -> CloudDatabaseChanges {
+        try db.fetchDatabaseChanges(since: token, using: faults)
+    }
+    func fetchChanges(zone: String, since token: CloudChangeToken?) throws -> CloudZoneChanges {
+        try db.fetchChanges(zone: zone, since: token, using: faults)
+    }
+    func fetch(zone: String, name: String, payload: Bool) throws -> CloudRecord? {
+        try db.fetch(zone: zone, name: name, payload: payload, using: faults)
+    }
+    func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
+        try db.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk, using: faults)
+    }
+    func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult {
+        try db.modify(zone: zone, saves: saves, deletes: deletes, using: faults)
+    }
 }

@@ -310,8 +310,6 @@ extension CloudRecordRemote {
         func parts() throws {
             if !partsDone { try uploadParts(name, prepared); partsDone = true }
         }
-        let same = { (f: CloudMirror.File) in f.size == prepared.size && f.sha256 == prepared.sha }
-
         for _ in 0..<4 {
             let current = try fetchFile(path, payload: false)?.file
             if let f = current, f.isNewer { throw CloudRecordError.newerSchema(path: path.joined(separator: "/")) }
@@ -325,15 +323,15 @@ extension CloudRecordRemote {
                     } else if Self.mutations.contains(.createReplacesExisting) {
                         precondition = .ifTag(f.tag)
                     } else {
-                        // There already: the same bytes is a create that lost its answer, or two devices writing one file.
-                        return same(f)
+                        // There already (a create that lost its answer is settled in `commit`).
+                        return false
                     }
                 } else {
                     precondition = .mustNotExist
                 }
             case .replace(let etag):
                 guard let f = current, !f.tomb else { return false }
-                if Self.quote(f.tag) != etag, !Self.mutations.contains(.replaceIgnoresTag) { return same(f) }
+                if Self.quote(f.tag) != etag, !Self.mutations.contains(.replaceIgnoresTag) { return false }
                 precondition = .ifTag(f.tag)
             case .unconditional:
                 precondition = current.map { .ifTag($0.tag) } ?? .mustNotExist

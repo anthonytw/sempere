@@ -32,6 +32,13 @@ struct TransportUnderTest {
     var unreachable: any SyncRemote
     /// Where this server is known to break the contract (pinned by the conformance suite).
     var deviations: Set<Deviation> = []
+    /// How device `name` reaches the base, when each device keeps state of its own (a CloudKit target's mirror):
+    /// the same remote every time it is asked for the same device. nil: every device uses `remote`.
+    var forDevice: ((String) -> any SyncRemote)?
+    /// `forDevice` through a transport that fails as asked.
+    var faultyForDevice: ((String, UInt64, TransportFaults) -> any SyncRemote)?
+    /// The CloudKit fixture's database and zone, when this is one.
+    var cloud: CloudFixture?
 
     /// Known ways a server breaks the `SyncRemote` contract.
     enum Deviation: Hashable {
@@ -43,6 +50,9 @@ struct TransportUnderTest {
         case replaceCreatesMissing
         /// wsgidav: `getetag` in a listing has no quotes, the `ETag` header of a `GET` has them.
         case listingETagUnquoted
+        /// CloudKit: a collection exists while a file lies below it, so an empty one made by one device is not
+        /// seen by another reader (design §2.2).
+        case emptyCollectionsAreLocal
     }
 
     /// An in-memory store; the base two levels down.
@@ -110,6 +120,71 @@ struct TransportUnderTest {
                 return Array(comps.prefix(base.count)) == base && only(Array(comps.dropFirst(base.count)))
             }
         }
+        return t
+    }
+}
+
+// MARK: - CloudKit over the in-memory database
+
+/// A `MemoryCloudDatabase` and one vault's zone, reached by devices that each keep a mirror (`CloudRecordRemote`).
+final class CloudFixture: @unchecked Sendable {
+    let database: MemoryCloudDatabase
+    let zone: String
+    let layout: CloudRecordRemote.Layout
+    private let lock = NSLock()
+    private var devices: [String: CloudRecordRemote] = [:]
+    /// Where the mirrors are kept (nil: in memory).
+    var stateRoot: URL?
+    let clock = Locked(Date(timeIntervalSince1970: 1_900_000_000))
+
+    init(layout: CloudRecordRemote.Layout = CloudRecordRemote.Layout(), limits: MemoryCloudLimits = MemoryCloudLimits(),
+         zone: String = "sempere-" + UUID().uuidString.lowercased()) {
+        database = MemoryCloudDatabase(limits: limits)
+        self.zone = zone
+        self.layout = layout
+    }
+
+    /// Device `name`'s remote: one mirror per device, kept across calls.
+    func remote(for name: String) -> CloudRecordRemote {
+        lock.lock(); defer { lock.unlock() }
+        if let r = devices[name] { return r }
+        let clock = self.clock
+        var layout = self.layout
+        // The inspector is a reader with no run model: it lists what is there now.
+        layout.refreshesBeforeListing = name == "inspector"
+        let r = CloudRecordRemote(store: database, zone: zone, stateDirectory: stateRoot?.appendingPathComponent(name), layout: layout,
+                                  now: { clock.value }, pause: { _ in })
+        devices[name] = r
+        return r
+    }
+
+    /// Device `name`'s remote through faults: its mirror, other failures.
+    func faulty(for name: String, seed: UInt64, _ f: TransportFaults) -> CloudRecordRemote {
+        var rates: [CloudFaults.Kind: Double] = [:]
+        rates[.networkFailure] = f.dropBefore
+        rates[.internalError] = f.serverError
+        rates[.loseAnswer] = f.loseAnswer
+        rates[.cutAsset] = f.cutBody
+        rates[.cutUpload] = f.cutBody
+        let faults = CloudFaults(seed: seed, rates: rates)
+        if let only = f.only { faults.eligible = { _, _, path in only(path.split(separator: "/").map(String.init)) } }
+        return remote(for: name).with(store: database.view(faults: faults))
+    }
+}
+
+extension TransportUnderTest {
+    /// A CloudKit target over `MemoryCloudDatabase`: each device has its own mirror (`forDevice`); `remote` is device "inspector-less".
+    static func cloud(layout: CloudRecordRemote.Layout = CloudRecordRemote.Layout(), limits: MemoryCloudLimits = MemoryCloudLimits()) -> TransportUnderTest {
+        let fixture = CloudFixture(layout: layout, limits: limits)
+        let remote = fixture.remote(for: "device")
+        let inspector = fixture.remote(for: "inspector")
+        var t = TransportUnderTest(kind: "cloudkit", remote: remote, inspector: inspector, faulty: { seed, f in
+            fixture.faulty(for: "device", seed: seed, f)
+        }, unreachable: fixture.remote(for: "unreachable").with(store: fixture.database.view(faults: CloudFaults(seed: 1, rates: [.networkFailure: 1]))),
+           deviations: [.emptyCollectionsAreLocal])
+        t.forDevice = { fixture.remote(for: $0) }
+        t.faultyForDevice = { name, seed, f in fixture.faulty(for: name, seed: seed, f) }
+        t.cloud = fixture
         return t
     }
 }

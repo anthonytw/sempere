@@ -90,6 +90,9 @@ public struct CloudRecordRemote: SyncRemote {
         public var batchRecords = 200
         /// The most records the mirror holds.
         public var maxRecords = SyncLimits.defaultMaxEntries
+        /// Bring the mirror up to date before every listing, not only at `prepareRun()`: for a reader that has no run
+        /// model (an inspector, a one-off check).
+        public var refreshesBeforeListing = false
         public init() {}
     }
 
@@ -227,7 +230,7 @@ public struct CloudRecordRemote: SyncRemote {
     }
 
     func refreshIfNeeded() throws {
-        if !core.locked({ core.prepared }) { try prepareRun() }
+        if layout.refreshesBeforeListing || !core.locked({ core.prepared }) { try prepareRun() }
     }
 
     func shown(_ path: [String]) -> String { "/" + path.joined(separator: "/") }

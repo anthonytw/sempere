@@ -40,7 +40,7 @@ extension CloudRecordError: TransientRemoteError {
         case .store(let e):
             switch e.code {
             case .networkUnavailable, .networkFailure, .serverResponseLost, .serviceUnavailable, .requestRateLimited, .zoneBusy,
-                 .assetFileNotFound, .assetNotAvailable, .quotaExceeded, .changeTokenExpired, .limitExceeded:
+                 .assetFileNotFound, .assetNotAvailable, .quotaExceeded, .changeTokenExpired, .limitExceeded, .serverRecordChanged:
                 return true
             default:
                 return false
