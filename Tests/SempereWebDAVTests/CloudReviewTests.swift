@@ -365,13 +365,14 @@ final class CloudSpikeLimitsTests: TempDirTestCase {
         let b = a.with(store: Slow(fx.database))
         let results = Locked([String: Bool]())
         let group = DispatchGroup()
+        let dir = self.dir
         for i in 0..<12 {
             group.enter()
             DispatchQueue.global().async {
                 defer { group.leave() }
                 // One of them meets a file that is there; the others are new.
                 let name = i == 5 ? "taken" : "f\(i)"
-                let ok = (try? b.write(self.dir + [name], .data(Data("\(i)".utf8)), condition: .create)) ?? false
+                let ok = (try? b.write(dir + [name], .data(Data("\(i)".utf8)), condition: .create)) ?? false
                 results.value[name] = ok
             }
         }
