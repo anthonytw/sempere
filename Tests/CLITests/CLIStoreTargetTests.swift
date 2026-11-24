@@ -84,6 +84,20 @@ final class CLIStoreTargetTests: CLITestCase {
         XCTAssertTrue(both.err.contains("--cloudkit"), both.err)
     }
 
+    /// `sempere cloudkit` (docs/design/1.4-cloudkit.md §9): the same plain answer in a build that cannot reach CloudKit, for each
+    /// command, and nothing is written or deleted.
+    func testTheCloudKitCommandsSayPlainlyThatThisBuildHasNoCloudKit() throws {
+        _ = try storeVault()
+        for args in [["cloudkit", "list"], ["cloudkit", "open", "0b0f1f3e"], ["cloudkit", "delete", "0b0f1f3e", "--yes"]] {
+            let r = try cli(args + ["--store", store])
+            XCTAssertEqual(r.status, 1, "\(args): \(r.err)")
+            XCTAssertTrue(r.err.contains("iCloud (CloudKit)"), r.err)
+        }
+        let help = try cli(["cloudkit", "--help"])
+        XCTAssertEqual(help.status, 0)
+        for word in ["list", "open", "delete"] { XCTAssertTrue(help.out.contains(word), help.out) }
+    }
+
     /// Open Vault… with "Keep syncing": the source becomes a target; edits travel both ways.
     func testImportKeepSyncingMakesTheSourceATarget() throws {
         let (_, _, key) = try makeVault(named: "a.sempere")

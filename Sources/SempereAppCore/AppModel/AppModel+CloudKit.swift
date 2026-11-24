@@ -30,6 +30,8 @@ public enum CloudKitTargetProblem: Error, Equatable, Sendable {
     case notAStoreVault
     /// The vault has a CloudKit target already.
     case duplicate
+    /// The account's iCloud holds no such vault (its zone is gone).
+    case noSuchVault
     case other(String)
 }
 
@@ -71,6 +73,7 @@ extension AppModelCore {
         let cacheDirectory = summaryCacheDirectory, deviceState = deviceStateURL
         let undoneURL = UndoneRemovalsRecord.url(targets: store.targets, vaultId: vaultID)
         let counting = LocalCopy(folder: entry.url, stateDirectory: stateURL.deletingLastPathComponent())
+        let notes = CloudRunNotes()
         let session = SyncSession(
             locationID: targetID, vaultID: vaultID, name: ref.vaultName, lastSuccess: ref.target.lastSuccess,
             run: { [weak self] request in
@@ -109,6 +112,7 @@ extension AppModelCore {
                     var report = try CloudTargetRun.run(vaultFolder: entry.url, remote: remote, vault: vault, stateURL: stateURL,
                                                         twoWay: twoWay, options: options)
                     if let placed { report.changed = Self.union(placed.changed, report.changed) }
+                    if remote.storageWasFull { notes.noteStorageFull() }
                     if !twoWay, request.stage, !PartialCopy.isPartial(entry.url) {
                         // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
                         _ = try? staging.stage(vaultFolder: entry.url, options: options) { shadow, state, pullOnly in
@@ -121,6 +125,7 @@ extension AppModelCore {
                 }.value
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { counting.unconfirmedChanges() }.value })
+        session.cloudNotes = notes
         session.onSuccess = { date in try? store.targets.update(targetID, of: vaultID) { $0.lastSuccess = date } }
         session.openRemote = {
             guard let target = store.targets.targets(of: vaultID).first(where: { $0.id == targetID }) else {

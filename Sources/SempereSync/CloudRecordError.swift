@@ -104,6 +104,20 @@ public enum CloudProblem: Sendable, Hashable {
     /// No run succeeded for 24 hours while the network was up (`since`: the last success, if any).
     case notAccepted(since: Date?)
 
+    /// A stable identifier (`sempere store sync --json`, tests).
+    public var code: String {
+        switch self {
+        case .storageFull: return "icloud-storage-full"
+        case .zoneGone: return "icloud-zone-gone"
+        case .zoneDeletedByUser: return "icloud-zone-deleted"
+        case .signedOut: return "icloud-signed-out"
+        case .restricted: return "icloud-restricted"
+        case .otherAccount: return "icloud-other-account"
+        case .updateNeeded: return "icloud-update-needed"
+        case .notAccepted: return "icloud-not-accepted"
+        }
+    }
+
     /// The line the status bar shows (design §4).
     public var message: String {
         switch self {

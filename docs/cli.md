@@ -3470,6 +3470,27 @@ the message is the error on one line, control characters escaped. Names from the
 when at least one vault was found, 1 otherwise (no vault, or the server could
 not be used), 2 usage.
 
+```
+sempere cloudkit list [--store DIR] [--json]
+sempere cloudkit open VAULT [--name NAME] [--store DIR] [--json]
+sempere cloudkit delete VAULT --yes [--force] [--store DIR]
+```
+
+The vaults in the iCloud (CloudKit) account signed in on this Mac: what the app's Open Vault ▸ From iCloud, its suggestion
+on a device that lacks a target, and Delete from iCloud do (docs/design/1.4-cloudkit.md §8, §9). They need the released,
+signed `sempere` (as `store target add --cloudkit`); any other build says so and exits 1.
+`list` asks for the account's `sempere-<vault id>` zones and reads each vault's label from its `vault.json` record (an
+intact, inline record that is that vault's own; else the name is `Vault` and the first eight digits of the id): nothing is
+downloaded. Text: `ID  NAME  IN STORE` (`no`, `yes`, or `synced` when the vault here has an iCloud target). `--json`: an
+array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget}`. `open` takes a vault id or a unique prefix: it downloads the
+vault whole into a temporary folder (a keyless run, which uploads nothing), checks it as `store import` does, copies it into the
+store (`--name` or its label) and adds the iCloud target, whose first sync finds nothing to do; a vault the store holds already
+only gets the target. Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
+and the iCloud targets of that vault in this store, nothing else: refused (exit 1) when the vault here has no other target,
+unless `--force`; without `--yes` it deletes nothing (exit 2). Other devices' iCloud targets then report that the vault's iCloud
+data is gone (Upload Again puts it back). Recovery from "zone gone" or "another Apple Account" is `store target remove` then
+`store target add --cloudkit`. `store info` shows an iCloud target's files and bytes at its last run.
+
 **`--jobs N`** (1 to 16, default 6) lists the note folders and their `att/`,
 downloads the files the vault lacks and uploads the files the server lacks,
 N at a time (`docs/io.md`, "Concurrent transfers and progress"): on a slow
