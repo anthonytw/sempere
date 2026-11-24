@@ -146,11 +146,11 @@ final class CloudFixture: @unchecked Sendable {
     }
 
     /// Device `name`'s remote: one mirror per device, kept across calls.
-    func remote(for name: String) -> CloudRecordRemote {
+    func remote(for name: String, layout override: CloudRecordRemote.Layout? = nil) -> CloudRecordRemote {
         lock.lock(); defer { lock.unlock() }
         if let r = devices[name] { return r }
         let clock = self.clock
-        var layout = self.layout
+        var layout = override ?? self.layout
         // The inspector is a reader with no run model: it lists what is there now.
         layout.refreshesBeforeListing = name == "inspector"
         // ...and never changes what it looks at: tombstones stay for the devices' sweeps.
