@@ -300,6 +300,11 @@ public protocol SyncRemote: Sendable {
     /// stops the run. `syncedBefore`: this device's sync state for the remote exists. Default: nothing (the engine
     /// makes the base).
     func checkAbsentBase(syncedBefore: Bool) throws
+
+    /// Called once at the start of each run, before anything is listed: a remote that answers listings from a cache it
+    /// keeps (a change cursor and a metadata mirror, `CloudRecordRemote`) brings it up to date here, so the run's
+    /// listings are one consistent view. An error stops the run like any failed request. Default: nothing.
+    func prepareRun() throws
 }
 
 extension SyncRemote {
@@ -311,6 +316,7 @@ extension SyncRemote {
     public func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws {}
     public func changes() -> AsyncStream<RemoteChange>? { nil }
     public func checkAbsentBase(syncedBefore: Bool) throws {}
+    public func prepareRun() throws {}
 
     /// Deletes a file, whatever its version.
     @discardableResult

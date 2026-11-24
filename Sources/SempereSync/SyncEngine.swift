@@ -502,6 +502,8 @@ public final class SyncEngine {
             // A mirror of nothing would list (and could delete) the whole server.
             throw SyncError.io("push-only sync needs a local vault (no \(Vault.manifestName) in \(root.path))")
         }
+        // A remote that lists from a cache of its own brings it up to date before the first listing (`prepareRun`).
+        try transport.prepareRun()
         if let partial = options.partial {
             guard !options.pushOnly else { throw SyncError.io("a partial pull (--metadata-only, --fetch) cannot be push-only") }
             return try runPartial(partial)
