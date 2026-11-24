@@ -1271,9 +1271,11 @@ The Apple adapter that converts `CKRecord` and `CKError.Code` to them is a later
 (`sempere-<vault id>`), one `VaultFile` record per file named `f-<SHA-256 of the path>`, with its path and SHA-256 and
 either the bytes (up to 128 KiB), an asset, or, over 64 MiB, a count of 16 MiB `VaultFilePart` records
 (`p-<path hash>-<content generation>-<n>`: a cut upload resumes by name, and a replacement never touches the parts of the
-version in place). The record's change tag is the file's strong version token; a create is a save that must not find a
+version in place; the engine creates a blob at its own name, since `atomicCreate` holds, so a cut upload resumes by parts). The record's change tag is the file's strong version token; a create is a save that must not find a
 record (a tombstone is replaced under its tag), a replace saves over the tag it read, and a conditional delete saves a
-tombstone under the tag, then deletes (a later run's sweep finishes a delete that was cut). Every record carries a `schema`
+tombstone under the tag, then deletes. A sweep (tombstones, and parts no file names after 7 days of the server's clock)
+finishes what was cut; it runs at a run's first write or delete, never in `prepareRun`, so a pull-only, held or dry run
+sends nothing that changes the zone, and never in a zone or for a file of a newer layout. Every record carries a `schema`
 (this build writes and reads 1): a file of a newer one is listed and never read, written or deleted, a zone whose
 `zone-info` is newer is read-only as a whole, and both ask for an update. Collections are implicit (one exists while a
 file lies below it, or this device made it). `SyncRemote.prepareRun()` (called once at the start of each run; default:

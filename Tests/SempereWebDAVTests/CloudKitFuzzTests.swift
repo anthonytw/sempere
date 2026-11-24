@@ -79,7 +79,15 @@ final class CloudKitFuzzTests: XCTestCase {
 
     func testFuzzFeedRecordsAndTheRunsThatMeetThem() {
         let sha = Hex.encode(Data(repeating: 7, count: 32))
+        // A valid split file: the record and its two parts, named as the transport names them (so a run reaches `readParts`).
+        let big = ["notes", "n1", "big"]
+        let wholeSha = Data(repeating: 7, count: 32)
+        let pn = (0..<2).map { CloudRecordNaming.partName(fileName: CloudRecordNaming.fileName(big), fileSha: wholeSha, index: $0) }
+        let split = ["f\t\tt1\t1\tnotes/n1/big\t8\t\(sha)\t\t2\t",
+                     "p\t\(pn[0])\tt2\t1\t\t4\t\(sha)\t\t\tabcd",
+                     "p\t\(pn[1])\tt3\t1\t\t4\t\(sha)\t\t\tefgh"].joined(separator: "\n")
         let seeds = [
+            split,
             "f\t\tt1\t1\tnotes/n1/a\t3\t\(sha)\t\t\tabc",
             "f\t\tt2\t1\tnotes/n1/big\t5000\t\(sha)\t\t13\t",
             "f\t\tt3\t1\tnotes/n1/gone\t\t\t1\t\t",

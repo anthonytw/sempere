@@ -47,11 +47,11 @@ class EngineScenarioCase: SyncTestCase {
 
     private func rel(_ r: Revision) -> String { "notes/\(id)/\(r.name.filename)" }
     private func comps(_ rel: String) -> [String] { rel.split(separator: "/").map(String.init) }
-    private func remoteNames(_ path: [String]) throws -> [String] { (try t.inspector.list(path) ?? []).map(\.name).sorted() }
+    func remoteNames(_ path: [String]) throws -> [String] { (try t.inspector.list(path) ?? []).map(\.name).sorted() }
 
     /// A delta adding one image item per reference, on a new page of `note`.
     @discardableResult
-    private func referencingNote(_ vault: Vault, note: UUID, device: DeviceID, t ms: Int64, _ refs: [BlobRef]) throws -> Revision {
+    func referencingNote(_ vault: Vault, note: UUID, device: DeviceID, t ms: Int64, _ refs: [BlobRef]) throws -> Revision {
         let page = UUID()
         var ops: [Op] = [.addPage(Page(id: page, order: "a\(ms)"))]
         for (i, r) in refs.enumerated() {
@@ -67,7 +67,7 @@ class EngineScenarioCase: SyncTestCase {
 
     /// A delta adding one image item per reference, on a new page.
     @discardableResult
-    private func referencing(_ vault: Vault, device: DeviceID, t ms: Int64, _ refs: [BlobRef]) throws -> Revision {
+    func referencing(_ vault: Vault, device: DeviceID, t ms: Int64, _ refs: [BlobRef]) throws -> Revision {
         let page = UUID()
         var ops: [Op] = [.addPage(Page(id: page, order: "a\(ms)"))]
         for (i, r) in refs.enumerated() {

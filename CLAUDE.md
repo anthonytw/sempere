@@ -951,6 +951,10 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   mirror is never refreshed and a device stops seeing the others (found by the N-device stress run). A CloudKit
   record's layout is versioned (`CloudSchema`): never change what a field means, add a major and let older builds list
   the record read-only. Each test-only `CloudRemoteMutation` must break its own invariant in `CloudInterleavingTests`.
+  `core.prepared` never resets: a long-lived `CloudRecordRemote` used outside `SyncEngine.run` (the engine calls
+  `prepareRun` itself) must call `prepareRun()` at the start of each pass, or be built per run (C2: the app's session).
+  A store that can create at its final name atomically (`capabilities.atomicCreate`) is written there directly by
+  `placeWriteOnce`, never through a temporary name and a move.
 - Folder targets (`FolderRemote`, `sempere sync folder`, docs/io.md "Folder targets in providers"): a
   provider's evicted file or a folder listed before its files is *arriving* (`RemoteEntry.availability`,
   `SyncReport.arriving`), never missing: the engine asks for it and waits at most `arrivalWait` per run,
