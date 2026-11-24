@@ -374,8 +374,13 @@ class SyncRemoteConformanceCase: TempDirTestCase {
             let wrote = (try? remote.write(path, .data(bytes(3)), condition: .unconditional)) ?? false
             XCTAssertFalse(wrote, "\(label): wrote to \(path)")
         }
-        XCTAssertEqual(try t.inspector.list(["notes"])?.map(\.name), ["n1"], label)
-        XCTAssertEqual(Set(try t.inspector.list([])?.map(\.name) ?? []), ["notes"], label)
+        if t.deviations.contains(.emptyCollectionsAreLocal) {
+            XCTAssertEqual(try t.inspector.list(["notes"])?.map(\.name) ?? [], [], label)
+            XCTAssertEqual(try t.inspector.list([]) ?? [], [], label)
+        } else {
+            XCTAssertEqual(try t.inspector.list(["notes"])?.map(\.name), ["n1"], label)
+            XCTAssertEqual(Set(try t.inspector.list([])?.map(\.name) ?? []), ["notes"], label)
+        }
     }
 }
 
@@ -454,6 +459,23 @@ final class EvictingFolderConformanceTests: SyncRemoteConformanceCase {
 /// Against wsgidav (`scripts/test-webdav.sh`, CI's `webdav` job); skipped without it.
 final class WsgidavConformanceTests: SyncRemoteConformanceCase {
     override func transport() throws -> TransportUnderTest { try .wsgidav() }
+    func testListingAndStat() throws { try checkListingAndStat() }
+    func testReadsAreBounded() throws { try checkReadsAreBounded() }
+    func testConditionalWrites() throws { try checkConditionalWrites() }
+    func testWriteNeedsItsParent() throws { try checkWriteNeedsItsParent() }
+    func testCreateOnlyRace() throws { try checkCreateOnlyRace() }
+    func testMoveNeverOverwrites() throws { try checkMoveNeverOverwrites() }
+    func testCollections() throws { try checkCollections() }
+    func testDeletes() throws { try checkDeletes() }
+    func testDownloadsAndResume() throws { try checkDownloadsAndResume() }
+    func testDeepListing() throws { try checkDeepListing() }
+    func testErrorClassification() throws { try checkErrorClassification() }
+    func testCapabilitiesAreHonest() throws { try checkCapabilitiesAreHonest() }
+    func testHostileNamesAreRefused() throws { try checkHostileNamesAreRefused() }
+}
+
+final class CloudRecordConformanceTests: SyncRemoteConformanceCase {
+    override func transport() throws -> TransportUnderTest { .cloud() }
     func testListingAndStat() throws { try checkListingAndStat() }
     func testReadsAreBounded() throws { try checkReadsAreBounded() }
     func testConditionalWrites() throws { try checkConditionalWrites() }

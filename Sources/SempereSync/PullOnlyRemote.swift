@@ -32,6 +32,7 @@ struct PullOnlyRemote: SyncRemote {
     func changes() -> AsyncStream<RemoteChange>? { base.changes() }
     func missingCollectionError(_ path: [String]) -> any Error { base.missingCollectionError(path) }
     func checkAbsentBase(syncedBefore: Bool) throws { try base.checkAbsentBase(syncedBefore: syncedBefore) }
+    func prepareRun() throws { try base.prepareRun() }
 
     // Never reaches the remote.
     func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool { true }

@@ -1263,6 +1263,31 @@ lists availability:
   remote's; the web viewer's summaries and index keep the current version. Then the versions are
   removed, so no version picker ever reaches the user. Mirrors and dry runs leave them alone.
 
+**CloudKit records (`CloudRecordRemote`, `CloudRecordStore`, `MemoryCloudDatabase`; design `docs/design/1.4-cloudkit.md`).**
+A `SyncRemote` over a private CloudKit database that lives in `SempereSync` (Foundation only, Linux-tested) because it
+only ever sees a `CloudRecordStore`: plain value types for zones, records with a change tag, the change feed and assets.
+The Apple adapter that converts `CKRecord` and `CKError.Code` to them is a later phase; until then `MemoryCloudDatabase`
+(error injection from a seed or a script, a lagging feed, limits, accounts) is the store of every test. One zone per vault
+(`sempere-<vault id>`), one `VaultFile` record per file named `f-<SHA-256 of the path>`, with its path and SHA-256 and
+either the bytes (up to 128 KiB), an asset, or, over 64 MiB, a count of 16 MiB `VaultFilePart` records
+(`p-<path hash>-<content generation>-<n>`: a cut upload resumes by name, and a replacement never touches the parts of the
+version in place; the engine creates a blob at its own name, since `atomicCreate` holds, so a cut upload resumes by parts). The record's change tag is the file's strong version token; a create is a save that must not find a
+record (a tombstone is replaced under its tag), a replace saves over the tag it read, and a conditional delete saves a
+tombstone under the tag, then deletes. A sweep (tombstones, and parts no file names after 7 days of the server's clock)
+finishes what was cut; it runs at a run's first write or delete, never in `prepareRun`, so a pull-only, held or dry run
+sends nothing that changes the zone, and never in a zone or for a file of a newer layout. Every record carries a `schema`
+(this build writes and reads 1): a file of a newer one is listed and never read, written or deleted, a zone whose
+`zone-info` is newer is read-only as a whole, and both ask for an update. Saves that wait together go in one request (`CloudBatcher`: at most 400 items and 4 MiB of fields, per-item conditions and results; a lone save goes at once), since the real database takes about 2.5 saves a second per zone (design §13). A small create asks the server straight away and learns of an existing record from the conflict; a replace over the tag it names needs no fetch. Collections are implicit (one exists while a
+file lies below it, or this device made it). `SyncRemote.prepareRun()` (called once at the start of each run; default:
+nothing) brings the metadata mirror up to date from the zone's change feed; listings and `stat` answer from it, reads
+and conditional writes ask the server, and a lost, corrupt or expired mirror is dropped and fetched again. A feed record
+is believed only when its path validates and hashes to its name and its hash, size and counts are in bounds
+(`CloudMirror.ingest`); the rest is skipped and counted (`CloudRemoteDiagnostics`). `CloudRecordError` and
+`CloudStatus` map the failures of design §4 (a wait of up to 5 s is waited out; a longer one ends the run as a throttle),
+and `CloudStatusTracker` keeps the 24-hour stall rule. Tests: the conformance suite and the engine scenarios over it,
+`CloudInterleavingTests` (invariants C1 to C7 with a mutation for each, as `EpochInterleavingTests` does for J1 to J10, which
+also runs over CloudKit targets), the N-device stress, `CloudRecordRemoteTests` and `CloudKitFuzzTests`.
+
 **Adding a transport.** Conform a type to `SyncRemote` in its own target; one that talks to a
 network goes beside `SempereWebDAV` and needs the network allowances (`scripts/check-portability.sh`,
 the `NETWORK_ALLOWED` list in `scripts/release-check.sh`, the privacy policy), and `SempereSync`

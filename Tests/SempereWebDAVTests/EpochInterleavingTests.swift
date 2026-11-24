@@ -35,6 +35,7 @@ final class EpochInterleavingTests: SyncTestCase {
         Vault.epochMutations = []
         Vault.precedenceMutations = []
         SyncEngine.epochMutations = []
+        CloudRecordRemote.mutations = []
     }
 
     struct Mode {
@@ -53,18 +54,20 @@ final class EpochInterleavingTests: SyncTestCase {
         return mode
     }
 
-    enum Transport: String { case memory, mock, wsgidav }
+    enum Transport: String { case memory, mock, wsgidav, cloud }
 
     func transport(_ kind: Transport) throws -> TransportUnderTest {
         switch kind {
         case .memory: return .memory()
         case .mock: return try .mockDAV()
         case .wsgidav: return try .wsgidav()
+        case .cloud: return .cloud()
         }
     }
 
     func testInvariantsHoldOverMemoryTargets() throws { try runSeeds(.memory) }
     func testInvariantsHoldOverTheWebDAVMock() throws { try runSeeds(.mock) }
+    func testInvariantsHoldOverCloudTargets() throws { try runSeeds(.cloud) }
     func testInvariantsHoldOverWsgidav() throws {
         _ = try transport(.wsgidav)   // skips without the server (scripts/test-webdav.sh)
         try runSeeds(.wsgidav)
