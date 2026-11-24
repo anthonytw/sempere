@@ -165,7 +165,7 @@ public struct CloudDatabaseChanges: Sendable, Equatable {
     }
 }
 
-/// The iCloud account, as the store sees it (`CKContainer.accountStatus`, `userRecordID`).
+/// The iCloud account, as the store sees it (the container's account status and user record id).
 public struct CloudAccount: Sendable, Equatable {
     public enum Status: String, Sendable, Hashable, CaseIterable {
         case available, noAccount, restricted, managedAccountRestricted, temporarilyUnavailable, couldNotDetermine
