@@ -285,6 +285,8 @@ integration (Dropbox API, S3, Proton) can be added later without touching the en
 | CLI | `sempere sync <kind> …` subcommands that share the option set (`SyncOptions`) |
 | Policy | each network adapter is its own target (e.g. `SempereS3`). Adding one means updating the "network only in…" rule in CLAUDE.md, `check-portability.sh`, `release-check.sh`'s `NETWORK_ALLOWED`, and the privacy policy |
 
+The first such integration is CloudKit, designed in [1.4-cloudkit.md](1.4-cloudkit.md) (1.4).
+
 ## 4. Triggers and scheduling
 
 One `SyncSession` per vault and target runs `SyncSchedule` (today's `WebDAVPushSchedule`, made two-way).
