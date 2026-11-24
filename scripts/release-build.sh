@@ -22,7 +22,10 @@
 #   5. the Linux tarballs installed and run in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20
 #      (scripts/smoke-linux-cli.sh). The architecture Docker runs natively must pass; the emulated one
 #      is reported, because emulation has failed on its own before (tar under qemu on Ubuntu 26.04)
-#   6. SHA256SUMS and notes.md (the CHANGELOG section). This build account cannot use the maintainer's key, so it signs
+#   6. the macOS CLI's Developer ID provisioning profile, fetched from the App Store Connect API with this account's key
+#      (scripts/release-cli-profile.py; $SEMPERE_CLI_PROFILE_FILE names a file instead): data for the maintainer's signing,
+#      which verifies it whole (Apple's signature, App ID, team, container, type, expiry, their certificate) and trusts nothing about it
+#   7. SHA256SUMS and notes.md (the CHANGELOG section). This build account cannot use the maintainer's key, so it signs
 #      nothing: SHA256SUMS and the macOS tarball (an UNSIGNED sempere.app, which the maintainer signs with their Developer ID,
 #      notarizes and repacks) go to a hand-off folder (SEMPERE_SIGN_DROP, default /Users/Shared/sempere-release, then
 #      vVERSION/; owned by this account, never group- or world-writable, checked before the long build). The maintainer
@@ -159,15 +162,26 @@ for arch in x86_64 aarch64; do
 done
 [[ $failed == false ]] || die "a native smoke test failed"
 
+step "Developer ID profile for the maintainer's signing"
+profile_file=$out/sempere-cli.provisionprofile
+if [[ -n ${SEMPERE_CLI_PROFILE_FILE:-} ]]; then
+  [[ -f $SEMPERE_CLI_PROFILE_FILE && ! -L $SEMPERE_CLI_PROFILE_FILE ]] || die "SEMPERE_CLI_PROFILE_FILE is not a regular file"
+  cp "$SEMPERE_CLI_PROFILE_FILE" "$profile_file"; echo "ok    the profile from $SEMPERE_CLI_PROFILE_FILE"
+else
+  command -v uv >/dev/null || die "uv is not installed (it runs scripts/release-cli-profile.py); or set SEMPERE_CLI_PROFILE_FILE"
+  "$repo/scripts/release-cli-profile.py" "$profile_file" || die "the profile was not fetched: nothing for the maintainer to embed (docs/releasing.md \"The macOS CLI's Developer ID signing\")"
+fi
+
 step "SHA256SUMS"
 (cd "$out" && shasum -a 256 *.tar.gz > SHA256SUMS && cat SHA256SUMS)
 
 step "hand-off to the maintainer"
-rm -f "$drop/$tag/SHA256SUMS"
+rm -f "$drop/$tag/SHA256SUMS" "$drop/$tag/sempere-cli.provisionprofile"
 rm -f "$drop/$tag/sempere-$version-macos-universal.tar.gz"
 cp "$out/SHA256SUMS" "$drop/$tag/SHA256SUMS"; chmod 0644 "$drop/$tag/SHA256SUMS"
+cp "$profile_file" "$drop/$tag/"; chmod 0644 "$drop/$tag/sempere-cli.provisionprofile"
 cp "$out/sempere-$version-macos-universal.tar.gz" "$drop/$tag/"; chmod 0644 "$drop/$tag/sempere-$version-macos-universal.tar.gz"
-echo "built $tag in $out. Hand-off folder: $drop/$tag (SHA256SUMS and the unsigned macOS tarball, data only; the list above is what the maintainer should see)"
+echo "built $tag in $out. Hand-off folder: $drop/$tag (SHA256SUMS, the unsigned macOS tarball and the Developer ID profile, data only; the list above is what the maintainer should see)"
 echo "Next, from the maintainer's own account, in their clone of GitHub:"
 echo "  git fetch origin && git checkout --detach origin/main && bash scripts/release-sign.sh $version"
 echo "then, here: just release-publish $version"

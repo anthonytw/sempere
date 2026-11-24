@@ -3,27 +3,30 @@
 # release-sign.sh runs this, on the maintainer's own account, on the tarball the build account handed off; it can also be
 # run alone:
 #
-#   scripts/release-sign-macos.sh [--dev] --version X.Y.Z IN.tar.gz OUT.tar.gz
+#   scripts/release-sign-macos.sh [--dev] [--profile FILE] --version X.Y.Z IN.tar.gz OUT.tar.gz
 #
 # IN is the build account's tarball: DATA. Nothing in it is executed. It is checked entry by entry (only the files the build
 # makes, no link, no path outside the folder), and only its `sempere` binary is taken: the bundle's Info.plist, the
-# entitlements and the provisioning profile are this checkout's (packaging/cli) and the maintainer's (SEMPERE_CLI_PROFILE), so
-# the build account cannot change what the signature vouches for beyond the binary itself, which is what the maintainer
+# entitlements are this checkout's (packaging/cli), and the provisioning profile (FILE: release-sign.sh passes the hand-off folder's,
+# which the build account fetched from the App Store Connect API) is DATA that is verified whole before one byte of it is used (step
+# 2), so the build account cannot change what the signature vouches for beyond the binary itself, which is what the maintainer
 # approves by signing. Steps:
 #   1. checks the tarball's entries and unpacks them in a private folder
 #   2. makes the bundle again (scripts/cli-bundle.sh) from the binary alone (it must be universal; fonts, Info.plist and entitlements
-#      are this checkout's), embeds the provisioning profile, and checks the
-#      profile: the CLI's App ID, the iCloud container, a Developer ID profile (no device list), not expired
+#      are this checkout's), verifies the provisioning profile and embeds it. Verified: Apple's own CMS signature and its chain to
+#      an Apple root of the system's trust store (`openssl smime -verify`: `security cms -D` decodes a profile whose content was
+#      changed without a word, so it is not used to judge one), the signer is Apple's provisioning-profile signing certificate, the
+#      CLI's App ID on the profile's team, the iCloud container, a Developer ID profile for macOS (no device list), not expired, and
+#      it lists YOUR signing certificate (the one the identity names), whose team is the profile's
 #   3. entitlements from packaging/cli/entitlements.plist, the team and App ID taken from the profile (no team identifier lives
 #      in the repository), the container environment Production
 #   4. codesign with the Developer ID Application identity: hardened runtime, secure timestamp, those entitlements
 #   5. notarizes (`xcrun notarytool submit --wait --keychain-profile sempere-notary`) and staples the ticket to the bundle
 #   6. checks the result with codesign and spctl, and repacks OUT.tar.gz (the same layout as the build's tarball)
-# One-time setup (docs/releasing.md): the "Developer ID Application" certificate and its private key in your keychain,
-# `xcrun notarytool store-credentials sempere-notary`, and the profile "Sempere CLI Developer ID 3" (developer.apple.com ▸
-# Profiles; it lists the container) downloaded to a file named by SEMPERE_CLI_PROFILE, in $SEMPERE_RELEASE_ENV
-# (default ~/.config/sempere/release.env) or the environment.
-#   SEMPERE_CLI_PROFILE      the Developer ID provisioning profile (required)
+# One-time setup (docs/releasing.md): the "Developer ID Application" certificate and its private key in your keychain, and
+# `xcrun notarytool store-credentials sempere-notary`. The profile needs nothing of you: the build account puts it in the
+# hand-off folder, and this script checks it. Settings in $SEMPERE_RELEASE_ENV (default ~/.config/sempere/release.env) or the environment:
+#   SEMPERE_CLI_PROFILE      a profile file to use instead of --profile (a --dev dry run's development profile)
 #   SEMPERE_SIGN_IDENTITY    the codesign identity (default "Developer ID Application")
 #   SEMPERE_SIGN_KEYCHAIN    a keychain to look in (default: the search list)
 #   SEMPERE_NOTARY_PROFILE   notarytool's keychain profile (default sempere-notary)
@@ -33,17 +36,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 die() { echo "error: $*" >&2; exit 1; }
-dev=false version="" args=()
+dev=false version="" profile="" args=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dev) dev=true; shift ;;
     --version) version=${2:?--version X.Y.Z}; shift 2 ;;
+    --profile) profile=${2:?--profile FILE}; shift 2 ;;
     -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) args+=("$1"); shift ;;
   esac
 done
-[[ ${#args[@]} == 2 && -n $version ]] || { echo "usage: $0 [--dev] --version X.Y.Z IN.tar.gz OUT.tar.gz" >&2; exit 2; }
+[[ ${#args[@]} == 2 && -n $version ]] || { echo "usage: $0 [--dev] [--profile FILE] --version X.Y.Z IN.tar.gz OUT.tar.gz" >&2; exit 2; }
 in=${args[0]}; outfile=${args[1]}
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || die "'$version' is not X.Y.Z or X.Y.Z-prerelease"
 [[ $(uname) == Darwin ]] || die "macOS signing runs on a Mac"
@@ -56,10 +60,10 @@ if [[ -f $env_file ]]; then   # a variable set in the environment wins over the 
     [[ -n ${!k:-} ]] || export "$k=$v"
   done < "$env_file"
 fi
-profile=${SEMPERE_CLI_PROFILE:-}
-[[ -n $profile ]] || die "no provisioning profile: set SEMPERE_CLI_PROFILE to the downloaded \"Sempere CLI Developer ID 3\" (docs/releasing.md \"One-time setup for the maintainer\")"
+[[ -n $profile ]] || profile=${SEMPERE_CLI_PROFILE:-}
+[[ -n $profile ]] || die "no provisioning profile: pass --profile FILE (release-sign.sh passes the hand-off folder's sempere-cli.provisionprofile)"
 profile=${profile/#\~/$HOME}
-[[ -f $profile ]] || die "the profile $profile is not a file"
+[[ -f $profile && ! -L $profile ]] || die "the profile $profile is not a regular file"
 identity=${SEMPERE_SIGN_IDENTITY:-Developer ID Application}
 $dev && identity=${SEMPERE_SIGN_IDENTITY:-Apple Development}
 notary=${SEMPERE_NOTARY_PROFILE:-sempere-notary}
@@ -99,20 +103,49 @@ fonts=Sources/SempereFonts/Fonts
 mkdir "$tmp/out"
 scripts/cli-bundle.sh "$bin" "$version" "$tmp/out" "$fonts" >/dev/null
 app=$tmp/out/sempere.app
-security cms -D -i "$profile" > "$tmp/profile.plist" 2>/dev/null || die "$profile is not a provisioning profile (security cms cannot read it)"
+# The profile is data from the build account: judged whole, here, before any of it is used. `security cms -D` decodes a profile
+# whose signed content was changed (it reports DigestMismatch only with -h, and exits 0), so Apple's signature is checked with
+# openssl against the Apple roots of the system's trust store, and the content used below is the one that verified.
+[[ -x /usr/bin/openssl ]] || die "/usr/bin/openssl is missing: it verifies the profile's signature"
+security find-certificate -a -c "Apple Root CA" -p /System/Library/Keychains/SystemRootCertificates.keychain > "$tmp/apple-roots.pem" 2>/dev/null || true
+grep -q 'BEGIN CERTIFICATE' "$tmp/apple-roots.pem" || die "no Apple root certificates in the system keychain"
+/usr/bin/openssl smime -verify -inform DER -in "$profile" -CAfile "$tmp/apple-roots.pem" -signer "$tmp/profile-signer.pem" \
+  -out "$tmp/profile.plist" >/dev/null 2>"$tmp/verify.err" \
+  || die "$profile is not a provisioning profile signed by Apple (its signature or its chain to an Apple root does not verify): $(head -c 200 "$tmp/verify.err" | tr '\n' ' ')"
+/usr/bin/openssl x509 -in "$tmp/profile-signer.pem" -noout -subject | grep -q 'Provisioning Profile Signing' \
+  || die "the profile is signed by something other than Apple's provisioning-profile signing certificate"
+plutil -lint "$tmp/profile.plist" >/dev/null || die "the profile's content is not a property list"
 pl() { plutil -extract "$1" raw -o - "$tmp/profile.plist" 2>/dev/null || true; }
 app_id=$(pl 'Entitlements.com\.apple\.application-identifier')
 team=$(pl 'Entitlements.com\.apple\.developer\.team-identifier')
 [[ $app_id == *.io.github.anthonytw.sempere.cli && -n $team && $app_id == "$team".* ]] || die "the profile is for '$app_id', not io.github.anthonytw.sempere.cli"
+[[ $(pl 'TeamIdentifier.0') == "$team" ]] || die "the profile's team identifiers disagree"
+[[ $(pl 'Platform.0') == OSX ]] || die "the profile is not a macOS profile (platform '$(pl 'Platform.0')')"
 plutil -extract 'Entitlements.com\.apple\.developer\.icloud-container-identifiers' json -o - "$tmp/profile.plist" 2>/dev/null \
   | grep -q '"iCloud.io.github.anthonytw.sempere"' || die "the profile does not list the container iCloud.io.github.anthonytw.sempere"
 if $dev; then
   [[ -n $(pl ProvisionedDevices.0) ]] || die "a --dev run needs a development profile (it lists devices)"
 else
-  [[ -z $(pl ProvisionedDevices.0) ]] || die "the profile lists devices: it is a development profile, not Developer ID (use the \"Sempere CLI Developer ID 3\" profile)"
+  [[ -z $(pl ProvisionedDevices.0) ]] || die "the profile lists devices: it is a development profile, not Developer ID"
 fi
 expires=$(pl ExpirationDate)
-[[ -z $expires ]] || { [[ $(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$expires" +%s 2>/dev/null || echo 0) -gt $(date +%s) ]] || die "the profile expired on $expires"; }
+[[ -n $expires ]] || die "the profile has no expiry date"
+[[ $(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$expires" +%s 2>/dev/null || echo 0) -gt $(date +%s) ]] || die "the profile expired on $expires: the build account makes a new one (docs/releasing.md)"
+created=$(pl CreationDate)
+[[ -z $created || $(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$created" +%s 2>/dev/null || echo 0) -le $(date +%s) ]] || die "the profile's creation date ($created) is in the future"
+# It must be for YOUR certificate: the identity this script signs with has to be one the profile lists, and its team the profile's.
+# (Apple's launch check wants the same; this says it before minutes of notarization.)
+cert_args=(security find-certificate -a -c "$identity" -Z)
+[[ -z ${SEMPERE_SIGN_KEYCHAIN:-} ]] || cert_args+=("$SEMPERE_SIGN_KEYCHAIN")
+"${cert_args[@]}" 2>/dev/null | sed -n 's/^SHA-256 hash: //p' | tr 'a-f' 'A-F' > "$tmp/identity.sha256"
+[[ -s $tmp/identity.sha256 ]] || die "no certificate \"$identity\" in your keychain (docs/releasing.md \"The macOS CLI's Developer ID signing\")"
+listed=false i=0
+while cert=$(pl "DeveloperCertificates.$i") && [[ -n $cert ]]; do
+  h=$(printf '%s' "$cert" | /usr/bin/openssl base64 -d -A 2>/dev/null | shasum -a 256 | cut -d' ' -f1 | tr 'a-f' 'A-F')
+  if grep -qx "$h" "$tmp/identity.sha256"; then listed=true; break; fi
+  i=$((i + 1))
+done
+$listed || die "the profile does not list your \"$identity\" certificate: it was made for another certificate; the build account makes the profile again with yours"
 cp "$profile" "$app/Contents/embedded.provisionprofile"
 
 # 3. Entitlements.
