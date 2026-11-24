@@ -45,6 +45,8 @@ final class NDeviceStressTests: TempDirTestCase {
         var devices: ClosedRange<Int>
         var steps: Int
         var simultaneous: Bool
+        /// The remotes are CloudKit zones (`MemoryCloudDatabase`) where the seed would pick in-memory or folder ones.
+        var cloud = false
     }
 
     static var mode: Mode {
@@ -63,6 +65,18 @@ final class NDeviceStressTests: TempDirTestCase {
             let world = try StressWorld(seed: seed, root: tmp.appendingPathComponent("seed-\(seed)"), mode: mode)
             try world.run()
             print("NDEVICE seed \(seed): \(world.summary), \(String(format: "%.1f", Date().timeIntervalSince(start))) s")
+        }
+    }
+
+    /// The same run over CloudKit records: each device keeps a mirror of its own and meets transport faults.
+    func testDevicesConvergeAndLoseNothingOverCloudKit() throws {
+        var mode = Self.mode
+        mode.cloud = true
+        for seed in mode.seeds {
+            let start = Date()
+            let world = try StressWorld(seed: seed, root: tmp.appendingPathComponent("cloud-seed-\(seed)"), mode: mode)
+            try world.run()
+            print("NDEVICE cloud seed \(seed): \(world.summary), \(String(format: "%.1f", Date().timeIntervalSince(start))) s")
         }
     }
 
@@ -298,6 +312,19 @@ final class StressTarget {
         }
     }
 
+    /// A CloudKit zone on `MemoryCloudDatabase`: each device has its own mirror and its own transport faults.
+    static func cloud(_ name: String) -> StressTarget {
+        let fx = CloudFixture()
+        return StressTarget(name: name, inspector: fx.remote(for: "inspector")) { seed in
+            let plain = fx.remote(for: "device-\(seed)")
+            let faults = CloudFaults.transport(seed: seed, transportRate)
+            let faulty = plain.with(store: fx.database.view(faults: faults))
+            let on = Locked(false)
+            return StressLink.Endpoint(remote: SwitchedRemote(plain: plain, faulty: faulty, on: on), setFaults: { on.value = $0 },
+                                       injected: { faults.injected })
+        }
+    }
+
     static func webDAVMock(_ name: String, deepETags: Bool) -> StressTarget {
         let server = MockDAV()
         server.collectionETags = deepETags ? .deep : .none
@@ -373,6 +400,10 @@ final class StressWorld {
         case 2: targets.append(.webDAVMock("R1", deepETags: rng.next() % 2 == 0))
         default: break
         }
+        if mode.cloud {
+            // The first remote is a CloudKit zone; the second, when the seed has one, a zone or an in-memory store.
+            targets = [.cloud("R0")] + (targets.count > 1 ? [seed % 2 == 0 ? .cloud("R1") : .memory("R1")] : [])
+        }
         let tick = self.tick
         for i in 0..<deviceCount {
             let name = String(UnicodeScalar(UInt8(65 + i)))
@@ -396,7 +427,7 @@ final class StressWorld {
 
     var summary: String {
         let injected = links.joined().map { $0.endpoint.injected() }.reduce(0, +)
-        let kinds = targets.map { $0.inspector is MemoryRemote ? "memory" : $0.inspector is FolderRemote ? "folder" : "webdav-mock" }
+        let kinds = targets.map { $0.inspector is MemoryRemote ? "memory" : $0.inspector is FolderRemote ? "folder" : $0.inspector is CloudRecordRemote ? "cloudkit" : "webdav-mock" }
         let ops = counts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
         return "\(devices.count) devices on \(targets.count) remotes (\(kinds.joined(separator: ", "))), "
             + "\(written.count) files written, \(injected) faults, \(quarantined.count) quarantined; \(ops)"
@@ -756,6 +787,7 @@ struct SwitchedRemote: SyncRemote {
         get { plain.interrupt }
         set { plain.interrupt = newValue; faulty.interrupt = newValue }
     }
+    func prepareRun() throws { try now.prepareRun() }
     func list(_ path: [String]) throws -> [RemoteEntry]? { try now.list(path) }
     func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { try now.listTree(path, maxBytes: maxBytes) }
     func stat(_ path: [String]) throws -> RemoteEntry? { try now.stat(path) }
