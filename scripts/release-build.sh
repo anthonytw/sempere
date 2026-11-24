@@ -46,7 +46,7 @@ SMOKE_IMAGES=(
   $ALPINE_IMAGE
 )
 # The scripts this one copies from this checkout into the tag's worktree.
-TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh scripts/build-linux-static.sh scripts/static-sdk-pin.sh scripts/static-sdk-cache.sh scripts/release-build-all.sh scripts/apt-install.sh)
+TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh scripts/build-linux-static.sh scripts/static-sdk-pin.sh scripts/static-sdk-cache.sh scripts/release-build-all.sh scripts/apt-install.sh scripts/container.sh scripts/lima/sempere-docker.yaml)
 unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh volumes
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
@@ -93,7 +93,7 @@ git worktree add -q --detach "$src" "$sha"
 trap 'git -C "$repo" worktree remove --force "$src" 2>/dev/null || true; container_teardown' EXIT
 cd "$src"
 # The release tooling is this checkout's (a tag may predate it; checked above to be main's); the sources are the tag's.
-for f in "${TOOLING[@]}"; do cp "$repo/$f" "$f"; done
+for f in "${TOOLING[@]}"; do mkdir -p "$(dirname "$f")"; cp "$repo/$f" "$f"; done
 
 step "The three builds, at once: Linux x86_64, Linux aarch64, macOS universal"
 # scripts/release-build-all.sh: independent builds on a Mac that sits mostly idle during a serial one; a log each in

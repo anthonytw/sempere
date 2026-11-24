@@ -52,3 +52,7 @@
 
 # The workflows, composite actions, PR template and this file.
 /.github/                       @anthonytw
+
+# The Mac container helper and the VM it builds (what a release build runs Linux jobs in).
+/scripts/container.sh           @anthonytw
+/scripts/lima/                  @anthonytw

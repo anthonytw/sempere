@@ -207,10 +207,6 @@ status "$context" pending "$mode run started on $host"
 # The Docker lane's containers carry this run's label (ci-linux.sh docker: --label sempere-ci-run, --init), so a gate that
 # ends early can remove exactly its own containers and nothing else's.
 export SEMPERE_CI_RUN_ID="$$-$start" SEMPERE_CI_HOST=$host
-# The Linux steps' containers run in the Lima VM on a Mac (scripts/container.sh); the exports reach ci-linux.sh and lane_stop.
-for st in "${steps[@]}" ${lane[@]+"${lane[@]}"}; do
-  if [[ $st == linux || $st == webdav || $st == static ]]; then source scripts/container.sh; container_setup || exit 1; break; fi
-done
 lane_pid=""
 step_pid=""
 lane_stop() {   # stop the lane: remove its containers (the job inside dies with them), then the lane's own processes
@@ -268,6 +264,15 @@ final_cleanup() {
 }
 trap final_cleanup EXIT
 trap on_signal INT TERM
+# The Linux steps' containers run in the Lima VM on a Mac (scripts/container.sh); the export reaches ci-linux.sh and lane_stop.
+# After the traps, so a failure here still posts an error and removes the temp folder.
+for st in "${steps[@]}" ${lane[@]+"${lane[@]}"}; do
+  if [[ $st == linux || $st == webdav || $st == static ]]; then
+    source scripts/container.sh
+    container_setup || { status "$context" error "no container engine on $host"; exit 1; }
+    break
+  fi
+done
 if [[ ${#lane[@]} -gt 0 ]]; then
   rm -f build/local-ci/lane.result
   echo "local-ci: ${lane[*]} run in Docker beside the Mac steps (logs build/local-ci/<step>.log, result at the end)"

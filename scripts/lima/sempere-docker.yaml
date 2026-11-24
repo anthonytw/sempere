@@ -1,7 +1,11 @@
 # The Lima VM that runs sempere's Linux containers on a Mac (scripts/container.sh creates it from this file; docs/ci.md
-# "Containers on a Mac"). Rootless dockerd in the stock `docker` template's Ubuntu guest, vz + Rosetta for x86_64 images.
+# "Containers on a Mac"). Needs Lima 2.0+. Rootless dockerd in an Ubuntu guest, vz + Rosetta for x86_64 images. The docker
+# blocks (containerd .. portForwards) are copied from Lima's stock `docker` template, NOT inherited: that template also
+# inherits `_default/mounts`, which would mount all of $HOME read-only. This VM mounts exactly the three paths below.
 # Host paths appear at the SAME path in the guest, so `docker run -v "$PWD:/src"` works unchanged.
-base: template:docker
+minimumLimaVersion: 2.0.0
+base:
+- template:_images/ubuntu-lts
 vmType: vz
 vmOpts:
   vz:
@@ -13,7 +17,7 @@ memory: 8GiB
 disk: 40GiB
 mounts:
 # Every checkout and worktree lives under ~/dev (dev/sempere, dev/sempere-wt-*): one writable mount instead of one per
-# worktree. Not $HOME: a container never sees keys, mail or other projects' secrets outside ~/dev.
+# worktree. Not $HOME: a container never sees keys, mail or other projects outside ~/dev.
 - location: "{{.Home}}/dev"
   writable: true
 # ci-linux.sh's pass records (read-write) and the host's cached Static Linux SDK archive (scripts/static-sdk-cache.sh).
@@ -21,3 +25,55 @@ mounts:
   writable: true
 - location: "{{.Home}}/.cache/sempere"
   writable: false
+containerd:
+  system: false
+  user: false
+provision:
+- mode: system
+  script: |
+    #!/bin/sh
+    sed -i 's/host.lima.internal.*/host.lima.internal host.docker.internal/' /etc/hosts
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    command -v docker >/dev/null 2>&1 && exit 0
+    export DEBIAN_FRONTEND=noninteractive
+    curl -fsSL https://get.docker.com | sh
+    systemctl disable --now docker.service docker.socket containerd.service containerd.socket || true
+    systemctl mask docker.service docker.socket containerd.service containerd.socket || true
+    apt-get install -y uidmap dbus-user-session
+- mode: yq
+  path: "{{.Home}}/.config/docker/daemon.json"
+  expression: |
+    .features.cdi = true |
+    .features.containerd-snapshotter = {{.Param.containerdSnapshotter}}
+  owner: "{{.User}}"
+- mode: user
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    systemctl --user start dbus
+    dockerd-rootless-setuptool.sh install
+    docker context use rootless
+probes:
+- script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    if ! timeout 30s bash -c "until command -v docker >/dev/null 2>&1; do sleep 3; done"; then
+      echo >&2 "docker is not installed yet"
+      exit 1
+    fi
+    if ! timeout 30s bash -c "until pgrep rootlesskit; do sleep 3; done"; then
+      echo >&2 "rootlesskit (used by rootless docker) is not running"
+      exit 1
+    fi
+  hint: See "/var/log/cloud-init-output.log" in the guest
+hostResolver:
+  hosts:
+    host.docker.internal: host.lima.internal
+portForwards:
+- guestSocket: "/run/user/{{.UID}}/docker.sock"
+  hostSocket: "{{.Dir}}/sock/docker.sock"
+param:
+  containerdSnapshotter: true

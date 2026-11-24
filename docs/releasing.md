@@ -64,7 +64,7 @@ Merge these two PRs once; B.4 and B.7 depend on them:
    xcodebuild -runFirstLaunch
    xcodebuild -downloadPlatform iOS          # the iOS simulator runtime, about 8 GB (ci-release needs it)
    ```
-2. **Command-line tools:** `brew install just gh pnpm node` (and `tea` for the Gitea statuses), and **Lima** (`brew install lima` plus the `docker` CLI; the Linux builds and
+2. **Command-line tools:** `brew install just gh pnpm node` (and `tea` for the Gitea statuses), and **Lima 2.0+** (`brew install lima docker`: Lima and the docker CLI; the Linux builds and
    tests run in a Lima VM that `scripts/container.sh` creates and starts by itself, docs/ci.md "Containers on a Mac"; no Docker Desktop, no GUI login). Python 3 comes with Xcode's tools.
 3. **Gitea:** `tea login add --url https://git.lab.gulwertz.net` with a token that can write commit statuses.
    The suites post commit statuses with it, and the TestFlight and tag checks read them (`scripts/forge.sh`;
