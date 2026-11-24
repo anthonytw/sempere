@@ -1,0 +1,36 @@
+DEFINE SCHEMA
+
+    RECORD TYPE VaultFile (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        asset           ASSET,
+        bytes           ENCRYPTED BYTES,
+        parts           INT64,
+        path            ENCRYPTED STRING,
+        sha256          ENCRYPTED BYTES,
+        size            INT64,
+        tomb            INT64,
+        v               INT64,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE VaultFilePart (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        asset           ASSET,
+        sha256          ENCRYPTED BYTES,
+        v               INT64,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
