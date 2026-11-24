@@ -3,6 +3,7 @@
 // `c0-<uuid>` that it deletes. Output: one JSON object per line on stdout ({"k": probe/key, "v": value}).
 //   SPIKE_PROBES=account,conditional,limits,assets,feed,perf,push   (default: all but push)
 //   SPIKE_ASSET_MAX_MIB=64    largest asset the assets probe tries (SPIKE_ASSET_MIN_MIB: smallest; the sizes are 1 4 16 32 64 128 256 300 512 1024 2048 4096)
+//   SPIKE_NO_ZONE=1           run only the account probe and write nothing (used against the Production environment)
 //   SPIKE_NO_MULTI=1          skip the multi-asset part of the assets probe
 import CloudKit
 import CryptoKit
@@ -469,6 +470,8 @@ func runAll() async {
     let zone = CKRecordZone.ID(zoneName: shared ?? "c0-\(UUID().uuidString.lowercased())", ownerName: CKCurrentUserDefaultName)
     let env = Env(zone: zone, tmp: tmp)
     currentProbe = "setup"
+    let noZone = ProcessInfo.processInfo.environment["SPIKE_NO_ZONE"] != nil // account probe only, nothing written
+    if noZone { if probes.contains("account") { currentProbe = "account"; await pAccount(env) }; out("DONE", true); return }
     do {
         if probes.contains("cleanup") {
             let zs = try await env.db.allRecordZones().filter { $0.zoneID.zoneName.hasPrefix("c0-") }

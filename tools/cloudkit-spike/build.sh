@@ -15,7 +15,7 @@ ident=${SPIKE_IDENTITY:-Apple Development}
 profile=${SPIKE_PROFILE:-}
 mkdir -p "$out"
 ent() { # $1 = extra entitlement XML
-  sed "s|@EXTRA@|$1|" "$here/entitlements.plist.in" > "$out/entitlements.plist"
+  sed "s|@EXTRA@|$1|; s|@ENV@|${SPIKE_ENV:-Development}|" "$here/entitlements.plist.in" > "$out/entitlements.plist"
 }
 sdkmac=$(xcrun --sdk macosx --show-sdk-path)
 case $kind in
@@ -50,10 +50,15 @@ cli)
   xcrun swiftc -swift-version 5 -O -parse-as-library -sdk "$sdkmac" -target arm64-apple-macos14.0 -framework CloudKit \
     "$here/Sources/Spike.swift" -o "$app/Contents/MacOS/sempere"
   sed "s|@BUNDLE_ID@|$id|" "$here/Info-cli.plist" > "$app/Contents/Info.plist"
-  extra="<key>com.apple.application-identifier</key><string>$team.$id</string><key>com.apple.developer.team-identifier</key><string>$team</string><key>com.apple.security.get-task-allow</key><true/>"
+  gta="<key>com.apple.security.get-task-allow</key><true/>"; [ -z "${CLI_DEVID:-}" ] || gta=""   # CLI_DEVID=1: Developer ID signing (hardened runtime, no get-task-allow, Production)
+  extra="<key>com.apple.application-identifier</key><string>$team.$id</string><key>com.apple.developer.team-identifier</key><string>$team</string>$gta"
   if [ -n "${CLI_PROFILE:-}" ]; then cp "$CLI_PROFILE" "$app/Contents/embedded.provisionprofile"; fi
   ent "$extra"
   [ -z "${CLI_NO_ENTITLEMENTS:-}" ] || sed -i '' '/icloud/d;/application-identifier/d;/team-identifier/d' "$out/entitlements.plist"
-  codesign --force --sign "$ident" --entitlements "$out/entitlements.plist" "$app"
+  if [ -n "${CLI_DEVID:-}" ]; then
+    codesign --force --sign "$ident" ${SPIKE_KEYCHAIN:+--keychain "$SPIKE_KEYCHAIN"} --options runtime --timestamp --entitlements "$out/entitlements.plist" "$app"
+  else
+    codesign --force --sign "$ident" --entitlements "$out/entitlements.plist" "$app"
+  fi
   echo "$app" ;;
 esac

@@ -8,6 +8,8 @@ import base64, os, re, subprocess, sys
 from lib import call, json
 
 APP, CLI_ID = "io.github.anthonytw.sempere", "io.github.anthonytw.sempere.cli"
+suffix = sys.argv[sys.argv.index("--suffix") + 1] if "--suffix" in sys.argv else ""   # profile names must be new: pass " 2" to remake
+cli_only = "--cli-only" in sys.argv
 out = sys.argv[sys.argv.index("--profiles-dir") + 1] if "--profiles-dir" in sys.argv else "."
 
 def bundle(identifier):
@@ -26,7 +28,7 @@ def capability(bid, kind, settings=None):
 
 # Step 4: the app's App ID gets Push Notifications (iCloud was ticked in the portal by the owner).
 app = bundle(APP)
-print("app push:", capability(app, "PUSH_NOTIFICATIONS"))
+if not cli_only: print("app push:", capability(app, "PUSH_NOTIFICATIONS"))
 
 # Step 8: the CLI App ID, iCloud on. The container assignment is NOT in the API: portal (see the design doc).
 cli = bundle(CLI_ID)
@@ -50,6 +52,7 @@ dev_cert = [d["id"] for d in j["data"] if d["attributes"]["certificateType"] == 
 ios_dev = [d["id"] for d in call("GET", "/v1/devices", limit=200)[1]["data"] if d["attributes"]["platform"] == "IOS"]
 
 def profile(name, ptype, bid, certs, devices=None):
+    name += suffix
     rel = {"bundleId": {"data": {"type": "bundleIds", "id": bid}}, "certificates": {"data": [{"type": "certificates", "id": x} for x in certs]}}
     if devices: rel["devices"] = {"data": [{"type": "devices", "id": x} for x in devices]}
     c, j = call("POST", "/v1/profiles", {"data": {"type": "profiles", "attributes": {"name": name, "profileType": ptype}, "relationships": rel}})
@@ -57,8 +60,8 @@ def profile(name, ptype, bid, certs, devices=None):
     if c == 201:
         open(os.path.join(out, name.replace(" ", "_") + ".provisionprofile"), "wb").write(base64.b64decode(j["data"]["attributes"]["profileContent"]))
 
-profile("Sempere Dev Catalyst", "MAC_CATALYST_APP_DEVELOPMENT", app, dev_cert, [dev])
-profile("Sempere Dev iOS", "IOS_APP_DEVELOPMENT", app, dev_cert, ios_dev)
+if not cli_only: profile("Sempere Dev Catalyst", "MAC_CATALYST_APP_DEVELOPMENT", app, dev_cert, [dev])
+if not cli_only: profile("Sempere Dev iOS", "IOS_APP_DEVELOPMENT", app, dev_cert, ios_dev)
 profile("Sempere CLI Dev", "MAC_APP_DEVELOPMENT", cli, dev_cert, [dev])
 dev_id = [d["id"] for d in call("GET", "/v1/certificates", limit=200)[1]["data"] if d["attributes"]["certificateType"] == "DEVELOPER_ID_APPLICATION_G2"]
 profile("Sempere CLI Developer ID", "MAC_APP_DIRECT", cli, dev_id[:1])

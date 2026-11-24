@@ -43,6 +43,11 @@ Simulator: `build.sh sim`, `xcrun simctl clone <base UDID> c0-clone`, boot, `sim
 
 CLI bundle (§6.5): `build.sh cli` makes `sempere.app/Contents/MacOS/sempere`; `CLI_PROFILE=<profile>` embeds one,
 `CLI_BUNDLE_ID=<id>` sets the bundle id. Run it directly or through a symlink in a `bin/` directory.
+Result (design §13.7): with `CLI_BUNDLE_ID=io.github.anthonytw.sempere.cli` and the `Sempere CLI Dev` profile (made after the
+container was assigned to the CLI App ID: `asc/setup.py --cli-only --suffix " 3" --profiles-dir $S`; profile names must be
+new) it reaches CloudKit. Developer ID: `CLI_DEVID=1 SPIKE_ENV=Production SPIKE_IDENTITY="Developer ID Application: …"
+SPIKE_KEYCHAIN=<keychain> CLI_PROFILE=<Developer ID profile>`; not run here (no private key on this seat); run with
+`SPIKE_NO_ZONE=1 SPIKE_PROBES=account` so nothing is written to Production.
 
 ## Gotchas found while building it (details in the design doc §13)
 
