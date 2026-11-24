@@ -52,8 +52,9 @@ public final class CloudKitDatabase: CloudRecordStore, @unchecked Sendable {
         case missingEntitlement
     }
 
-    /// Whether this process may use the container. On macOS the entitlement is read from the process's own signature; on
-    /// iOS and Mac Catalyst the app always has it (its profile is checked when it is built).
+    /// Whether this process may use the container. On macOS and Mac Catalyst the entitlement is read from the process's
+    /// own signature (an ad-hoc or source build lacks it); on iOS the app always has it (its profile is checked when it is
+    /// built).
     public static func availability(containerIdentifier: String = CloudKitDatabase.containerIdentifier) -> Availability {
         #if os(macOS) || targetEnvironment(macCatalyst)
         guard let task = SecTaskCreateFromSelf(nil),
@@ -216,6 +217,9 @@ public final class CloudKitDatabase: CloudRecordStore, @unchecked Sendable {
         configuration.previousServerChangeToken = previous
         configuration.desiredKeys = Self.metadataKeys
         let op = CKFetchRecordZoneChangesOperation(recordZoneIDs: [id], configurationsByRecordZoneID: [id: configuration])
+        // One server page per call (the default fetches the whole history in one operation): the transport saves the
+        // token, checks its limits and may stop between pages, and a page's changes and deletes stay in order.
+        op.fetchAllChanges = false
         let done = DispatchSemaphore(value: 0)
         let changed = Acc<[CloudRecord]>([]), deleted = Acc<[String]>([])
         let failure = Acc<Error?>(nil)
