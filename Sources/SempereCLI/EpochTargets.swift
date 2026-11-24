@@ -62,7 +62,7 @@ enum EpochTargets {
         for t in targets {
             names[t.id.uuidString.lowercased()] = t
             do {
-                reachable.append(.init(name: t.id.uuidString.lowercased(), remote: try remote(t, passwordEnv: passwordEnv),
+                reachable.append(.init(name: t.id.uuidString.lowercased(), remote: try remote(t, passwordEnv: passwordEnv, vaultId: vault.vaultId, stateDirectory: store.targets.stateDirectory(t.id, of: vault.vaultId)),
                                        quarantine: store.targets.quarantineDirectory(t.id, of: vault.vaultId)))
             } catch {
                 outcomes.append(PullOutput(target: t.name, reached: false, downloaded: 0, error: CLIError.from(error).message))
@@ -94,7 +94,7 @@ enum EpochTargets {
     }
 
     /// The remote of a store target (a folder, or WebDAV with the password from `passwordEnv`).
-    static func remote(_ t: SyncTarget, passwordEnv: String?) throws -> any SyncRemote {
+    static func remote(_ t: SyncTarget, passwordEnv: String?, vaultId: UUID? = nil, stateDirectory: URL? = nil) throws -> any SyncRemote {
         switch t.kind {
         case .folder:
             guard let path = t.path else { throw CLIError.failure("target \(t.name) has no path") }
@@ -108,6 +108,9 @@ enum EpochTargets {
             let login = try WebDAVLoginOptions.parse((t.user.map { ["--user", $0] } ?? [])
                                                      + (passwordEnv.map { ["--password-env", $0] } ?? []))
             return WebDAVSyncRemote(try login.client(url))
+        case .cloudkit:
+            guard let vaultId, let stateDirectory else { throw CLIError.failure("target \(t.name) needs its vault") }
+            return try CloudKitCLI.remote(t, vaultId: vaultId, stateDirectory: stateDirectory)
         default:
             throw CLIError.failure("target kind \(t.kind) is not supported by this version")
         }

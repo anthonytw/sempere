@@ -20,12 +20,14 @@ final class CloudBatcher: @unchecked Sendable {
     private final class Item {
         let save: CloudSave?
         let delete: String?
+        let name: String
         let bytes: Int
         var attempts = 0
         var result: Result<Outcome, Error>?
         init(save: CloudSave?, delete: String?) {
             self.save = save
             self.delete = delete
+            name = save?.name ?? delete ?? ""
             // About a record's own weight beside its fields.
             bytes = 512 + (save?.fields.bytes?.count ?? 0) + (save?.fields.path?.utf8.count ?? 0)
         }
@@ -70,13 +72,17 @@ final class CloudBatcher: @unchecked Sendable {
         return try item.result!.get()
     }
 
-    /// The items for the next request, the lock held.
+    /// The items for the next request, the lock held. A request names each record once (CloudKit refuses a request that
+    /// saves or deletes one name twice): the first item whose name is already in it, and everything behind it, waits for the
+    /// next request, so two operations on one record stay in the order they were made.
     private func take() -> [Item] {
         var batch: [Item] = []
+        var names = Set<String>()
         var bytes = 0
         while let next = queue.first, batch.count < CloudStoreLimits.maxItemsPerRequest,
-              batch.isEmpty || bytes + next.bytes <= CloudStoreLimits.maxInlineBytesPerRequest {
+              batch.isEmpty || bytes + next.bytes <= CloudStoreLimits.maxInlineBytesPerRequest, !names.contains(next.name) {
             batch.append(queue.removeFirst())
+            names.insert(next.name)
             bytes += next.bytes
         }
         return batch
@@ -92,6 +98,7 @@ final class CloudBatcher: @unchecked Sendable {
             }
             var done: [(Item, Result<Outcome, Error>)] = []
             var again: [Item] = []
+            var tooBig: [Item] = []
             var si = 0, di = 0
             for item in batch {
                 let failure: CloudStoreError?
@@ -112,9 +119,21 @@ final class CloudBatcher: @unchecked Sendable {
                 }
                 if let outcome { done.append((item, .success(outcome))); continue }
                 if let failure {
+                    // Over the request's limit as a whole ("Database commit size exceeds limit" comes back for every record of it):
+                    // asked again in halves, below.
+                    if failure.code == .limitExceeded, batch.count > 1 { tooBig.append(item); continue }
                     item.attempts += 1
                     // Innocent members of a request that failed whole are sent again, a few times.
                     if failure.code == .batchRequestFailed, item.attempts < 3 { again.append(item) } else { done.append((item, .failure(failure))) }
+                }
+            }
+            if !tooBig.isEmpty {
+                // Split and asked again; an item alone in its request keeps its own failure (the recursion ends at one).
+                let halves = tooBig.count == 1 ? [tooBig] : [Array(tooBig[..<(tooBig.count / 2)]), Array(tooBig[(tooBig.count / 2)...])]
+                for half in halves {
+                    let r = run(half, send)
+                    done += r.done
+                    again += r.again
                 }
             }
             return (done, again)

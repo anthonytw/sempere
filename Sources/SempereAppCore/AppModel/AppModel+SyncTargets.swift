@@ -122,14 +122,17 @@ extension AppModelCore {
             session = makeSyncSession(location)
         case .folder:
             session = makeFolderSession(ref)
+        case .cloudkit:
+            session = makeCloudKitSession(ref)
         default:
             return nil   // a kind of a later version: listed, never run
         }
         session?.kind = ref.target.kind
         session?.targetName = ref.target.name
         session?.added = ref.target.added
-        if ref.target.kind == .folder {
-            // Folder targets are local or a provider's: runs are cheap (design §4).
+        if ref.target.kind == .folder || ref.target.kind == .cloudkit {
+            // Folder targets are local or a provider's, and a CloudKit run asks for the changes only (docs/design/1.4-cloudkit.md
+            // §3.2): runs are cheap (design §4).
             session?.schedule.writeDelay = folderWriteDelay
             session?.schedule.idleInterval = 60
             session?.schedule.maxIdleInterval = 60

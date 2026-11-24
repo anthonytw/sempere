@@ -1786,9 +1786,19 @@ public final class SyncEngine {
             // A store whose create appears whole or not at all (records, `FolderRemote`'s link(2)): no temporary name, no
             // second copy. A cut upload leaves nothing under the final name, and a large file's parts stay for the next
             // attempt to reuse. With `damaged`, the server's copy is removed first (only that version when its tag is strong).
+            // A strong tag names the damaged version, so the copy is replaced in one conditional write (never a moment with no
+            // file under the name, and another device's newer copy is never overwritten: `.changed`).
+            if let damaged, let etag = damaged.etag, Self.isStrong(etag) {
+                let replaced: Bool
+                do { replaced = try transport.write(final, body, condition: .replace(etag: etag)) } catch {
+                    written?(error)
+                    throw error
+                }
+                written?(nil)
+                return replaced ? .placed : .changed
+            }
             if let damaged {
-                let etag = damaged.etag.flatMap { Self.isStrong($0) ? $0 : nil }
-                guard try transport.delete(final, ifETag: etag) else { return .changed }
+                guard try transport.delete(final, ifETag: nil) else { return .changed }
             }
             do { moved = try transport.write(final, body, condition: .create) } catch {
                 written?(error)

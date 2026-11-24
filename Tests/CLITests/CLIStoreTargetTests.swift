@@ -68,6 +68,22 @@ final class CLIStoreTargetTests: CLITestCase {
         XCTAssertEqual(try sync(key: v.key).status, 2)   // no targets left
     }
 
+    /// `--cloudkit` (docs/design/1.4-cloudkit.md §6.5): the test binary is a source build with no provisioning profile (and on
+    /// Linux there is no CloudKit), so it says plainly that CloudKit is unavailable, before touching it, and adds nothing.
+    func testACloudKitTargetNeedsASignedBuildAndSaysSo() throws {
+        _ = try storeVault()
+        let r = try cli(["store", "target", "add", "Notes", "--cloudkit", "--store", store])
+        XCTAssertEqual(r.status, 1, r.err)
+        XCTAssertTrue(r.err.contains("iCloud (CloudKit)"), r.err)
+        XCTAssertTrue(r.err.contains("not available") || r.err.contains("only available"), r.err)
+        let listed = try XCTUnwrap(try cli(["store", "target", "list", "Notes", "--store", store, "--json"]).json as? [[String: Any]])
+        XCTAssertTrue(listed.isEmpty)
+        // One kind of target at a time.
+        let both = try cli(["store", "target", "add", "Notes", "--cloudkit", "--folder", path("Drive/x"), "--store", store])
+        XCTAssertEqual(both.status, 2, both.err)
+        XCTAssertTrue(both.err.contains("--cloudkit"), both.err)
+    }
+
     /// Open Vault… with "Keep syncing": the source becomes a target; edits travel both ways.
     func testImportKeepSyncingMakesTheSourceATarget() throws {
         let (_, _, key) = try makeVault(named: "a.sempere")

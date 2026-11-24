@@ -12,8 +12,14 @@ public struct SyncTargetKind: RawRepresentable, Codable, Hashable, Sendable, Cus
     public static let folder = SyncTargetKind(rawValue: "folder")
     /// A WebDAV collection (SempereWebDAV's remote).
     public static let webdav = SyncTargetKind(rawValue: "webdav")
+    /// The vault's zone in the private CloudKit database of the signed-in Apple Account (`CloudRecordRemote`, docs/design/1.4-cloudkit.md).
+    /// Apple devices only; a registry shared with a device that cannot run it keeps the target and never runs it.
+    public static let cloudkit = SyncTargetKind(rawValue: "cloudkit")
 
     public var description: String { rawValue }
+
+    /// The kinds that reach a server: their scheduled runs wait for a network path (a folder's do not).
+    public var usesNetwork: Bool { self == .webdav || self == .cloudkit }
 
     public init(from decoder: Decoder) throws {
         rawValue = try decoder.singleValueContainer().decode(String.self)
@@ -55,6 +61,11 @@ public struct SyncTarget: Codable, Sendable, Hashable, Identifiable {
     /// The first download of a join finished (a WebDAV vault opened from its server).
     public var joined: Bool?
 
+    // CloudKit targets.
+    /// A hash of the Apple Account's user record id the target was made with (`CloudAccount.userHash`, never the id): a run
+    /// in another account pauses the target instead of uploading the vault into it (design §4).
+    public var cloudUser: String?
+
     public init(id: UUID = UUID(), kind: SyncTargetKind, name: String, added: Date = Date()) {
         self.id = id
         self.kind = kind
@@ -77,6 +88,20 @@ public struct SyncTarget: Codable, Sendable, Hashable, Identifiable {
         t.url = url
         t.user = user
         return t
+    }
+
+    /// A CloudKit target (the vault's zone in the signed-in account's private database), made with the account whose hash it
+    /// is, when known.
+    public static func cloudkit(user: String?, name: String = "iCloud", id: UUID = UUID()) -> SyncTarget {
+        var t = SyncTarget(id: id, kind: .cloudkit, name: name)
+        t.cloudUser = user
+        return t
+    }
+
+    /// Where the target is, for a listing: the folder, the server folder, or "iCloud" for a CloudKit target.
+    public var place: String {
+        if kind == .cloudkit { return "iCloud (CloudKit)" }
+        return path ?? url ?? ""
     }
 
     /// `url`'s standardized path with `/private` dropped before `var`, `tmp` and `etc` whether or not the path exists.
@@ -111,6 +136,8 @@ public struct SyncTarget: Codable, Sendable, Hashable, Identifiable {
         case .webdav:
             guard let a = url, let b = other.url else { return false }
             return Self.sameCollection(a, b) && (user ?? "") == (other.user ?? "")
+        case .cloudkit:
+            return true   // one container, one account: a vault has at most one CloudKit target
         default:
             return false
         }

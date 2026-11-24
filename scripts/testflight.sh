@@ -37,11 +37,11 @@
 #   SEMPERE_ASC_KEY_PATH         api: the .p8 key file (keep it outside any repository)
 #   SEMPERE_ASC_KEY_ID           api: the key's ID
 #   SEMPERE_ASC_ISSUER_ID        api: the issuer ID (App Store Connect > Users and Access > Integrations)
-#   SEMPERE_PROFILE_IOS          api: profile name for io.github.anthonytw.sempere on iOS (default "Sempere iOS App Store")
+#   SEMPERE_PROFILE_IOS          api: profile name for io.github.anthonytw.sempere on iOS (default "Sempere iOS App Store 2": carries iCloud and push; the first ones went INVALID)
 #   SEMPERE_PROFILE_WIDGETS_IOS  api: profile for ….widgets (default "Sempere Widgets iOS App Store")
 #   SEMPERE_PROFILE_WATCH        api: profile for ….watchkitapp, the Apple Watch app (watchOS; default "Sempere Watch App Store")
 #   SEMPERE_PROFILE_WATCH_WIDGETS api: profile for ….watchkitapp.widgets (watchOS; default "Sempere Watch Widgets App Store")
-#   SEMPERE_PROFILE_MAC          api: Mac Catalyst profile (default "Sempere Mac App Store")
+#   SEMPERE_PROFILE_MAC          api: Mac Catalyst profile (default "Sempere Mac App Store 2")
 #   SEMPERE_DIST_CERT            api: signing certificate (default "Apple Distribution")
 #   SEMPERE_INSTALLER_CERT       api: Mac installer certificate (default "3rd Party Mac Developer Installer")
 #   SEMPERE_KEYCHAIN             optional: a keychain to unlock first (holding the signing identities)
@@ -120,11 +120,11 @@ case "$signing" in
     ;;
   *) die "SEMPERE_SIGNING must be xcode or api, not '$signing'" ;;
 esac
-profile_ios=${SEMPERE_PROFILE_IOS:-Sempere iOS App Store}
+profile_ios=${SEMPERE_PROFILE_IOS:-Sempere iOS App Store 2}
 profile_widgets=${SEMPERE_PROFILE_WIDGETS_IOS:-Sempere Widgets iOS App Store}
 profile_watch=${SEMPERE_PROFILE_WATCH:-Sempere Watch App Store}
 profile_watch_widgets=${SEMPERE_PROFILE_WATCH_WIDGETS:-Sempere Watch Widgets App Store}
-profile_mac=${SEMPERE_PROFILE_MAC:-Sempere Mac App Store}
+profile_mac=${SEMPERE_PROFILE_MAC:-Sempere Mac App Store 2}
 dist_cert=${SEMPERE_DIST_CERT:-Apple Distribution}
 installer_cert=${SEMPERE_INSTALLER_CERT:-3rd Party Mac Developer Installer}
 source "$(dirname "$0")/forge.sh"

@@ -50,21 +50,30 @@ dist=build/release/$tag
 [[ -f $dist/SHA256SUMS && -f $dist/notes.md && -f $dist/COMMIT ]] || die "no build in $dist (just release-build $version)"
 built=$(cat "$dist/COMMIT")
 [[ $built == "$remote_sha" ]] || die "$dist was built from ${built:0:8}, but $tag on $remote is ${remote_sha:0:8} (tagged again after the build?): run just release-build $version again"
-(cd "$dist" && shasum -a 256 -c SHA256SUMS >/dev/null) || die "$dist/SHA256SUMS does not match the files there"
 for p in macos-universal linux-x86_64 linux-aarch64; do
   [[ -f $dist/sempere-$version-$p.tar.gz ]] || die "$dist has no sempere-$version-$p.tar.gz"
 done
+signed=${SEMPERE_SIGN_OUT:-/Users/Shared/sempere-sign}/$tag
+mac=sempere-$version-macos-universal.tar.gz
+if [[ ! -f $dist/SHA256SUMS.sig && -f $signed/SHA256SUMS.sig ]]; then   # the maintainer signed (scripts/release-sign.sh)
+  maintainer=$(id -u "${SEMPERE_MAINTAINER_USER:-awertz}" 2>/dev/null) || die "no maintainer account ${SEMPERE_MAINTAINER_USER:-awertz} (SEMPERE_MAINTAINER_USER)"
+  for f in "$signed" "$signed/SHA256SUMS" "$signed/SHA256SUMS.sig" "$signed/$mac"; do scripts/release-signature.sh owned "$f" "$maintainer" >&2 || die "$f must belong to the maintainer account, not be a symlink and not be writable by group or world"; done
+  # The maintainer's list differs from the build's in one line: the macOS tarball, which they signed with their Developer ID,
+  # notarized and repacked (docs/design/1.4-cloudkit.md §6.5). The Linux lines are the build's, byte for byte, and the tarball
+  # there is the one the signed list names.
+  grep -v "  $mac\$" "$signed/SHA256SUMS" | cmp -s - <(grep -v "  $mac\$" "$dist/SHA256SUMS") \
+    || die "$signed/SHA256SUMS is not the $dist/SHA256SUMS that was built (the Linux files differ): the .sig there signs another list (just release-build $version again)"
+  [[ $(grep -c "  $mac\$" "$signed/SHA256SUMS") == 1 ]] || die "$signed/SHA256SUMS lacks exactly one line for $mac"
+  [[ $(shasum -a 256 < "$signed/$mac" | cut -d' ' -f1) == "$(sed -n "s/^\([0-9a-f]\{64\}\)  $mac\$/\1/p" "$signed/SHA256SUMS")" ]] \
+    || die "$signed/$mac is not the file the signed list names"
+  mkdir -p "$dist/unsigned"; mv "$dist/$mac" "$dist/unsigned/$mac"   # the build's, kept out of the release's files
+  cp "$signed/SHA256SUMS" "$dist/SHA256SUMS"; cp "$signed/SHA256SUMS.sig" "$dist/SHA256SUMS.sig"; cp "$signed/$mac" "$dist/$mac"
+  echo "ok    took SHA256SUMS.sig, SHA256SUMS and the signed, notarized $mac from $signed"
+fi
+(cd "$dist" && shasum -a 256 -c SHA256SUMS >/dev/null) || die "$dist/SHA256SUMS does not match the files there"
 for f in "$dist"/*.tar.gz; do
   grep -q "  ${f##*/}\$" "$dist/SHA256SUMS" || die "${f##*/} is in $dist but not in SHA256SUMS"
 done
-signed=${SEMPERE_SIGN_OUT:-/Users/Shared/sempere-sign}/$tag
-if [[ ! -f $dist/SHA256SUMS.sig && -f $signed/SHA256SUMS.sig ]]; then   # the maintainer signed (scripts/release-sign.sh)
-  maintainer=$(id -u "${SEMPERE_MAINTAINER_USER:-awertz}" 2>/dev/null) || die "no maintainer account ${SEMPERE_MAINTAINER_USER:-awertz} (SEMPERE_MAINTAINER_USER)"
-  for f in "$signed" "$signed/SHA256SUMS" "$signed/SHA256SUMS.sig"; do scripts/release-signature.sh owned "$f" "$maintainer" >&2 || die "$f must belong to the maintainer account, not be a symlink and not be writable by group or world"; done
-  cmp -s "$signed/SHA256SUMS" "$dist/SHA256SUMS" || die "$signed/SHA256SUMS is not the $dist/SHA256SUMS that was built: the .sig there signs another list (just release-build $version again)"
-  cp "$signed/SHA256SUMS.sig" "$dist/SHA256SUMS.sig"
-  echo "ok    took SHA256SUMS.sig from $signed"
-fi
 [[ -f $dist/SHA256SUMS.sig ]] || die "no $dist/SHA256SUMS.sig: the maintainer signs with scripts/release-sign.sh $version from their own clone"
 sig=$(scripts/release-signature.sh verify "$dist" 2>&1) || die "${sig#error: } (just release-build $version)"
 echo "ok    $dist: built from ${built:0:8}, SHA256SUMS verify and are signed by the maintainer, notes.md and three tarballs"

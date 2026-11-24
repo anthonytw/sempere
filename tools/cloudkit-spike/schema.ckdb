@@ -29,6 +29,7 @@ DEFINE SCHEMA
         "___recordID"   REFERENCE,
         asset           ASSET,
         sha256          ENCRYPTED BYTES,
+        size            INT64,
         v               INT64,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",

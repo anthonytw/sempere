@@ -48,6 +48,28 @@ final class SyncTargetTests: SyncTestCase {
     }
 
     /// "Choose Again" starts a target over: its state file and transfers go, its quarantine stays.
+    /// An iCloud (CloudKit) target (docs/design/1.4-cloudkit.md §4, §6.5): one per vault, whatever the account; it keeps the
+    /// hash of the account it was made with, shows as "iCloud (CloudKit)", and a registry that holds one survives a round trip.
+    func testACloudKitTargetIsOnePerVaultAndKeepsItsAccount() throws {
+        let first = SyncTarget.cloudkit(user: "hash-of-the-account")
+        try registry.add(first, to: vaultA)
+        XCTAssertThrowsError(try registry.add(.cloudkit(user: "another"), to: vaultA)) {
+            XCTAssertEqual($0 as? SyncTargetError, .duplicate(first.id))
+        }
+        try registry.add(.cloudkit(user: "hash-of-the-account"), to: vaultB)   // another vault, its own zone
+        let back = try XCTUnwrap(registry.targets(of: vaultA).first)
+        XCTAssertEqual(back.kind, .cloudkit)
+        XCTAssertEqual(back.cloudUser, "hash-of-the-account")
+        XCTAssertEqual(back.place, "iCloud (CloudKit)")
+        XCTAssertTrue(back.kind.usesNetwork)
+        XCTAssertFalse(SyncTargetKind.folder.usesNetwork)
+        // Beside the others; none of them is the same place.
+        try registry.add(.folder(tmp.appendingPathComponent("Drive/Notes.sempere")), to: vaultA)
+        XCTAssertEqual(registry.targets(of: vaultA).count, 2)
+        // The zone is the vault's own, lowercase, as in vault.json.
+        XCTAssertEqual(CloudTargetRun.zone(vaultId: vaultA), "sempere-" + vaultA.uuidString.lowercased())
+    }
+
     func testResetStateKeepsTheQuarantine() throws {
         let target = try registry.add(.folder(tmp.appendingPathComponent("F")), to: vaultA)
         let state = registry.stateURL(target.id, of: vaultA)

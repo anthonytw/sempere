@@ -19,7 +19,8 @@ public enum SempereFonts {
     /// installed. Looked up, in order:
     /// - `$SEMPERE_BUNDLED_FONTS`;
     /// - `fonts/` next to the executable (the release tarball) and
-    ///   `../share/sempere/fonts` (Homebrew-style prefixes);
+    ///   `../share/sempere/fonts` (Homebrew-style prefixes) and `../Resources/fonts` (the macOS CLI's bundle,
+    ///   `sempere.app/Contents/MacOS/sempere`: `scripts/cli-bundle.sh`);
     /// - SwiftPM's resource bundle next to the executable or any loaded
     ///   bundle (`swift build`, `swift test`).
     ///
@@ -37,6 +38,7 @@ public enum SempereFonts {
             dirs.append(exe)
             if let d = valid(exe.appendingPathComponent("fonts")) { return d }
             if let d = valid(exe.deletingLastPathComponent().appendingPathComponent("share/sempere/fonts")) { return d }
+            if let d = valid(exe.deletingLastPathComponent().appendingPathComponent("Resources/fonts")) { return d }
         }
         dirs += Bundle.allBundles.map { $0.bundleURL.deletingLastPathComponent() }
         for dir in dirs {

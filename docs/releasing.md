@@ -109,8 +109,8 @@ of two modes:
      Distribution** certificate (it installs as "3rd Party Mac Developer Installer"), each made from a CSR in
      Keychain Access and installed by double-clicking.
   3. developer.apple.com ▸ Profiles: three **App Store** profiles, named exactly (or set the names in
-     `release.env`): "Sempere iOS App Store" (iOS, `io.github.anthonytw.sempere`), "Sempere Widgets iOS App
-     Store" (iOS, `….widgets`) and "Sempere Mac App Store" (Mac Catalyst, `io.github.anthonytw.sempere`); with the Apple
+     `release.env`): "Sempere iOS App Store 2" (iOS, `io.github.anthonytw.sempere`), "Sempere Widgets iOS App
+     Store" (iOS, `….widgets`) and "Sempere Mac App Store 2" (Mac Catalyst, `io.github.anthonytw.sempere`); with the Apple
      Watch app, two more, **App Store** profiles for watchOS: "Sempere Watch App Store" (`….watchkitapp`) and "Sempere
      Watch Widgets App Store" (`….watchkitapp.widgets`). Download and double-click each.
 
@@ -146,6 +146,34 @@ $EDITOR ~/.config/sempere/release.env
 
 `SEMPERE_RELEASE_ENV=/other/file` reads another file. The script never prints these values: its dry run shows
 `<SEMPERE_TEAM_ID>` and the like in their place.
+
+### The macOS CLI's Developer ID signing **[you]**, once
+
+The macOS tarball holds the CLI as `sempere.app` (docs/design/1.4-cloudkit.md §6.5): iCloud (CloudKit) is a restricted
+entitlement, which macOS honors only for a program inside a bundle that carries a provisioning profile. The build account
+cannot sign it (the Developer ID key is not there), so `scripts/release-sign.sh` signs, notarizes and repacks it for you, in
+your own account, in the same command that signs `SHA256SUMS`. What it needs, once:
+
+1. **The "Developer ID Application" certificate with its private key in your login keychain** (developer.apple.com ▸
+   Certificates ▸ **+** ▸ Developer ID Application, from a CSR made in Keychain Access; double-click the download). Check:
+   `security find-identity -v -p codesigning | grep "Developer ID Application"`.
+2. **Notarization credentials**, stored under the name the script uses (an app-specific password from appleid.apple.com, or
+   the App Store Connect API key):
+   ```bash
+   xcrun notarytool store-credentials sempere-notary --apple-id YOU@EXAMPLE.COM --team-id TEAMID   # asks for the app-specific password
+   ```
+3. **The provisioning profile "Sempere CLI Developer ID 3"** (developer.apple.com ▸ Profiles; type Developer ID, App ID
+   `io.github.anthonytw.sempere.cli`, which lists `iCloud.io.github.anthonytw.sempere`; its profile expires in 2044).
+   Download it to a file outside any repository (a profile holds the team identifier, which no file here does: the
+   script takes the team and App ID for the entitlements from it) and name it in your `release.env`:
+   ```bash
+   echo 'SEMPERE_CLI_PROFILE=~/.config/sempere/Sempere_CLI_Developer_ID_3.provisionprofile' >> ~/.config/sempere/release.env
+   ```
+
+`SEMPERE_SIGN_IDENTITY` (default `Developer ID Application`), `SEMPERE_SIGN_KEYCHAIN` and `SEMPERE_NOTARY_PROFILE`
+(default `sempere-notary`) in the same file or the environment change the names. A dry run with a development identity and
+profile (`SEMPERE_SIGN_DEV=1`, `SEMPERE_CLI_PROFILE` a development profile for the CLI App ID) goes through everything up
+to Apple's service and writes to `…/v1.1.0.dry-run/`, a folder `release-publish` never reads.
 
 ### Check the setup
 
@@ -469,16 +497,17 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    its own; the SDK archive is downloaded once into `~/.cache/sempere/swift-sdk`, checked against its pinned SHA-256 on
    every use, mounted read-only and checked again in the container: `scripts/static-sdk-cache.sh`),
    checks each prints the tag's version, packages `sempere-X.Y.Z-<platform>.tar.gz` (binary, LICENSE,
-   LICENSE-EXCEPTION, README, CHANGELOG, `docs/cli.md`, `fonts/`; `scripts/package-cli.sh`), installs and runs the
+   LICENSE-EXCEPTION, README, CHANGELOG, `docs/cli.md`, `fonts/`; `scripts/package-cli.sh`; the macOS tarball holds the
+   unsigned bundle `sempere.app` instead of `sempere` and `fonts/`, `scripts/cli-bundle.sh`), installs and runs the
    Linux tarballs in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20 (`scripts/smoke-linux-cli.sh`;
    the architecture Docker emulates only warns), and writes `SHA256SUMS` and `notes.md` (the CHANGELOG section)
-   into `build/release/v1.0.0/`. Nothing leaves the Mac. The build signs nothing: it copies `SHA256SUMS` (data only, no
-   code) into the hand-off folder `/Users/Shared/sempere-release/v1.1.0/` (`SEMPERE_SIGN_DROP` moves it) and prints the
+   into `build/release/v1.0.0/`. Nothing leaves the Mac. The build signs nothing: it copies `SHA256SUMS` and the unsigned
+   macOS tarball (data only; nothing there is run by anyone) into the hand-off folder `/Users/Shared/sempere-release/v1.1.0/` (`SEMPERE_SIGN_DROP` moves it) and prints the
    command for the next step. That folder has one writer, the build account: mode 755 and owned by it, which the build
    checks before it starts (it refuses a folder owned by someone else or writable by group or world). Not included: a man page (`sempere --help` and
-   `docs/cli.md` ship instead) and Apple notarization of the macOS CLI binary.
-3. **Sign the checksums [you].** From your own account, in your own clone of GitHub, never from anything the build
-   account wrote:
+   `docs/cli.md` ship instead).
+3. **Sign the macOS CLI and the checksums [you]**, once the one-time setup above is done. From your own account, in your
+   own clone of GitHub, never from anything the build account wrote:
    ```bash
    cd ~/dev/sempere-clone && git fetch origin && git checkout --detach origin/main
    bash scripts/release-sign.sh 1.1.0            # -k KEY names a key; the default is `git config user.signingkey`
@@ -487,14 +516,22 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    from `origin/main:packaging/allowed_signers`. It checks that the hand-off folder and its `SHA256SUMS` belong to the
    build account and are not writable by group or world, copies the list to a private temp folder, refuses it unless it
    is exactly one line per expected tarball (`sempere-1.1.0-{macos-universal,linux-x86_64,linux-aarch64}.tar.gz`, 64-hex
-   hashes), shows it, signs the copy (namespace `file`), verifies it against the signers, and only then moves
-   `SHA256SUMS` and `SHA256SUMS.sig` into `/Users/Shared/sempere-sign/v1.1.0/` (`SEMPERE_SIGN_OUT` moves it), which only you
-   can write. Compare the list it shows with the one `release-build` printed in its "SHA256SUMS" step. You cannot check
+   hashes), checks your key is a signer (before the minutes of notarization), then takes the macOS tarball from the same folder
+   (it must be the file the list names, owned by the build account) and runs `scripts/release-sign-macos.sh` on it: the
+   tarball is only data (every entry must be a plain file below `sempere-1.1.0-macos-universal/`, none is a link, and only the
+   binary and fonts are used: the bundle's `Info.plist` and entitlements are `packaging/cli/`'s), the bundle is made again
+   with your profile embedded, signed with your Developer ID (hardened runtime, secure timestamp), notarized (`xcrun notarytool
+   submit --wait --keychain-profile sempere-notary`; a few minutes), stapled, checked with `codesign` and `spctl`, and repacked.
+   The list's macOS line becomes the signed tarball's hash (the Linux lines stay the build's). Then it shows the list, signs
+   it (namespace `file`), verifies it against the signers, and only then moves the macOS tarball, `SHA256SUMS` and
+   `SHA256SUMS.sig` into `/Users/Shared/sempere-sign/v1.1.0/` (`SEMPERE_SIGN_OUT` moves it), which only you can write. Compare the list it shows with the one `release-build` printed in its "SHA256SUMS" step. You cannot check
    the hashes without rebuilding, so the signature means "the maintainer approved what the build account produced"; it keeps
    other local accounts and stale lists out. A `user.signingkey` that is a `.pub` path needs ssh-agent to hold the key
    (or pass `-k key::ssh-ed25519 AAAA…`). Then, in the build account, `just release-publish` takes the `.sig` from your
-   folder when the build lacks one, after checking that the `SHA256SUMS` signed there is byte-identical to the build's and
-   that the folder is not writable by group or world, and verifies it against `packaging/allowed_signers` (it also
+   folder when the build lacks one, after checking that the `SHA256SUMS` signed there differs from the build's only in the macOS
+   line, that the signed macOS tarball is the file that line names, and that the folder and its files belong to you and
+   are not writable by group or world (the build's unsigned macOS tarball moves to `unsigned/`, out of the release's
+   files), and verifies it against `packaging/allowed_signers` (it also
    requires `scripts/` and `packaging/` to equal `origin/main`; it refuses a missing or wrong signature).
 4. **The GitHub Release.** The tag is already on GitHub's `main`, so there is no commit to make or push.
    `just release-publish 1.0.0` checks that GitHub's tag is the commit the binaries were built from and that
@@ -509,7 +546,8 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    needed). GitHub runs no release workflow. Then `just release-verify 1.0.0`. Expected: `ok    GitHub's v1.0.0 is
    1a2b3c4d, the commit tagged here`, `ok    the Gitea mirror has v1.0.0 at the same commit` (a `warn` just means the
    mirror has not run yet), `OK` for each tarball in `SHA256SUMS`, `ok    the same files as the local build`, and
-   `sempere 1.0.0` from the macOS binary.
+   `sempere 1.0.0` from the macOS bundle's executable, with `ok    sempere.app is signed with Developer ID, notarized and
+   stapled` (`codesign --verify --strict --deep`, the Developer ID authority, `stapler validate`, `spctl --assess`).
 
    If a check fails before anything is published, fix the cause on `main` (a commit that changes built files needs
    a new sweep; a changelog, docs or release-tooling fix does not), delete the tag

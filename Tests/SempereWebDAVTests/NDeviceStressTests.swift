@@ -598,7 +598,7 @@ final class StressWorld {
                         let dev = devices[k], remote = l.endpoint.remote, state = l.state
                         DispatchQueue.global().async(group: group) {
                             let r = try? dev.sync(via: remote, state: state)
-                            reports.value[n] = r
+                            reports.mutate { $0[n] = r }
                         }
                     }
                     if group.wait(timeout: .now() + 120) != .success { return fail("simultaneous runs hung") }

@@ -12,6 +12,7 @@ nothing under `Apps/` or `Sources/` builds or links it, and `release-check.sh` a
 | `Sources/Spike.swift` | the probes (one file: Mac Catalyst app, iOS simulator app, or a plain macOS executable) |
 | `build.sh` | `catalyst`, `sim`, `cli` builds with `swiftc` (no Xcode project) and signing; run through `~/.claude/scripts/xc-lock.sh` |
 | `asc/` | App Store Connect API scripts: `setup.py` (design §11 steps 4, 6, 8), `survey.py` (read-only listing), `remake-appstore-profiles.py` (step 5; **never run**) |
+| `cli-smoke.sh` | (C2) the signed end-to-end smoke of `SempereCloudKit` through the real CLI bundle, development environment (design §14) |
 | `schema.ckdb` | the proposed record types (`VaultFile`, `VaultFilePart`), validated with `cktool validate-schema` |
 
 ## Rerun

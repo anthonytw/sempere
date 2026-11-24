@@ -41,6 +41,16 @@ struct SyncTargetsSheet: View {
                         Text("Every target gets the same two-way sync. Adding one to a vault with notes copies what either side lacks; nothing is deleted. Removing one never deletes anything there. Backups are something else: a snapshot for recovery, in Settings ▸ Backups.")
                     }
                     Section {
+                        // The minimal door to the CloudKit target (docs/design/1.4-cloudkit.md §9; the sheet's real design is C3).
+                        if model.services.cloudKit != nil {
+                            Button("Add iCloud (CloudKit)", systemImage: "icloud") {
+                                guard let vault = model.vault?.vaultId else { return }
+                                Task {
+                                    do { _ = try await model.addCloudKitTarget(to: vault); CloudKitLive.activate() } catch let e as CloudKitTargetProblem { problem = e.text } catch { problem = AppModel.describe(error) }
+                                }
+                            }
+                            .accessibilityIdentifier("syncTargetsAddCloudKit")
+                        }
                         Button("Add Folder…", systemImage: "folder.badge.plus") { pickingFolder = true }
                             .accessibilityIdentifier("syncTargetsAddFolder")
                         Button("Add WebDAV Server…", systemImage: "server.rack") { addingServer = true }
@@ -122,11 +132,11 @@ private struct SyncTargetRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Image(systemName: target.kind == .webdav ? "server.rack" : "folder")
+            Image(systemName: target.kind == .webdav ? "server.rack" : target.kind == .cloudkit ? "icloud" : "folder")
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(target.name)
-                Text(target.kind == .webdav ? (target.url ?? "") : (target.path ?? ""))
+                Text(target.kind == .webdav ? (target.url ?? "") : (target.kind == .cloudkit ? "" : (target.path ?? "")))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 if let session {
                     // A problem stays in view while the next run goes (`settledKind`); otherwise syncing, synced, waiting.

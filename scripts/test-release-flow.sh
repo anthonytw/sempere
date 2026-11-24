@@ -20,6 +20,17 @@ git init -q -b main "$t/w"; cd "$t/w"
 git config commit.gpgsign false
 mkdir -p scripts Sources/SempereCLI
 cp "$src"/scripts/{release-tag.sh,release-publish.sh,release-verify.sh,release-signature.sh,release-sign.sh,release-build.sh,changelog-section.sh} scripts/
+# The macOS signing step (Developer ID, notarization: scripts/release-sign-macos.sh) needs the maintainer's key and Apple: here a stub
+# that "signs" by appending a line, so the flow around it (the hand-off of the tarball, the list's macOS line, what publish takes) is tested.
+cat > scripts/release-sign-macos.sh <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ${1:-} == --dev ]] && shift
+[[ $1 == --version ]] && version=$2 && in=$3 && out=$4
+[[ -n ${STUB_SIGN_FAIL:-} ]] && { echo "stub: signing failed" >&2; exit 1; }
+cp "$in" "$out"; echo "signed by the stub" >> "$out"
+STUB
+chmod +x scripts/release-sign-macos.sh
 printf '#!/usr/bin/env bash\necho "ok    local/release-sweep: stub on ${1:0:8}"\n' > scripts/release-sweep-check.sh; chmod +x scripts/release-sweep-check.sh
 printf 'let sempereVersion = "1.2.3"\n' > Sources/SempereCLI/Version.swift
 printf '# Changelog\n\n## [1.2.3] - 2026-11-09\n\n### Fixed\n\n- A thing.\n\n## [1.2.2] - 2026-10-01\n\n- Older.\n' > CHANGELOG.md
@@ -85,8 +96,8 @@ run scripts/release-publish.sh 1.2.3; check "publish refuses without a local bui
 d=build/release/v1.2.3; mkdir -p $d
 tarballs() {
   for p in macos-universal linux-x86_64 linux-aarch64; do echo "bin $p" > $d/sempere-1.2.3-$p.tar.gz; done
-  mkdir -p "$t/pkg/sempere-1.2.3-macos-universal"; printf '#!/bin/sh\necho sempere 1.2.3\n' > "$t/pkg/sempere-1.2.3-macos-universal/sempere"
-  chmod +x "$t/pkg/sempere-1.2.3-macos-universal/sempere"; tar -czf $d/sempere-1.2.3-macos-universal.tar.gz -C "$t/pkg" sempere-1.2.3-macos-universal
+  mkdir -p "$t/pkg/sempere-1.2.3-macos-universal/sempere.app/Contents/MacOS"; printf '#!/bin/sh\necho sempere 1.2.3\n' > "$t/pkg/sempere-1.2.3-macos-universal/sempere.app/Contents/MacOS/sempere"
+  chmod +x "$t/pkg/sempere-1.2.3-macos-universal/sempere.app/Contents/MacOS/sempere"; tar -czf $d/sempere-1.2.3-macos-universal.tar.gz -C "$t/pkg" sempere-1.2.3-macos-universal
 }
 tarballs
 scripts/changelog-section.sh 1.2.3 > $d/notes.md
@@ -96,7 +107,7 @@ run scripts/release-publish.sh 1.2.3; check "publish refuses unsigned sums" '[[ 
 # The hand-off: release-build puts SHA256SUMS (data only) into the seat's folder; the maintainer runs scripts/release-sign.sh from
 # their own clone, which writes SHA256SUMS and SHA256SUMS.sig into their own folder, where release-publish reads them.
 drop=$SEMPERE_SIGN_DROP/v1.2.3; signed=$SEMPERE_SIGN_OUT/v1.2.3
-handoff() { mkdir -m 755 -p "$SEMPERE_SIGN_DROP" "$drop"; cp $d/SHA256SUMS "$drop/"; chmod 755 "$SEMPERE_SIGN_DROP" "$drop"; chmod 644 "$drop/SHA256SUMS"; rm -rf "$SEMPERE_SIGN_OUT"; rm -f $d/SHA256SUMS.sig; }
+handoff() { mkdir -m 755 -p "$SEMPERE_SIGN_DROP" "$drop"; rm -rf $d/unsigned; tarballs; (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS); cp $d/SHA256SUMS $d/sempere-1.2.3-macos-universal.tar.gz "$drop/"; chmod 755 "$SEMPERE_SIGN_DROP" "$drop"; chmod 644 "$drop/SHA256SUMS" "$drop/sempere-1.2.3-macos-universal.tar.gz"; rm -rf "$SEMPERE_SIGN_OUT"; rm -f $d/SHA256SUMS.sig; }
 signit() { run bash scripts/release-sign.sh -k "${1:-$t/key}" 1.2.3; }
 handoff
 signit "$t/other"; check "the owner script refuses a key origin/main's signers lack, and writes no signature" '[[ $rc != 0 && $out == *"is not a key in"* && ! -f $signed/SHA256SUMS.sig ]]'
@@ -126,7 +137,7 @@ echo '# dirty' >> scripts/release-sign.sh
 signit; check "the owner script refuses scripts that differ from origin/main" '[[ $rc != 0 && $out == *"differ from origin/main"* ]]'
 git checkout -q -- scripts/release-sign.sh
 signit; check "the owner script signs and verifies with the test key (from the checkout, not the drop)" '[[ $rc == 0 && $out == *"done: "* && $out == *"signed by maintainer"* && -f $signed/SHA256SUMS.sig && -f $signed/SHA256SUMS ]]'
-run scripts/release-publish.sh 1.2.3; check "publish takes the .sig from the maintainer's folder" '[[ $rc == 0 && $out == *"took SHA256SUMS.sig from"* && -f $d/SHA256SUMS.sig ]]'
+run scripts/release-publish.sh 1.2.3; check "publish takes the .sig, the signed list and the signed macOS tarball from the maintainer's folder" '[[ $rc == 0 && $out == *"took SHA256SUMS.sig, SHA256SUMS and the signed, notarized sempere-1.2.3-macos-universal.tar.gz from"* && -f $d/SHA256SUMS.sig && -f $d/unsigned/sempere-1.2.3-macos-universal.tar.gz ]] && tail -1 $d/sempere-1.2.3-macos-universal.tar.gz | grep -q "signed by the stub" && cmp -s $d/SHA256SUMS $signed/SHA256SUMS'
 rm $d/SHA256SUMS.sig; SEMPERE_MAINTAINER_USER=nobody run scripts/release-publish.sh 1.2.3
 check "publish refuses a maintainer folder that is not the maintainer account's" '[[ $rc != 0 && $out == *"must belong to the maintainer account"* && ! -f $d/SHA256SUMS.sig ]]'
 chmod 777 "$signed"
@@ -171,6 +182,11 @@ git init -q --bare "$t/gitea.git"; git remote add gitea "$t/gitea.git"
 tarballs; (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS); sign_dist >/dev/null
 mkdir -p "$t/dl/releases/download/v1.2.3"; cp $d/* "$t/dl/releases/download/v1.2.3/"
 export SEMPERE_RELEASE_URL="file://$t/dl"
+# On a Mac verify also checks sempere.app's Developer ID signature, notarization ticket and Gatekeeper's verdict; the fake bundle has none.
+if [[ $(uname) == Darwin ]]; then
+  run scripts/release-verify.sh 1.2.3; check "verify refuses a sempere.app that is not signed (on a Mac)" '[[ $rc != 0 && $out == *"sempere.app does not carry a valid signature"* ]]'
+  export SEMPERE_VERIFY_UNSIGNED=1
+fi
 cp $d/COMMIT $t/COMMIT.bak; git rev-parse retag > $d/COMMIT
 run scripts/release-verify.sh 1.2.3; check "verify refuses a local build of another commit" '[[ $rc != 0 && $out == *"local build is of"* ]]'
 cp $t/COMMIT.bak $d/COMMIT

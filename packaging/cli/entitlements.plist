@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The CLI bundle's entitlements (docs/design/1.4-cloudkit.md §6.5, §13.7). The three @…@ values come from the provisioning
+     profile at signing time (scripts/release-sign-macos.sh), so no team identifier lives in this repository. No push, no
+     sandbox (a command-line tool reads the folders it is pointed at), no get-task-allow (hardened runtime, notarized). -->
+<plist version="1.0">
+<dict>
+	<key>com.apple.application-identifier</key>
+	<string>@APPLICATION_IDENTIFIER@</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>@TEAM_IDENTIFIER@</string>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.io.github.anthonytw.sempere</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<!-- Production for a Developer ID build; a development-signed dry run says Development (scripts/release-sign-macos.sh, dev mode). -->
+	<key>com.apple.developer.icloud-container-environment</key>
+	<string>@CONTAINER_ENVIRONMENT@</string>
+</dict>
+</plist>

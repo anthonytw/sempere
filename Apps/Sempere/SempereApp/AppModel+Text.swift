@@ -162,6 +162,30 @@ extension JoinProgress {
     }
 }
 
+extension CloudKitTargetProblem {
+    var text: String {
+        switch self {
+        case .unavailable:
+            return String(localized: "iCloud (CloudKit) is not available in this build of Sempere.")
+        case .account(let status):
+            switch status {
+            case .restricted, .managedAccountRestricted:
+                return String(localized: "iCloud is restricted on this device (Screen Time or device management).")
+            case .temporarilyUnavailable, .couldNotDetermine:
+                return String(localized: "iCloud is not answering right now. Try again in a moment.")
+            case .noAccount, .available:
+                return String(localized: "Sign in to iCloud in Settings first.")
+            }
+        case .notAStoreVault:
+            return SyncTargetProblem.notAStoreVault.text
+        case .duplicate:
+            return String(localized: "This vault already syncs with iCloud.")
+        case .other(let message):
+            return SyncTargetProblem.other(message).text
+        }
+    }
+}
+
 extension SyncTargetProblem {
     var text: String {
         switch self {

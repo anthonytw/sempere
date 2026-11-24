@@ -53,7 +53,11 @@ if [[ $derived == .build/xcode.noindex && ! -e .build/xcode.noindex && -d .build
 fi
 # Tests assert English strings: run them in English whatever the Mac's language (es catalog, #92).
 lang=(-testLanguage en -testRegion US)
-mac_ui_signing=(CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES)
+# Ad hoc signing cannot carry the iCloud and push entitlements (restricted: Xcode refuses "entitlements that require signing with a
+# development certificate"), so every ad-hoc Mac run signs with SempereAdHoc.entitlements, which is Sempere.entitlements without them
+# (docs/design/1.4-cloudkit.md §6.4). The path is absolute: a command-line setting reaches every target, the packages' too.
+adhoc_mac=(CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_ENTITLEMENTS="$PWD/Apps/Sempere/SempereAdHoc.entitlements")
+mac_ui_signing=("${adhoc_mac[@]}")
 if [[ "${CI:-}" != true && "${SEMPERE_MAC_UI_SIGNING:-}" != ci ]]; then
   mac_ui_signing+=(ENABLE_HARDENED_RUNTIME=NO)
 fi
@@ -382,7 +386,7 @@ case "${1:-}" in
       to_array only < <(quarantine_args only "" ${unit_quarantine_mac[@]+"${unit_quarantine_mac[@]}"})
       xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
         -destination 'platform=macOS,variant=Mac Catalyst' "${only[@]}" \
-        CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"} || status=$?
+        "${adhoc_mac[@]}" ${extra[@]+"${extra[@]}"} || status=$?
     fi
     if [[ ( $group == all || $group == watch ) && ${#unit_quarantine_watch[@]} -gt 0 ]]; then
       sim=$(pick_simulator Watch)
@@ -498,7 +502,7 @@ case "${1:-}" in
     skip+=(${unit_skip_mac[@]+"${unit_skip_mac[@]}"})
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} ${skip[@]+"${skip[@]}"} \
-      CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"}
+      "${adhoc_mac[@]}" ${extra[@]+"${extra[@]}"}
     ;;
   test-mac-offline)
     # Every app suite as on a device that is never online (docs/ci.md "Offline mode"): the test host is signed
@@ -539,7 +543,7 @@ case "${1:-}" in
     suites "${perf_only[@]}"
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
-      CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"}
+      "${adhoc_mac[@]}" ${extra[@]+"${extra[@]}"}
     ;;
   test-mac-ui)
     shutdown_simulators

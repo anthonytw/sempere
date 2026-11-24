@@ -373,7 +373,7 @@ final class CloudSpikeLimitsTests: TempDirTestCase {
                 // One of them meets a file that is there; the others are new.
                 let name = i == 5 ? "taken" : "f\(i)"
                 let ok = (try? b.write(dir + [name], .data(Data("\(i)".utf8)), condition: .create)) ?? false
-                results.value[name] = ok
+                results.mutate { $0[name] = ok }
             }
         }
         XCTAssertEqual(group.wait(timeout: .now() + 60), .success)

@@ -239,6 +239,10 @@ public protocol CloudRecordStore: Sendable {
     /// `readAsset`).
     func fetch(zone: String, name: String, payload: Bool) throws -> CloudRecord?
 
+    /// Several records by name in one request (the metadata of a sweep): the ones that exist, by name. A conformer answers
+    /// it in one round trip where the database can; the default asks one by one.
+    func fetchMany(zone: String, names: [String], payload: Bool) throws -> [String: CloudRecord]
+
     /// Streams the record's asset to `chunk` (pieces of any size), refusing one over `maxBytes`.
     /// - Throws: `.assetNotAvailable`, `.assetFileNotFound`, `.unknownItem`; what `chunk` throws, as it is.
     func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws
@@ -253,6 +257,12 @@ public protocol CloudRecordStore: Sendable {
 }
 
 extension CloudRecordStore {
+    public func fetchMany(zone: String, names: [String], payload: Bool) throws -> [String: CloudRecord] {
+        var found: [String: CloudRecord] = [:]
+        for n in names { if let r = try fetch(zone: zone, name: n, payload: payload) { found[n] = r } }
+        return found
+    }
+
     /// `modify` with each record's own result (not atomic).
     public func modify(zone: String, saves: [CloudSave], deletes: [String]) throws -> CloudModifyResult {
         try modify(zone: zone, saves: saves, deletes: deletes, atomic: false)

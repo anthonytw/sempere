@@ -15,10 +15,11 @@ pass=0 fail=0
 fresh() {
   rm -rf "$tmp/root" && mkdir -p "$tmp/root/Apps" "$tmp/root/Sources" "$tmp/root/docs/appstore" "$tmp/root/docs/privacy"
   cp -R "$here/Apps/Sempere" "$tmp/root/Apps/"
-  for t in Age Sempere SempereRender SemperePDF SempereSpeech SempereSync SempereWebDAV CZlib SempereCapture SempereCaptureShared; do cp -R "$here/Sources/$t" "$tmp/root/Sources/"; done
+  for t in Age Sempere SempereRender SemperePDF SempereSpeech SempereSync SempereWebDAV SempereCloudKit CZlib SempereCapture SempereCaptureShared; do cp -R "$here/Sources/$t" "$tmp/root/Sources/"; done
   cp "$here/docs/appstore/privacy-policy.md" "$tmp/root/docs/appstore/"
   cp "$here/docs/privacy/index.html" "$tmp/root/docs/privacy/"
   cp "$here/SECURITY.md" "$tmp/root/"
+  mkdir -p "$tmp/root/packaging/cli" && cp "$here/packaging/cli/entitlements.plist" "$tmp/root/packaging/cli/"
 }
 pbx="Apps/Sempere/Sempere.xcodeproj/project.pbxproj"
 # The app version as committed (the edits below match it, so a version bump needs no test change).
@@ -138,7 +139,36 @@ fresh; edit "Apps/Sempere/Sempere.entitlements" 's.replace("<key>com.apple.secur
 expect "Mac build not sandboxed" fail "must set com.apple.security.app-sandbox to true"
 
 fresh; printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>com.apple.developer.icloud-services</key><array/></dict></plist>\n' > "$tmp/root/Apps/Sempere/SempereWidgets/Extra.entitlements"
-expect "stray entitlements file is checked too" fail "Extra.entitlements: entitlement com.apple.developer.icloud-services"
+expect "stray entitlements file is checked too" fail "Extra.entitlements: com.apple.developer.icloud-services belongs to the app only"
+
+# iCloud (CloudKit) and push (docs/design/1.4-cloudkit.md §6.4): the app's keys, the container pinned, the push environment a build
+# setting (development in Debug, production in Release), background mode on the iPhone and iPad app, the CLI bundle's own file.
+fresh; edit "Apps/Sempere/SempereiOS.entitlements" 's.replace("iCloud.io.github.anthonytw.sempere", "iCloud.io.github.other")'
+expect "another iCloud container" fail "SempereiOS.entitlements: com.apple.developer.icloud-container-identifiers must be exactly"
+fresh; edit "Apps/Sempere/SempereWidgets.entitlements" 's.replace("</dict>", "\t<key>aps-environment</key>\n\t<string>development</string>\n</dict>")'
+expect "push on the widgets" fail "SempereWidgets.entitlements: aps-environment belongs to the app only"
+fresh; edit "Apps/Sempere/SempereWatch.entitlements" 's.replace("</dict>", "\t<key>com.apple.developer.icloud-services</key>\n\t<array><string>CloudKit</string></array>\n</dict>")'
+expect "CloudKit on the watch" fail "SempereWatch.entitlements: com.apple.developer.icloud-services belongs to the app only"
+fresh; edit "Apps/Sempere/SempereiOS.entitlements" 's.replace("$(APS_ENVIRONMENT)", "production")'
+expect "a fixed push environment in the entitlements" fail "aps-environment must be exactly"
+fresh; edit "$pbx" 's.replace("APS_ENVIRONMENT = production;", "APS_ENVIRONMENT = development;")'
+expect "a Release build with the development push environment" fail "APS_ENVIRONMENT is development in a Release configuration; it must be production"
+fresh; edit "$pbx" 's.replace("APS_ENVIRONMENT = development;", "APS_ENVIRONMENT = production;")'
+expect "a Debug build with the production push environment" fail "APS_ENVIRONMENT is production in a Debug configuration; it must be development"
+fresh; edit "Apps/Sempere/SempereAdHoc.entitlements" 's.replace("\t<key>com.apple.security.print</key>\n\t<true/>\n", "")'
+expect "the ad hoc entitlements differ from the app's by more than iCloud and push" fail "SempereAdHoc.entitlements must equal Sempere.entitlements without"
+fresh; rm "$tmp/root/Apps/Sempere/SempereAdHoc.entitlements"
+expect "no ad hoc entitlements" fail "SempereAdHoc.entitlements is missing"
+fresh; edit "Apps/Sempere/SempereInfo.plist" 's.replace("<string>remote-notification</string>", "")'
+expect "no remote-notification background mode" fail "UIBackgroundModes must hold remote-notification"
+fresh; edit "packaging/cli/entitlements.plist" 's.replace("</dict>", "\t<key>com.apple.developer.aps-environment</key>\n\t<string>production</string>\n</dict>")'
+expect "push in the CLI bundle" fail "packaging/cli/entitlements.plist: entitlement com.apple.developer.aps-environment is not allowed"
+fresh; edit "packaging/cli/entitlements.plist" 's.replace("<string>CloudKit</string>", "<string>CloudDocuments</string>")'
+expect "another iCloud service in the CLI bundle" fail "packaging/cli/entitlements.plist: com.apple.developer.icloud-services must be exactly"
+fresh; printf 'import CloudKit\nlet x = 1\n' > "$tmp/root/Sources/SempereCloudKit/Other.swift"
+expect "CloudKit in a second file of the adapter's folder" fail "Sources/SempereCloudKit/Other.swift:1: networking in the shipping app"
+fresh; edit "$pbx" 's.replace("SempereCloudKit in Frameworks", "SempereCloudKit in Frameworks ")'
+expect "the project may link the CloudKit adapter" ok "release-check: ok"
 
 fresh; edit "$pbx" 's.replace("Sempere.entitlements;", "Missing.entitlements;", 1)'
 expect "referenced entitlements file missing" fail "names Missing.entitlements, which does not exist"

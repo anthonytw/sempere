@@ -59,6 +59,9 @@ struct SempereApp: App {
         // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync
         // targets (folder and WebDAV) are in the store's registry.
         model.vaultStore = library.vaultStore
+        // iCloud (CloudKit) targets: pushes and the account reach the model through here (`CloudKitLive`).
+        CloudKitLive.model = model
+        CloudKitLive.activate()
         // Spotlight (opt-in, off by default): results say "Untitled note" and the date in the user's language, and a vault
         // removed from this device takes its items with it (docs/design/1.3-spotlight.md §3.4).
         model.spotlightUntitled = String(localized: "Untitled note")

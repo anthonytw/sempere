@@ -75,6 +75,7 @@ extension AppModel {
         case let e as VideoPreparation.Failure: return e.description
         case let e as VideoProbeError: return e.description
         case let e as VaultStoreProblem: return e.text
+        case let e as CloudKitTargetProblem: return e.text
         case let e as PDFLocked: return e.text
         case let e as AttachmentTooLarge: return e.text
         case let e as RepairProblem: return e.text
