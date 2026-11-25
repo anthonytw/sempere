@@ -411,8 +411,8 @@ Its configuration is global, so tests that use it never run in parallel.
 `scripts/app.sh test-cloudkit` (`tools/cloudkit-live/run.sh`; docs/io.md "Testing it against the real database") talks to the
 real CloudKit database of the test Apple ID, in the container's **development** environment. **It is not part of the PR gate**
 and runs on no hosted runner: it needs the claude seat's signing identity, a development provisioning profile that lists that
-Mac, the signed-in test account and the `cktool` token, none of which exist on GitHub, and it takes about five minutes of real
-network time (two thirds of it a 70 MiB upload and download, twice). A failure there says nothing about a pull request's code.
+Mac, the signed-in test account and the `cktool` token, none of which exist on GitHub, and it takes about fifteen minutes (a fresh run builds the CLI bundle and the driver for macOS, Mac Catalyst and the simulator; the
+scenarios themselves are about five minutes of real network time). A failure there says nothing about a pull request's code.
 
 - **Where it runs:** the `cloudkit` step of `scripts/local-ci.sh --testflight` and `--release` (after the UI steps; the gate's
   steps are unchanged), and by hand before and after a change to `SempereCloudKit`, `CloudRecordRemote`, the CLI's CloudKit target

@@ -50,6 +50,9 @@
       "SECURITY.md",
       "LICENSE",
       "LICENSE-EXCEPTION"
+    ],
+    "SempereCloudKitTests": [
+      "tools/cloudkit-spike/schema.ckdb"
     ]
   },
   "logic": [

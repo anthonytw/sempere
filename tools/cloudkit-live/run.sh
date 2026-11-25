@@ -177,11 +177,12 @@ PL
   codesign --force --sign "Apple Development" --entitlements "$t" "$app" >/dev/null 2>&1 || die "codesign failed for the Catalyst driver"
   rm -f "$t"
 }
-# Runs the driver in the Catalyst bundle with the arguments $2..; output to $1 (a file); waits for the process (LaunchServices).
+# Runs the driver in the Catalyst bundle with the arguments $2..; output to $1 (a file). The binary links no UIKit, so it is started
+# directly (the app of the C0 spike, which has a UIApplicationMain, had to go through LaunchServices; LaunchServices refuses this bundle).
 run_catalyst() {
   local out=$1; shift
   : > "$out"
-  open -W -n --env "CKL_OUT=$out" --env "CKL_ARGS=$(IFS="|"; echo "$*")" "$work/catalyst/cloudkit-live.app"
+  CKL_OUT=$out CKL_ARGS=$(IFS="|"; echo "$*") "$work/catalyst/cloudkit-live.app/Contents/MacOS/cloudkit-live" || true
 }
 
 sim_base=""; sim_clone=""

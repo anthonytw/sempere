@@ -1351,13 +1351,22 @@ account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, i
    (a quiet feed returns nothing, a token revived from its bytes in another adapter instance, a mirror kept on disk that a new
    process continues from with no full fetch). The feed follows a write within seconds: waits are bounded polls (`eventually`),
    never a push.
-3. **Two stores through the CLI bundle** (`cli-scenarios.sh`; it replaces `tools/cloudkit-spike/cli-smoke.sh`): device A creates
+3. **The same scenarios on the app's platforms.** The driver is built again for **Mac Catalyst** (`--triple arm64-apple-ios27.0-macabi`,
+   signed with `codesign` and the Catalyst development profile of the app's App ID, "Sempere Dev Catalyst Mac2") and for the **iOS
+   simulator** (`-sectcreate __TEXT,__entitlements` and an ad-hoc signature, no profile, in a throwaway clone of the `sempere-cloudkit`
+   simulator, which has the test Apple ID signed in and keeps it in clones; the clone is deleted at exit), and the scenarios
+   except the 70 MiB one run in each (`run.sh catalyst`, `simulator`). Then `run.sh cross`: the Mac Catalyst process writes ten files
+   and a split file into a zone and the simulator process reads and checks them, and the other way round, the two sharing nothing
+   but the account (the closest this seat gets to two devices: C0 saw no push between them, so nothing waits for one). The driver
+   links no UIKit, so a Catalyst binary is simply started (LaunchServices refuses its bundle, -10670); output reaches the script
+   through `CKL_OUT`, since a simulator process has no terminal.
+4. **Two stores through the CLI bundle** (`cli-scenarios.sh`; it replaces `tools/cloudkit-spike/cli-smoke.sh`): device A creates
    a vault with notes, an image and a setting; device B (its own state folder, so its own keys) **joins through CloudKit alone**
    (`device init`, `devices approve`, `device confirm`, the files carried by the zone); then convergence, a conflict (both change
    one setting and rename one note while apart, and create notes), a deleted note, a 70 MiB attachment, a quiet run, and the
    zone deleted under B (the run fails with "nothing here was deleted", B keeps its notes, and removing then adding the target
    uploads again).
-4. **Cleanup.** The suite's zones go through the adapter's own `deleteZone`: `cktool` cannot delete private-database zones
+5. **Cleanup.** The suite's zones go through the adapter's own `deleteZone`: `cktool` cannot delete private-database zones
    (design §13.7; `reset-schema` deletes development data but also the schema). Zones of earlier runs that were killed:
    `scripts/app.sh test-cloudkit cleanup test- sempere-` (every `test-*` and vault zone of the test account's development
    database; never run it against an account with real vaults: development holds only test data).
