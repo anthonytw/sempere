@@ -65,6 +65,9 @@ public struct SyncTarget: Codable, Sendable, Hashable, Identifiable {
     /// A hash of the Apple Account's user record id the target was made with (`CloudAccount.userHash`, never the id): a run
     /// in another account pauses the target instead of uploading the vault into it (design §4).
     public var cloudUser: String?
+    /// When the target was last made again ("Upload Again", "Use This Account"): its runs start over, so the status counts a
+    /// target that has not synced since from here, not from `added` (the stall rule and "not reached for N days").
+    public var restarted: Date?
 
     public init(id: UUID = UUID(), kind: SyncTargetKind, name: String, added: Date = Date()) {
         self.id = id

@@ -130,6 +130,7 @@ extension AppModelCore {
         session?.kind = ref.target.kind
         session?.targetName = ref.target.name
         session?.added = ref.target.added
+        session?.restarted = ref.target.restarted
         if ref.target.kind == .folder || ref.target.kind == .cloudkit {
             // Folder targets are local or a provider's, and a CloudKit run asks for the changes only (docs/design/1.4-cloudkit.md
             // §3.2): runs are cheap (design §4).

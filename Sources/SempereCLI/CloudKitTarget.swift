@@ -219,7 +219,7 @@ struct CloudKitDelete: ParsableCommand {
     func run() throws {
         #if canImport(SempereCloudKit)
         let wanted = try CloudKitVaultArgument.prefix(vault)
-        _ = try CloudKitCLI.accountHash()
+        let account = try CloudKitCLI.accountHash()
         let db = CloudKitDatabase()
         let listed = try CloudVaults.list(store: db).filter { $0.vaultId.hasPrefix(wanted) }
         guard let found = listed.first else { throw CLIError.failure("no vault in this iCloud account matches “\(vault)”") }
@@ -230,6 +230,11 @@ struct CloudKitDelete: ParsableCommand {
             if !force { throw CLIError.failure("“\(found.name)” is not in this store, so nothing here is a copy of it: pass --force to delete it from iCloud anyway") }
         } else if !force, !store.targets.targets(of: id).contains(where: { $0.kind != .cloudkit }) {
             throw CLIError.failure("“\(found.name)” has no other sync target here: add a folder or WebDAV target or a backup first, or pass --force")
+        }
+        // Like the app's: a target made with another Apple Account is not that account's zone, so a switch deletes nothing of it.
+        if let other = store.targets.targets(of: id).first(where: { $0.kind == .cloudkit && $0.cloudUser != nil && $0.cloudUser != account }) {
+            throw CLIError.failure("this store's iCloud target “\(other.name)” was made with another Apple Account: sign in to that account to delete it, "
+                + "or remove the target with `sempere store target remove`")
         }
         guard yes else { throw CLIError.usage("this deletes “\(found.name)” from iCloud for every device: pass --yes") }
         // The zone first: a failure (offline, say) leaves the targets, and the retry, in place.

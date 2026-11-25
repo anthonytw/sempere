@@ -120,13 +120,15 @@ extension AppModelCore {
         await syncCoordinator.stop(targetID)?.value
         let targets = syncStore.targets
         do {
-            try targets.update(targetID, of: vaultID) { $0.cloudUser = account.userHash; $0.lastSuccess = nil }
+            try targets.update(targetID, of: vaultID) { $0.cloudUser = account.userHash; $0.lastSuccess = nil; $0.restarted = Date() }
         } catch {
             syncTargetsChanged()
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
         targets.resetState(targetID, of: vaultID)
         try? FileManager.default.removeItem(at: targets.stateDirectory(targetID, of: vaultID).appendingPathComponent("cloudkit", isDirectory: true))
+        // The staged files stay (placed at the next unlock, a union); the staging's own sync state was the old zone's.
+        LockedStaging(targetState: targets.stateURL(targetID, of: vaultID)).resetState()
         syncTargetsChanged()
         syncCoordinator.sessions[targetID]?.demand()
         guard let made = targets.targets(of: vaultID).first(where: { $0.id == targetID }) else { throw CloudKitTargetProblem.notACloudKitTarget }

@@ -103,6 +103,10 @@ public final class SyncSession {
     public var targetName = ""
     /// When the target was added (the order of a vault's sessions).
     var added = Date.distantPast
+    /// When the target was last made again (the registry's `SyncTarget.restarted`), if ever.
+    var restarted: Date?
+    /// Where "has not synced since" counts from when it never synced: the restart, else when the target was added.
+    private var neverSyncedSince: Date? { restarted ?? (added == .distantPast ? nil : added) }
     /// When runs happen; the session tells it about writes, demands and runs. Tests shorten its delays.
     public var schedule = SyncSchedule()
     /// A run is going.
@@ -116,10 +120,10 @@ public final class SyncSession {
     public private(set) var quietFailure: QuietFailure?
     /// What a CloudKit run noticed that its report does not say (`CloudRunNotes`); set by the model for those targets.
     var cloudNotes: CloudRunNotes?
-    /// Seeded on first use from what the registry persists (`lastSuccess`, `added`), so a relaunch does not restart the 24 hour count.
+    /// Seeded on first use from what the registry persists (`lastSuccess`, `restarted`, `added`), so a relaunch does not restart the 24 hour count.
     private var cloudTrackerStore: CloudStatusTracker?
     private var cloudTracker: CloudStatusTracker {
-        get { cloudTrackerStore ?? CloudStatusTracker(lastSuccess: lastSuccess, added: added == .distantPast ? nil : added) }
+        get { cloudTrackerStore ?? CloudStatusTracker(lastSuccess: lastSuccess, added: neverSyncedSince) }
         set { cloudTrackerStore = newValue }
     }
     /// Files of the local copy the target has not confirmed (recounted after each run and write).
@@ -570,7 +574,7 @@ public final class SyncSession {
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
                    staged: staged, networkDown: networkDown && kind.usesNetwork, continuing: continuing,
                    providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
-                   targetName: targetName, added: added == .distantPast ? nil : added, now: now(), cloudKit: kind == .cloudkit)
+                   targetName: targetName, added: neverSyncedSince, now: now(), cloudKit: kind == .cloudkit)
     }
 
     /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
