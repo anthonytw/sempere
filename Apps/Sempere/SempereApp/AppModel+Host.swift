@@ -43,6 +43,10 @@ enum AppHost: AppModelHost {
         services.spotlightIndex = CoreSpotlightIndex()
         // iCloud (CloudKit) targets (docs/design/1.4-cloudkit.md); a build not signed for the container says so when one is added.
         services.cloudKit = CloudKitLive.services
+        #if DEBUG
+        // `SEMPERE_DEMO_CLOUDKIT` (screenshots): an in-memory database, never the real container (`DemoCloudKit`).
+        if let demo = DemoCloudKit.services { services.cloudKit = demo }
+        #endif
         return services
     }
 

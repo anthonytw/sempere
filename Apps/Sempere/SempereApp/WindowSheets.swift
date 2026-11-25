@@ -17,7 +17,26 @@ struct WindowSheets: ViewModifier {
     // Two halves: as one chain the body is past what the type checker solves in time.
     func body(content: Content) -> some View {
         noteDialogs(importsAndPrompts(content)).modifier(BulkNoteSheets(ui: ui))
+        #if DEBUG
+            .task { await openSyncTargetsForDemo() }
+        #endif
     }
+
+    #if DEBUG
+    /// `SEMPERE_DEMO_CLOUDKIT=targets` (screenshots, `DemoCloudKit`): opens Sync Targets once the demo's iCloud target has run.
+    private func openSyncTargetsForDemo() async {
+        guard DebugLaunch.environment["SEMPERE_DEMO_CLOUDKIT"] == "targets" else { return }
+        for _ in 0..<180 {
+            if model.openVaultTargets.contains(where: { $0.kind == .cloudkit }),
+               model.syncSessions.contains(where: { $0.lastSuccess != nil }) {
+                try? await Task.sleep(for: .seconds(1))
+                ui.showingSyncTargets = true
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+    }
+    #endif
 
     private func importsAndPrompts(_ content: Content) -> some View {
         @Bindable var ui = ui

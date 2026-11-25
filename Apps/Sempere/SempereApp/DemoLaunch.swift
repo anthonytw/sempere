@@ -1,9 +1,11 @@
 #if DEBUG
 import CoreGraphics
+import CryptoKit
 import Foundation
 import Sempere
 import SempereAppCore
 import SempereInsights
+import SempereSync
 import UIKit
 
 /// Debug builds only: opens the synthetic demo vault (`DemoVault`) for the App
@@ -52,6 +54,10 @@ import UIKit
 ///   and the model transcribes with `DemoTranscriber` (no speech engine): Transcribe Again in a UI test.
 /// - `SEMPERE_DEMO_NEARBY_JOIN`: lists one synthetic join request as having come nearby (`Demo iPhone`) for Add
 ///   Device, and, on a locked demo's join screen, shows the nearby link as connected.
+/// - `SEMPERE_DEMO_CLOUDKIT`: iCloud (CloudKit) on an in-memory database (`DemoCloudKit`: `MemoryCloudDatabase`, never the real
+///   container, which the simulator has no account for): the account is signed in and holds three made-up vaults, so Open from
+///   iCloud… lists them. With `SEMPERE_DEMO_STORE` the demo vault also gets an iCloud (CloudKit) target, run once, so Sync
+///   Targets shows it Synced and Vault Details its size. The value `targets` also opens Sync Targets once that run is done.
 /// - `SEMPERE_DEBUG_COLUMNS`: `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the
 ///   stored (with `SEMPERE_DEBUG_FRESH`, the default) layout (`DebugLaunch`).
 /// - `SEMPERE_DEBUG_PENCIL_ONLY`: the canvases draw with the Pencil only, as on an iPad with a
@@ -132,6 +138,7 @@ enum DemoLaunch {
             if env["SEMPERE_DEMO_LOCKED"] == nil { try await model.unlock(identityText: built.identityText) }
             select(model, built: built, env: env)
             if let pace = env["SEMPERE_DEMO_SYNC_FOLDER"] { try addSyncFolder(model, pace: pace) }
+            if env["SEMPERE_DEMO_CLOUDKIT"] != nil, env["SEMPERE_DEMO_STORE"] != nil, env["SEMPERE_DEMO_LOCKED"] == nil { try await DemoCloudKit.addTarget(model) }
             if env["SEMPERE_DEMO_NEARBY_JOIN"] != nil { try model.debugSeedNearbyRequest(name: "Demo iPhone", kind: "iphone") }
         }
         if insights == "note" || insights == "map", env["SEMPERE_DEMO_LOCKED"] == nil, passphrase == nil { await prepareInsights(model) }
@@ -329,3 +336,44 @@ enum DemoLaunch {
     }
 }
 #endif
+
+/// `SEMPERE_DEMO_CLOUDKIT`: the app's iCloud (CloudKit) services on an in-memory database instead of the real container
+/// (docs/design/1.4-cloudkit.md §10.1), for the store and website screenshots. Debug builds only (this file is `#if DEBUG`).
+enum DemoCloudKit {
+    /// The account's made-up vaults, which Open from iCloud… lists (with the demo vault once it is synced).
+    static let vaults: [(id: String, name: String)] = [
+        ("5d1c7a02-3b6e-4f0a-9a41-0c2b7d1e6a01", "Field Journal"),
+        ("5d1c7a02-3b6e-4f0a-9a41-0c2b7d1e6a02", "Recipes"),
+        ("5d1c7a02-3b6e-4f0a-9a41-0c2b7d1e6a03", "Studio Sketches"),
+    ]
+
+    /// The one database of the process, an account signed in and `vaults` in it.
+    static let database: MemoryCloudDatabase = {
+        let db = MemoryCloudDatabase()
+        db.setAccount(CloudAccount(status: .available, userHash: "demo-account"))
+        for vault in vaults {
+            let manifest = (try? JSONSerialization.data(withJSONObject: ["vaultId": vault.id, "format": "sempere/1", "label": vault.name])) ?? Data()
+            let zone = CloudRecordNaming.zoneName(vaultId: vault.id)
+            db.makeZone(zone)
+            _ = db.putRaw(zone: zone, CloudRecord(name: CloudRecordNaming.fileName(["vault.json"]), kind: .file, changeTag: "t1",
+                                                  fields: CloudFields(schema: CloudSchema.current, path: "vault.json",
+                                                                      sha256: Data(SHA256.hash(data: manifest)), size: Int64(manifest.count),
+                                                                      bytes: manifest, tomb: nil)))
+        }
+        return db
+    }()
+
+    /// The model's CloudKit services when the launch asks for them, else nil (the real ones).
+    static var services: CloudKitServices? {
+        guard DebugLaunch.environment["SEMPERE_DEMO_CLOUDKIT"] != nil else { return nil }
+        return CloudKitServices(makeStore: { database }, isAvailable: { true })
+    }
+
+    /// Adds the target to the open store vault and runs it once, so the vault is in the database and the target says Synced.
+    @MainActor
+    static func addTarget(_ model: AppModel) async throws {
+        guard let vaultID = model.vault?.vaultId else { return }
+        try await model.addCloudKitTarget(to: vaultID)
+        await model.syncAllTargetsNow()
+    }
+}

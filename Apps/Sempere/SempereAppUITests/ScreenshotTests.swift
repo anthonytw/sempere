@@ -78,6 +78,10 @@ final class ScreenshotTests: XCTestCase {
             Shot(name: "05-tags", environment: env(["SEMPERE_DEMO_SIDEBAR": "tag:lecture"]), waitFor: "#lecture"),
             Shot(name: "06-library", environment: env([:]), waitFor: "sidebar-notebook-School"),
             Shot(name: "07-unlock", environment: env(["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
+            // iCloud (CloudKit) sync, the 1.4 headline: Sync Targets with the iCloud target Synced (`SEMPERE_DEMO_CLOUDKIT`, an
+            // in-memory database; the sheet opens once the target has run).
+            Shot(name: "08-icloud", environment: env(["SEMPERE_DEMO_STORE": "1", "SEMPERE_DEMO_CLOUDKIT": "targets"]),
+                 waitFor: "syncTargetsSheet", timeout: 150, settle: 2),
         ]
     }
 
@@ -111,6 +115,11 @@ final class ScreenshotTests: XCTestCase {
             Shot(name: "06-paper", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas", "SEMPERE_DEMO_PAPER_PICKER": "1"]),
                  waitFor: "Apply to This Page"),
             Shot(name: "07-unlock", environment: env("all", ["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
+            // iCloud (CloudKit) sync, the 1.4 headline: Sync Targets with the iCloud target Synced, over the note list and
+            // the open note (`SEMPERE_DEMO_CLOUDKIT`, an in-memory database; the sheet opens once the target has run).
+            Shot(name: "08-icloud", environment: env("doubleColumn", ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_STORE": "1",
+                                                                       "SEMPERE_DEMO_CLOUDKIT": "targets"]),
+                 waitFor: "syncTargetsSheet", timeout: 150, settle: 2),
         ]
     }
 

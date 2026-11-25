@@ -56,6 +56,7 @@ has a title bar and the Mac layout differs from the iPad's (three columns side b
 | `05-tags` | Sidebar (notebooks, tags) with the `lecture` tag selected, its notes, the open note. |
 | `06-paper` | The paper picker over the dot-paper note. |
 | `07-unlock` | The key / unlock screen of a locked vault (passphrase or pasted key). |
+| `08-icloud` | iCloud sync (1.4): Sync Targets with the iCloud (CloudKit) target Synced, over the note list and the open note (the demo's store copy, an in-memory CloudKit database: `SEMPERE_DEMO_CLOUDKIT=targets`). |
 
 On the Mac the full-width shots show all three columns instead, and `01-write` and `02-sketch` draw no strokes (Undo and
 Redo are in its Edit menu, which a window shot does not show). Captions are not drawn into the images;
@@ -80,7 +81,7 @@ The iPhone is a stack, so each shot is one screen (`ScreenshotTests.phoneShots`)
 `02-sketch` the note view (reading mode, the "Annotate" pencil in the bar; the phone draws the two strokes and taps Undo
 in the compact palette, which has its own Undo and Redo), `03-insights` the Note Insights sheet, `04-notes` the note list,
 `05-tags` the list for the `lecture` tag, `06-library` the vault's notebooks and tags, `07-unlock` the
-unlock sheet. There is no paper-picker shot on the phone.
+unlock sheet, `08-icloud` Sync Targets with the iCloud target. There is no paper-picker shot on the phone.
 
 ### Website user-guide shots
 
@@ -96,6 +97,9 @@ simulators; the website's `scripts/media.mjs` turns them into its images.
 | `docs-search`, `docs-search-highlight` | The results for a handwritten word (the demo's search notes, stored recognition), then a hit with its words highlighted. |
 | `docs-nearby-join` | Add Device on the home device with one request that came nearby ("Demo iPhone", throwaway keys, asked at a fixed 5 Oct 2026, 09:41): its six words, Nearby, They Match and Decline (`SEMPERE_DEMO_NEARBY_JOIN`, through Settings ▸ Sync & Devices ▸ Devices ▸ Add Device). |
 | `docs-join-waiting`, `docs-join-waiting-nearby` | The new device's Join This Device screen waiting for its approval: six words, QR code, the delivery line and "A device nearby has this request" (`SEMPERE_DEMO_NEARBY_JOIN` on the locked demo with `SEMPERE_DEBUG_MEMORY_KEYS`, since an unsigned build has no Keychain). |
+| `docs-icloud-targets` | Sync Targets of the demo's store vault with the iCloud (CloudKit) target, Synced (`SEMPERE_DEMO_CLOUDKIT=targets`). |
+| `docs-icloud-new-vault` | The New Vault sheet scrolled so the iCloud (CloudKit) toggle shows, on. |
+| `docs-open-from-icloud` | Open from iCloud… on the welcome screen: the account's three made-up vaults (`SEMPERE_DEMO_CLOUDKIT`). |
 | `docs-pages-dark` | A note with Settings ▸ General ▸ Appearance ▸ Note Pages ▸ Dark (`-Sempere.notePages dark`): dark paper, ink lightness inverted. The one dark-pages shot of docs/design/1.2-screenshots.md question 1. |
 
 `docs-watch` runs `WatchScreenshotTests` (`SempereWatchUITests`, the debug state of `WatchDebugLaunch`: a fake recorder, the debug vault's made-up name) on the newest watchOS simulator, at that watch's native size (the script takes it from the first PNG and requires it of the rest), into `build/screenshots/docs-watch/`: `01-ready`, `02-recording`, `03-saved`, `04-unsent`. Run it under the build lock with `XC_KIND=sim XC_NO_CLONE=1` (its clones are iPads). The watch shows the real time (`simctl status_bar` does not reach a watch); the language is set to English like the others. Where the watch test runner cannot write into the checkout, the script takes the shots from the result bundle's attachments.
@@ -137,6 +141,7 @@ All of it is `#if DEBUG` (the package's files and the app's `DemoLaunch` alike);
 | `SEMPERE_DEMO_INSIGHTS` | `note` or `map`: Note Insights on with fake providers, recognized demo text, passes run, then the note's sheet or the map opens (DEBUG, never an Apple model). `on`: only the fake providers and the text, Note Insights stays off until Settings turns it on (`LaunchSmokeUITests.testNoteInsightsSheetOpensFromTheNoteListMenu`). |
 | `SEMPERE_DEMO_RECORDING` | The "thoughts" note also gets one recording ("Demo Recording", stand-in bytes, no transcript), and the app transcribes with a fake that writes "Demo transcript" and the language asked for (`RecordingsTranscribeUITests`). |
 | `SEMPERE_DEMO_NEARBY_JOIN` | List one synthetic join request as nearby for Add Device; on the locked demo the join screen shows the nearby link connected. |
+| `SEMPERE_DEMO_CLOUDKIT` | iCloud (CloudKit) on an in-memory database (`DemoCloudKit`, `MemoryCloudDatabase`; the simulator has no iCloud account and the real container is never used): the account holds three made-up vaults (Open from iCloud…), and with `SEMPERE_DEMO_STORE` the demo vault gets an iCloud target, run once (Sync Targets: Synced; Vault Details: its size). The value `targets` also opens Sync Targets after that run (`WindowSheets`). |
 | `SEMPERE_DEMO_MAC_WINDOW` | `WIDTHxHEIGHT` in points (Mac Catalyst). |
 | `SEMPERE_DEBUG_COLUMNS` | `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the stored layout (see `DebugLaunch.swift`). |
 

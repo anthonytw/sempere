@@ -195,6 +195,59 @@ final class DocsScreenshotTests: XCTestCase {
         shoot(app, "docs-join-waiting-nearby")
     }
 
+    /// iCloud (CloudKit), 1.4: Sync Targets with the iCloud target Synced (the demo's store vault, an in-memory database:
+    /// `SEMPERE_DEMO_CLOUDKIT=targets`, which opens the sheet once the target has run).
+    @MainActor
+    func testICloudTargets() {
+        var env = demo(["SEMPERE_DEMO_STORE": "1", "SEMPERE_DEMO_CLOUDKIT": "targets", "SEMPERE_DEMO_NOTE": "respiration"])
+        if !isPhone { env["SEMPERE_DEBUG_COLUMNS"] = "doubleColumn" }
+        let app = launch(env, portrait: true)
+        defer { app.terminate() }
+        wait(element(app, "syncTargetsSheet"), "Sync Targets", in: app, timeout: 150)
+        wait(element(app, "syncTargetRemove"), "the iCloud target's row", in: app, timeout: 30)
+        settle(6)
+        shoot(app, "docs-icloud-targets")
+    }
+
+    /// The New Vault sheet with Sync with iCloud on, scrolled so the toggle shows (`SEMPERE_DEMO_CLOUDKIT`: the toggle
+    /// shows when the build has CloudKit services).
+    @MainActor
+    func testICloudNewVault() {
+        let app = launch(["SEMPERE_DEBUG_FRESH": "1", "SEMPERE_DEMO_CLOUDKIT": "1"], portrait: true)
+        defer { app.terminate() }
+        let newVault = app.buttons["New Vault…"].firstMatch
+        wait(newVault, "the welcome screen's New Vault…", in: app, timeout: 90)
+        guard newVault.exists else { return }
+        newVault.tap()
+        wait(app.textFields["newVault.name"].firstMatch, "the New Vault sheet", in: app)
+        let toggle = element(app, "newVault.iCloud")
+        for _ in 0..<6 where !(toggle.exists && toggle.isHittable) { app.swipeUp() }
+        wait(toggle, "the Sync with iCloud toggle", in: app)
+        guard toggle.exists else { return }
+        // A switch: its right end is the control (the row's middle is its label).
+        if (toggle.value as? String) != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
+        settle(3)
+        // Room for the toggle's footer below it.
+        app.swipeUp()
+        settle(2)
+        shoot(app, "docs-icloud-new-vault")
+    }
+
+    /// Open from iCloud… on the welcome screen: the account's vaults (`SEMPERE_DEMO_CLOUDKIT`, three made-up ones).
+    @MainActor
+    func testOpenFromICloud() {
+        let app = launch(["SEMPERE_DEBUG_FRESH": "1", "SEMPERE_DEMO_CLOUDKIT": "1"], portrait: true)
+        defer { app.terminate() }
+        let open = element(app, "openICloud")
+        wait(open, "Open from iCloud…", in: app, timeout: 90)
+        guard open.exists else { return }
+        open.tap()
+        wait(element(app, "openFromICloudSheet"), "the Open from iCloud sheet", in: app)
+        wait(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Field Journal")).firstMatch, "the account's vaults", in: app)
+        settle(3)
+        shoot(app, "docs-open-from-icloud")
+    }
+
     /// Settings ▸ General ▸ Appearance ▸ Note Pages ▸ Dark (`-Sempere.notePages dark`): a note with dark paper and the
     /// ink's lightness inverted, for the page that explains the setting (docs/design/1.2-screenshots.md, question 1).
     @MainActor
