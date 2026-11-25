@@ -1,0 +1,5 @@
+### Added
+
+- iCloud (CloudKit) in the app: Sync Targets lists iCloud (CloudKit) first when you add a target, and the welcome list has Open from iCloud…, which finds the vaults in your Apple Account by name, copies one onto this device and keeps it syncing. A device that has a vault but no iCloud target for it suggests the target once. New Vault can sync with iCloud from the start, and offers it in place of a folder in iCloud Drive.
+- The status of an iCloud target says what is wrong and what to do: iCloud storage full, signed out, restricted, another Apple Account (Use This Account), data deleted in iCloud settings or gone (Upload Again), or an update needed. Failures that heal by themselves stay out of the bar and show in Vault Details, which also shows the zone's size and Delete from iCloud…. A vault whose only copy besides this device is iCloud explains why to keep a backup too. Everything is in Spanish too.
+- `sempere cloudkit list`, `open` and `delete` do what the app's iCloud screens do; `sempere store info` shows an iCloud target's size.

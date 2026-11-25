@@ -124,8 +124,8 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
 |---|---|---|---|---|
 | PR gate (GitHub: the checks above; here: its local twin, optional) | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`), then in Docker the Linux package tests (offline, portability, removable importers: `scripts/ci-linux.sh docker test`) and the WebDAV tests (`docker webdav`), each skipping targets whose hash already passed | `local/app-tests` (with `--status`) | nothing: GitHub's checks gate merging |
 | Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | review (the PR template has the section) |
-| Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then the dense-note performance suite (`test-mac-perf`, [Performance tests](#performance-tests)), the Mac unit tests with no network ([Offline mode](#offline-mode)), the Mac launch smoke tests (`test-mac-smoke`) and every Mac UI test (`test-mac-ui`) | `local/testflight-suite` | `scripts/testflight.sh` (`just testflight`) checks it on the commit it builds (`local/release-sweep` also counts) |
-| Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`) and the iPhone suites (`test-phone`) run side by side (step `sim-unit`: one `build-sim-unit`, then `test-without-building` on two simulators with result bundles `build/local-ci/ipad.xcresult` and `iphone.xcresult`; `SEMPERE_SIM_UNIT=serial` runs them in turn) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode) | `local/release-sweep` | the App Store submission; then the release checks (`release-tag.sh`, `release-build.sh`): a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a `-rc` prerelease only warns) |
+| Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then the dense-note performance suite (`test-mac-perf`, [Performance tests](#performance-tests)), the Mac unit tests with no network ([Offline mode](#offline-mode)), the Mac launch smoke tests (`test-mac-smoke`) and every Mac UI test (`test-mac-ui`), then the real-CloudKit suite (`test-cloudkit`, [Real CloudKit](#real-cloudkit)) | `local/testflight-suite` | `scripts/testflight.sh` (`just testflight`) checks it on the commit it builds (`local/release-sweep` also counts) |
+| Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`) and the iPhone suites (`test-phone`) run side by side (step `sim-unit`: one `build-sim-unit`, then `test-without-building` on two simulators with result bundles `build/local-ci/ipad.xcresult` and `iphone.xcresult`; `SEMPERE_SIM_UNIT=serial` runs them in turn) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode), then `test-cloudkit` | `local/release-sweep` | the App Store submission; then the release checks (`release-tag.sh`, `release-build.sh`): a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a `-rc` prerelease only warns) |
 | CLI-only release | `scripts/local-ci.sh --cli` | the package tests on the Mac, then in Docker the Linux tests (`scripts/ci-linux.sh test`), the WebDAV integration tests (`webdav`) and the static release build (`static`) | `local/cli-suite` | the release checks for a tag whose `Version.swift` differs from the app's `MARKETING_VERSION` |
 
 - **The gate never needs the screen** and runs no simulator, so it can run on a Mac someone is
@@ -405,6 +405,31 @@ pattern, can skip the first matches and fire a number of times with a probabilit
 seeded generator. `GET /__proxy__/stats` is the request log (method, path, status, fault, `Range`)
 and the number of client connections that carried a request (keep-alive reuse shows as fewer).
 Its configuration is global, so tests that use it never run in parallel.
+
+## Real CloudKit
+
+`scripts/app.sh test-cloudkit` (`tools/cloudkit-live/run.sh`; docs/io.md "Testing it against the real database") talks to the
+real CloudKit database of the test Apple ID, in the container's **development** environment. **It is not part of the PR gate**
+and runs on no hosted runner: it needs the claude seat's signing identity, a development provisioning profile that lists that
+Mac, the signed-in test account and the `cktool` token, none of which exist on GitHub, and it takes about fifteen minutes (a fresh run builds the CLI bundle and the driver for macOS, Mac Catalyst and the simulator; the
+scenarios themselves are about five minutes of real network time). A failure there says nothing about a pull request's code.
+
+- **Where it runs:** the `cloudkit` step of `scripts/local-ci.sh --testflight` and `--release` (after the UI steps; the gate's
+  steps are unchanged), and by hand before and after a change to `SempereCloudKit`, `CloudRecordRemote`, the CLI's CloudKit target
+  or `tools/cloudkit-spike/schema.ckdb`. A PR that touches those lists it under `## Tests run`.
+- **It never passes silently when it did not run:** a Mac without the account (no `SEMPERE_TEAM_ID`, no profile that lists this Mac,
+  no Apple Development identity, no `cktool` token) exits 77 with `SKIPPED test-cloudkit: <what is missing>`, and the step's log in
+  `build/local-ci/cloudkit.log` repeats `the real-CloudKit suite did NOT run`. The posted status then means "everything that could
+  run passed"; read the log before a release that changed CloudKit code.
+- **What the PR gate does cover:** `CloudKitSchemaTests` (SempereCloudKitTests, in every Mac `swift test`) fails when the fields
+  the adapter writes differ from `schema.ckdb`; the adapter's mappings (`CloudKitMappingTests`) and the whole transport run on
+  `MemoryCloudDatabase`, on Linux too ([Transports](#transports)).
+- **It never touches production and never deploys the schema** (`cktool` refuses writes there; the suite has no production
+  signature). It does leave nothing behind it can delete: its zones are removed through the adapter. A run killed midway leaves
+  `test-*` and `sempere-*` zones in development; `scripts/app.sh test-cloudkit cleanup test- sempere-` removes them.
+- **Flakiness:** the real database's change feed follows a write within seconds, so each scenario polls with a bound
+  (40 s) rather than sleeping; a timeout names what it waited for. Re-run only the failing scenario
+  (`scripts/app.sh test-cloudkit suite 'convergence'`), never the whole suite.
 
 ## Launch smoke tests
 

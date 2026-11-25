@@ -36,8 +36,13 @@ public final class CloudKitDatabase: CloudRecordStore, @unchecked Sendable {
         container = CKContainer(identifier: containerIdentifier)
         database = container.privateCloudDatabase
         // Another account's records have other system fields: nothing kept is used after an account change.
-        let cache = self.cache
-        accountObserver = NotificationCenter.default.addObserver(forName: Self.accountChangedNotification, object: nil, queue: nil) { _ in cache.removeAll() }
+        accountObserver = Self.clearOnAccountChange(cache)
+    }
+
+    /// Empties `cache` whenever the iCloud account changes (the returned observer is removed by the caller). A function of
+    /// its own: a test cannot make a `CloudKitDatabase` in a process with no entitlement (a container would raise).
+    static func clearOnAccountChange(_ cache: SystemFieldsCache) -> any NSObjectProtocol {
+        NotificationCenter.default.addObserver(forName: accountChangedNotification, object: nil, queue: nil) { _ in cache.removeAll() }
     }
 
     private var accountObserver: (any NSObjectProtocol)?
@@ -75,21 +80,24 @@ public final class CloudKitDatabase: CloudRecordStore, @unchecked Sendable {
     /// Makes the database subscription that sends a silent push when any zone changes (no alert, design §3.2). One is enough
     /// for every vault; saving it again is harmless.
     public func ensureSubscription() throws {
+        let fetch = CKFetchSubscriptionsOperation.fetchAllSubscriptionsOperation()
         let done = DispatchSemaphore(value: 0)
-        let existing = Acc<Result<[CKSubscription], Error>?>(nil)
-        database.fetchAllSubscriptions { subs, e in existing.mutate { $0 = subs.map { .success($0) } ?? .failure(e ?? CloudStoreError(.internalError, "no subscriptions")) }; done.signal() }
-        done.wait()
-        let subs: [CKSubscription]
-        do { subs = try existing.value!.get() } catch { throw Self.map(error) }
-        if subs.contains(where: { $0.subscriptionID == Self.subscriptionID }) { return }
+        let found = Acc<[String]>([])
+        let result = Acc<Result<Void, Error>?>(nil)
+        fetch.perSubscriptionResultBlock = { id, r in if case .success = r { found.mutate { $0.append(id) } } }
+        fetch.fetchSubscriptionsResultBlock = { r in result.mutate { $0 = r }; done.signal() }
+        run(fetch, done: done)
+        do { try result.value!.get() } catch { throw Self.map(error) }
+        if found.value.contains(Self.subscriptionID) { return }
         let s = CKDatabaseSubscription(subscriptionID: Self.subscriptionID)
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
         s.notificationInfo = info
-        let saved = Acc<Error?>(nil)
-        database.save(s) { _, e in saved.mutate { $0 = e }; done.signal() }
-        done.wait()
-        if let e = saved.value { throw Self.map(e) }
+        let save = CKModifySubscriptionsOperation(subscriptionsToSave: [s], subscriptionIDsToDelete: nil)
+        let saved = Acc<Result<Void, Error>?>(nil)
+        save.modifySubscriptionsResultBlock = { r in saved.mutate { $0 = r }; done.signal() }
+        run(save, done: done)
+        do { try saved.value!.get() } catch { throw Self.map(error) }
     }
 
     /// True when a remote notification's payload is the database subscription's.
@@ -111,6 +119,14 @@ public final class CloudKitDatabase: CloudRecordStore, @unchecked Sendable {
         init(_ v: T) { self.v = v }
         var value: T { lock.lock(); defer { lock.unlock() }; return v }
         func mutate(_ body: (inout T) -> Void) { lock.lock(); body(&v); lock.unlock() }
+    }
+
+    /// How long a call that is not an operation (the account status) may take: the same bound as one request.
+    private static let accountTimeout: TimeInterval = 60
+
+    /// Waits for `done`, at most `accountTimeout`: a call with no `CKOperation.Configuration` to bound it never hangs a run.
+    private static func waitBounded(_ done: DispatchSemaphore) throws {
+        if done.wait(timeout: .now() + accountTimeout) == .timedOut { throw CloudStoreError(.networkFailure, "iCloud did not answer in time") }
     }
 
     /// Adds `op` to the private database with timeouts and waits for the end of the operation (its result block signals `done`).
@@ -141,7 +157,7 @@ public final class CloudKitDatabase: CloudRecordStore, @unchecked Sendable {
         let done = DispatchSemaphore(value: 0)
         let status = Acc<Result<CKAccountStatus, Error>?>(nil)
         container.accountStatus { s, e in status.mutate { $0 = e.map { .failure($0) } ?? .success(s) }; done.signal() }
-        done.wait()
+        try Self.waitBounded(done)
         let raw: CKAccountStatus
         do { raw = try status.value!.get() } catch { throw Self.map(error) }
         let mapped: CloudAccount.Status
@@ -154,12 +170,22 @@ public final class CloudKitDatabase: CloudRecordStore, @unchecked Sendable {
         @unknown default: mapped = .couldNotDetermine
         }
         guard mapped == .available else { return CloudAccount(status: mapped) }
-        let user = Acc<Result<CKRecord.ID, Error>?>(nil)
-        container.fetchUserRecordID { id, e in user.mutate { $0 = id.map { .success($0) } ?? .failure(e ?? CloudStoreError(.internalError, "no user record")) }; done.signal() }
-        done.wait()
+        // The user record id: an operation with the timeouts of `run`, not the convenience call (which has none).
+        let user = CKFetchRecordsOperation.fetchCurrentUserRecordOperation()
+        let name = Acc<Result<String, Error>?>(nil)
+        let end = Acc<Result<Void, Error>?>(nil)
+        user.perRecordResultBlock = { id, r in
+            switch r {
+            case .success: name.mutate { $0 = .success(id.recordName) }
+            case .failure(let e): name.mutate { $0 = .failure(e) }
+            }
+        }
+        user.fetchRecordsResultBlock = { r in end.mutate { $0 = r }; done.signal() }
+        run(user, done: done)
         do {
-            let id = try user.value!.get()
-            return CloudAccount(status: .available, userHash: Hex.encode(Data(SHA256.hash(data: Data(id.recordName.utf8)))))
+            try end.value!.get()
+            let recordName = try (name.value ?? .failure(CloudStoreError(.internalError, "no user record"))).get()
+            return CloudAccount(status: .available, userHash: Hex.encode(Data(SHA256.hash(data: Data(recordName.utf8)))))
         } catch { throw Self.map(error) }
     }
 
@@ -560,9 +586,15 @@ final class SystemFieldsCache: @unchecked Sendable {
         let coder = NSKeyedArchiver(requiringSecureCoding: true)
         record.encodeSystemFields(with: coder)
         coder.finishEncoding()
-        let k = key(zone, record.recordID.recordName)
+        note(zone: zone, name: record.recordID.recordName, tag: tag, archive: coder.encodedData)
+    }
+
+    /// Keeps `archive` (a record's archived system fields) under `tag`. The seam of the tests: a record made in a test has
+    /// no change tag, only the server gives one.
+    func note(zone: String, name: String, tag: String, archive: Data) {
+        let k = key(zone, name)
         lock.lock(); defer { lock.unlock() }
-        if entries.updateValue((tag, coder.encodedData), forKey: k) == nil { order.append(k) }
+        if entries.updateValue((tag, archive), forKey: k) == nil { order.append(k) }
         if order.count > limit { for old in order.prefix(order.count - limit) { entries[old] = nil }; order.removeFirst(order.count - limit) }
     }
 

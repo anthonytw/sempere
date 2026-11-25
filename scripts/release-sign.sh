@@ -2,7 +2,8 @@
 # Sign a release from YOUR OWN clone of GitHub: the macOS tarball with your Developer ID, then SHA256SUMS with your SSH key
 # (docs/releasing.md "Sign the checksums"). You never run code the build account wrote: this script is the repository's, at
 # origin/main, and the signers come from `git show origin/main:packaging/allowed_signers`. The build account's hand-off folder
-# carries data only: SHA256SUMS and the unsigned macOS tarball (its sempere.app is signed here, never opened or run).
+# carries data only: SHA256SUMS, the unsigned macOS tarball (its sempere.app is signed here, never opened or run) and the CLI's
+# Developer ID provisioning profile (fetched by the build account; verified whole here before it is used).
 #
 #   git fetch origin && git checkout --detach origin/main
 #   bash scripts/release-sign.sh [-k KEY] VERSION
@@ -17,7 +18,8 @@
 #      sempere-VERSION-{macos-universal,linux-x86_64,linux-aarch64}.tar.gz, each with a 64-hex hash
 #   3. the macOS tarball (docs/design/1.4-cloudkit.md §6.5): checks it is the one the list names, then scripts/release-sign-macos.sh
 #      signs its sempere.app with your Developer ID Application identity (hardened runtime, the CLI's entitlements, the embedded
-#      Developer ID profile), notarizes it (notarytool, keychain profile sempere-notary), staples it and repacks the tarball; the
+#      Developer ID profile from the hand-off folder, which scripts/release-sign-macos.sh verifies against Apple's signature, your
+#      certificate and the CLI's App ID before using it: you download nothing), notarizes it (notarytool, keychain profile sempere-notary), staples it and repacks the tarball; the
 #      list's macOS line becomes the signed tarball's hash. The Linux lines stay the build's
 #   4. shows the list, signs the private copy (namespace `file`), and verifies the signature against origin/main's signers
 #   5. only then moves SHA256SUMS, SHA256SUMS.sig and the signed macOS tarball into your output folder, vVERSION/, where
@@ -81,10 +83,20 @@ rm -f "$tmp/w/probe" "$tmp/w/probe.sig"
 mac=sempere-$version-macos-universal.tar.gz
 "$check" owned "$drop/$tag/$mac" "$builder"
 cp "$drop/$tag/$mac" "$tmp/w/$mac.unsigned"
+# The profile: data from the build account too (it fetched it from App Store Connect); release-sign-macos.sh checks it whole. A dry run
+# (SEMPERE_SIGN_DEV=1) uses SEMPERE_CLI_PROFILE, a development profile, when that is set.
+profile_arg=()
+if $dev && [[ -n ${SEMPERE_CLI_PROFILE:-} ]]; then
+  profile_arg=(--profile "$SEMPERE_CLI_PROFILE")
+else
+  "$check" owned "$drop/$tag/sempere-cli.provisionprofile" "$builder"
+  cp "$drop/$tag/sempere-cli.provisionprofile" "$tmp/w/sempere-cli.provisionprofile"
+  profile_arg=(--profile "$tmp/w/sempere-cli.provisionprofile")
+fi
 want=$(sed -n "s/^\([0-9a-f]\{64\}\)  $mac\$/\1/p" "$tmp/w/SHA256SUMS")
 [[ $(shasum -a 256 < "$tmp/w/$mac.unsigned" | cut -d' ' -f1) == "$want" ]] || die "$drop/$tag/$mac is not the file SHA256SUMS names (build again)"
 echo "Signing and notarizing $mac (your Developer ID; notarization waits for Apple)..."
-bash scripts/release-sign-macos.sh $($dev && echo --dev) --version "$version" "$tmp/w/$mac.unsigned" "$tmp/w/$mac" || die "the macOS tarball was not signed: nothing written"
+bash scripts/release-sign-macos.sh $($dev && echo --dev) "${profile_arg[@]}" --version "$version" "$tmp/w/$mac.unsigned" "$tmp/w/$mac" || die "the macOS tarball was not signed: nothing written"
 signed_hash=$(shasum -a 256 < "$tmp/w/$mac" | cut -d' ' -f1)
 echo "macOS tarball: build hash $want (checked against the hand-off file) -> signed hash $signed_hash (this line changes in the list below; the Linux lines are the build's)"
 sed "s/^[0-9a-f]\{64\}  $mac\$/$signed_hash  $mac/" "$tmp/w/SHA256SUMS" > "$tmp/w/SHA256SUMS.new" && mv "$tmp/w/SHA256SUMS.new" "$tmp/w/SHA256SUMS"

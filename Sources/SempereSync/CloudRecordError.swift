@@ -104,6 +104,20 @@ public enum CloudProblem: Sendable, Hashable {
     /// No run succeeded for 24 hours while the network was up (`since`: the last success, if any).
     case notAccepted(since: Date?)
 
+    /// A stable identifier (`sempere store sync --json`, tests).
+    public var code: String {
+        switch self {
+        case .storageFull: return "icloud-storage-full"
+        case .zoneGone: return "icloud-zone-gone"
+        case .zoneDeletedByUser: return "icloud-zone-deleted"
+        case .signedOut: return "icloud-signed-out"
+        case .restricted: return "icloud-restricted"
+        case .otherAccount: return "icloud-other-account"
+        case .updateNeeded: return "icloud-update-needed"
+        case .notAccepted: return "icloud-not-accepted"
+        }
+    }
+
     /// The line the status bar shows (design §4).
     public var message: String {
         switch self {
@@ -183,15 +197,19 @@ public struct CloudStatusTracker: Sendable {
     public static let stallInterval: TimeInterval = 24 * 3600
 
     public private(set) var lastSuccess: Date?
+    /// Where the 24 hours count from when the first failure of a stretch is seen: the last success, or else when the target
+    /// was added (both persisted, so a relaunch does not restart the count), else that failure's own time.
+    private var baseline: Date?
     private var firstFailure: Date?
     private var problem: CloudProblem?
     private var offline = false
 
-    public init(lastSuccess: Date? = nil) { self.lastSuccess = lastSuccess }
+    public init(lastSuccess: Date? = nil, added: Date? = nil) { self.lastSuccess = lastSuccess; baseline = lastSuccess ?? added }
 
     /// A run finished with no failure.
     public mutating func succeeded(at now: Date) {
         lastSuccess = now
+        baseline = now
         firstFailure = nil
         problem = nil
         offline = false
@@ -199,20 +217,22 @@ public struct CloudStatusTracker: Sendable {
 
     /// A run failed with `error`. `networkUp`: the path monitor said the network was available for it.
     public mutating func failed(_ error: Error, networkUp: Bool, at now: Date) {
-        switch CloudStatus.classify(error, now: now) {
-        case .offline:
-            offline = true
-        case .throttled, .ok:
+        func started() { if networkUp, firstFailure == nil { firstFailure = baseline.map { min($0, now) } ?? now } }
+        let status = CloudStatus.classify(error, now: now)
+        // Offline is the state of the last failure only: a failure that is not an offline one ends it.
+        if case .offline = status { offline = true } else { offline = false }
+        switch status {
+        case .offline, .throttled, .ok:
             break
         case .problem(let p):
             problem = p
         case .quiet:
             problem = nil
-            if networkUp, firstFailure == nil { firstFailure = now }
+            started()
         }
         if case .store(let e)? = error as? CloudRecordError, e.code == .networkFailure || e.code == .serverResponseLost {
             // Unreachable but not "offline": quiet, and the link may not be at fault (the stall rule still counts it).
-            if networkUp, firstFailure == nil { firstFailure = now }
+            started()
         }
     }
 
@@ -220,7 +240,7 @@ public struct CloudStatusTracker: Sendable {
     public func status(at now: Date) -> CloudStatus {
         if let problem { return .problem(problem) }
         if let firstFailure, now.timeIntervalSince(firstFailure) >= Self.stallInterval {
-            return .problem(.notAccepted(since: lastSuccess))
+            return .problem(.notAccepted(since: lastSuccess ?? baseline))
         }
         return offline ? .offline : .ok
     }

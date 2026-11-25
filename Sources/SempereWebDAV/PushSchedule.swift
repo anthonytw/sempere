@@ -116,6 +116,8 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
     case writeGrantLapsed
     /// Some files could not be uploaded or removed (first messages).
     case failures([String])
+    /// An iCloud (CloudKit) target's definite problem (docs/design/1.4-cloudkit.md §4): the app words it.
+    case cloud(CloudProblem)
     /// Anything else that stopped the run.
     case failed(String)
 
@@ -132,6 +134,7 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
         case .notWritable: return "not-writable"
         case .writeGrantLapsed: return "write-grant-lapsed"
         case .failures: return "failures"
+        case .cloud(let p): return p.code
         case .failed: return "failed"
         }
     }
@@ -162,6 +165,13 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
         default: break
         }
         if case SyncError.vaultMismatch? = error as? SyncError { return .otherVault }
+        if error is CloudRecordError || error is CloudStoreError {
+            switch CloudStatus.classify(error) {
+            case .problem(let p): return .cloud(p)
+            case .offline: return .offline
+            case .ok, .quiet, .throttled: return .failed(SyncEngine.describe(error))
+            }
+        }
         guard let e = error as? WebDAVError else { return .failed(SyncEngine.describe(error)) }
         switch e {
         case .offline, .notConnected: return .offline

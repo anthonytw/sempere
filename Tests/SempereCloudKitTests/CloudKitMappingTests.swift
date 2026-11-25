@@ -158,10 +158,38 @@ final class CloudKitMappingTests: XCTestCase {
         XCTAssertThrowsError(try CloudKitDatabase().modify(zone: "z", saves: [], deletes: [], atomic: true))
     }
 
-    func testTheSystemFieldsCacheIsEmptiedByAnAccountChange() {
+    /// The archived system fields of a record that has a (given) change tag: a record made here has none, so the archive of a
+    /// local record is noted under a tag through the cache's seam.
+    private func archivedSystemFields(_ name: String) throws -> Data {
+        let record = CKRecord(recordType: "VaultFile", recordID: CKRecord.ID(recordName: name, zoneID: zone))
+        let coder = NSKeyedArchiver(requiringSecureCoding: true)
+        record.encodeSystemFields(with: coder)
+        coder.finishEncoding()
+        return coder.encodedData
+    }
+
+    func testTheSystemFieldsCacheHandsOutARecordOnlyForItsOwnTag() throws {
         let cache = SystemFieldsCache()
+        cache.note(zone: "z", name: "f-x", tag: "7", archive: try archivedSystemFields("f-x"))
+        XCTAssertEqual(cache.record(zone: "z", name: "f-x", tag: "7")?.recordID.recordName, "f-x")
+        XCTAssertNil(cache.record(zone: "z", name: "f-x", tag: "8"), "another tag: the record changed since")
+        XCTAssertNil(cache.record(zone: "y", name: "f-x", tag: "7"))
         cache.removeAll()
-        XCTAssertNil(cache.record(zone: "z", name: "f-x", tag: "1"))
+        XCTAssertNil(cache.record(zone: "z", name: "f-x", tag: "7"))
+    }
+
+    /// An account change empties what a database kept: another account's records have other system fields. Through the
+    /// real notification and the hook a database installs.
+    func testTheSystemFieldsCacheIsEmptiedByAnAccountChange() throws {
+        let cache = SystemFieldsCache()
+        let observer = CloudKitDatabase.clearOnAccountChange(cache)
+        defer { NotificationCenter.default.removeObserver(observer) }
+        cache.note(zone: "z", name: "f-x", tag: "7", archive: try archivedSystemFields("f-x"))
+        cache.note(zone: "z", name: "f-y", tag: "3", archive: try archivedSystemFields("f-y"))
+        XCTAssertNotNil(cache.record(zone: "z", name: "f-x", tag: "7"), "the record was noted with its tag")
+        NotificationCenter.default.post(name: CloudKitDatabase.accountChangedNotification, object: nil)
+        XCTAssertNil(cache.record(zone: "z", name: "f-x", tag: "7"))
+        XCTAssertNil(cache.record(zone: "z", name: "f-y", tag: "3"))
     }
 }
 #endif

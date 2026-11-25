@@ -961,6 +961,23 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   `prepareRun` itself) must call `prepareRun()` at the start of each pass, or be built per run (C2: the app's session).
   A store that can create at its final name atomically (`capabilities.atomicCreate`) is written there directly by
   `placeWriteOnce`, never through a temporary name and a move.
+- Real CloudKit (`scripts/app.sh test-cloudkit`, `tools/cloudkit-live/`, docs/io.md "Testing it against the real database"):
+  development environment only, never the PR gate (`local-ci.sh --testflight`/`--release` run it; exit 77 = skipped, say so);
+  **never touch production and never deploy the schema** (`cktool` refuses production writes; step 9 of the design is the owner's
+  Console button). CloudKit is a restricted entitlement: a process without it must not create a `CKContainer` (an exception,
+  not an error: check `CloudKitDatabase.availability()` first), and without a matching embedded profile it is killed at launch
+  (exit 137, nothing logged). A Mac is registered by its **Provisioning UDID** (`system_profiler SPHardwareDataType`), never the
+  hardware UUID (the API accepts the UUID and the app is then killed the same way). Catalyst and the CLI sign with plain
+  `codesign --sign "Apple Development"` plus `Contents/embedded.provisionprofile`; the simulator takes entitlements from a
+  `-sectcreate __TEXT,__entitlements` section and an ad-hoc signature (no profile; signing iCloud entitlements in fails with 163).
+  **Never launch spike or test builds sandboxed**: each rebuilt, re-signed sandboxed app asks macOS for a consent ("differs from
+  the version previously opened") that nobody can click on the seat, and every sandboxed launch then hangs in
+  `_libsecinit_appsandbox`; look for that dialog first when a launch hangs. `cktool` (management token) can import, export and
+  validate the development schema and `reset-schema` it (deleting development data) but **cannot read, write or delete private
+  records or zones**: zones are deleted through the adapter (`cloudkit-live cleanup|delete-zone`), and a failed test's records are
+  not inspectable with it. A field's type is fixed by its first write, so the schema is declared (`schema.ckdb`;
+  `CloudKitSchemaTests` fails on drift), never auto-created. Tests must never wait for a push (none is reliable between
+  processes of one Mac) and each makes its own `test-<uuid>` zone.
 - Folder targets (`FolderRemote`, `sempere sync folder`, docs/io.md "Folder targets in providers"): a
   provider's evicted file or a folder listed before its files is *arriving* (`RemoteEntry.availability`,
   `SyncReport.arriving`), never missing: the engine asks for it and waits at most `arrivalWait` per run,

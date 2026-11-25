@@ -84,6 +84,31 @@ final class CLIStoreTargetTests: CLITestCase {
         XCTAssertTrue(both.err.contains("--cloudkit"), both.err)
     }
 
+    /// `sempere cloudkit` (docs/design/1.4-cloudkit.md §9): the same plain answer in a build that cannot reach CloudKit, for each
+    /// command, and nothing is written or deleted.
+    func testTheCloudKitCommandsSayPlainlyThatThisBuildHasNoCloudKit() throws {
+        _ = try storeVault()
+        for args in [["cloudkit", "list"], ["cloudkit", "open", "0b0f1f3e"], ["cloudkit", "delete", "0b0f1f3e", "--yes"]] {
+            let r = try cli(args + ["--store", store])
+            XCTAssertEqual(r.status, 1, "\(args): \(r.err)")
+            XCTAssertTrue(r.err.contains("iCloud (CloudKit)"), r.err)
+        }
+        // An empty, short or non-hex vault argument is a usage error before anything else: it would match every vault.
+        for bad in ["", "0b0f", "not-a-vault-id"] {
+            for verb in [["cloudkit", "open", bad], ["cloudkit", "delete", bad, "--yes"]] {
+                let r = try cli(verb + ["--store", store])
+                #if os(macOS)
+                XCTAssertEqual(r.status, 2, "\(verb): \(r.err)")
+                #else
+                XCTAssertEqual(r.status, 1, "\(verb): \(r.err)")   // a build with no CloudKit says so first
+                #endif
+            }
+        }
+        let help = try cli(["cloudkit", "--help"])
+        XCTAssertEqual(help.status, 0)
+        for word in ["list", "open", "delete"] { XCTAssertTrue(help.out.contains(word), help.out) }
+    }
+
     /// Open Vault… with "Keep syncing": the source becomes a target; edits travel both ways.
     func testImportKeepSyncingMakesTheSourceATarget() throws {
         let (_, _, key) = try makeVault(named: "a.sempere")

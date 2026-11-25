@@ -69,12 +69,15 @@ private struct TargetDetailsSection: View {
     let details: TargetDetails
     let vaultID: UUID
     let changed: () -> Void
+    @AppEnvironmentObject private var library: VaultLibrary
+    @State private var deleting = false
+    @State private var failure: String?
 
     var body: some View {
         let target = details.target
         Section {
             LabeledContent("Place") {
-                Text(verbatim: target.kind == .webdav ? (target.url ?? "") : (target.path ?? ""))
+                Text(verbatim: target.place)
                     .lineLimit(1).truncationMode(.middle)
             }
             // While a provider has not uploaded what the last run wrote, it was written, not synced (offline audit P15).
@@ -99,6 +102,28 @@ private struct TargetDetailsSection: View {
                 }
             }
             LabeledContent("Files in Step", value: "\(details.syncedFiles)")
+            if target.kind == .cloudkit {
+                // What the zone held at the last run (the mirror, no network) and the failures the bar keeps quiet (design §4, §9).
+                if let files = details.cloudFiles {
+                    LabeledContent("In iCloud") {
+                        Text("\(files) files, \(StorageText.bytes(details.cloudBytes ?? 0))",
+                             comment: "Vault Details of an iCloud target: files in the zone and their size")
+                    }
+                }
+                if let quiet = session?.quietFailure {
+                    LabeledContent("Last Problem") {
+                        VStack(alignment: .trailing) {
+                            Text(verbatim: quiet.message).lineLimit(3)
+                            Text(quiet.at, format: .relative(presentation: .named)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("vaultDetailsQuietFailure")
+                }
+                if model.hasCopyBesidesICloud(vaultID) {
+                    Button("Delete from iCloud…", role: .destructive) { deleting = true }
+                        .accessibilityIdentifier("vaultDetailsDeleteFromICloud")
+                }
+            }
             if details.staged > 0 {
                 LabeledContent("Waiting for Unlock", value: String(localized: "\(details.staged) files", comment: "Files staged by a locked sync"))
             }
@@ -125,6 +150,22 @@ private struct TargetDetailsSection: View {
             Text(verbatim: target.name)
         } footer: {
             Text("Devices whose notes or summaries this target held at this device's last sync with it. A device of the vault missing here never syncs with this target: add a target they share.")
+        }
+        .confirmationDialog(Text("Delete “\(library.vaultStore.entry(id: vaultID)?.name ?? "")” from iCloud?",
+                                comment: "Vault Details: asks before deleting the vault's iCloud data; %@ is the vault's name"),
+                            isPresented: $deleting, titleVisibility: .visible) {
+            Button("Delete from iCloud", role: .destructive) {
+                Task {
+                    do { try await model.deleteFromICloud(target.id, of: vaultID); changed() } catch { failure = AppModel.describe(error) }
+                }
+            }
+        } message: {
+            Text("This deletes the vault's data from your iCloud. Other devices that sync it with iCloud stop syncing. The copy on this device and its other sync targets are not touched.")
+        }
+        .alert("Vault Details", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK") { failure = nil }
+        } message: {
+            Text(failure ?? "")
         }
     }
 }

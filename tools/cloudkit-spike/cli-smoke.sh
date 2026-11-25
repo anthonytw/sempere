@@ -44,4 +44,12 @@ n1=$("$S" notes new "First" --vault "$V" | tail -1); "$S" notes new "Second" --v
 "$S" store sync Smoke2 --store "$work/store2" | tail -1
 V2=$(ls -d "$work"/store2/*/Smoke2.sempere)
 diff <("$S" notes list --vault "$V" | awk '{print $1, $2}') <("$S" notes list --vault "$V2" | awk '{print $1, $2}') && echo "ok: the second device has the same notes"
+# C3: the vaults in the account (sempere cloudkit): the vault is listed by its name, opened into a third store, and the notes match.
+"$S" cloudkit list --store "$work/store2" --json | python3 -c 'import json,sys; v=json.load(sys.stdin); assert any(x["inStore"] and x["hasCloudKitTarget"] for x in v), v; print("ok: cloudkit list names", [x["name"] for x in v][:3])'
+id=$("$S" store list --store "$work/store2" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["vaultId"])')
+mkdir -p "$work/store3"
+"$S" cloudkit open "$id" --store "$work/store3" >/dev/null
+V3=$(ls -d "$work"/store3/*/*.sempere)
+diff <("$S" notes list --vault "$V" | awk '{print $1, $2}') <("$S" notes list --vault "$V3" | awk '{print $1, $2}') && echo "ok: cloudkit open copied the same notes"
+"$S" store target list "$id" --store "$work/store3" | grep -q cloudkit && echo "ok: the opened vault has its iCloud target"
 echo "work folder: $work"

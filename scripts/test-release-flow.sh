@@ -26,8 +26,14 @@ cat > scripts/release-sign-macos.sh <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ ${1:-} == --dev ]] && shift
+profile=""
+[[ ${1:-} == --profile ]] && profile=$2 && shift 2
 [[ $1 == --version ]] && version=$2 && in=$3 && out=$4
 [[ -n ${STUB_SIGN_FAIL:-} ]] && { echo "stub: signing failed" >&2; exit 1; }
+# The real script verifies the profile (Apple's signature, App ID, team, certificate); the stub only requires that one was passed,
+# a private copy of the hand-off folder's file, and records which.
+[[ -f $profile ]] || { echo "stub: no --profile file" >&2; exit 1; }
+cp "$profile" "${STUB_PROFILE_LOG:-/dev/null}"
 cp "$in" "$out"; echo "signed by the stub" >> "$out"
 STUB
 chmod +x scripts/release-sign-macos.sh
@@ -107,7 +113,7 @@ run scripts/release-publish.sh 1.2.3; check "publish refuses unsigned sums" '[[ 
 # The hand-off: release-build puts SHA256SUMS (data only) into the seat's folder; the maintainer runs scripts/release-sign.sh from
 # their own clone, which writes SHA256SUMS and SHA256SUMS.sig into their own folder, where release-publish reads them.
 drop=$SEMPERE_SIGN_DROP/v1.2.3; signed=$SEMPERE_SIGN_OUT/v1.2.3
-handoff() { mkdir -m 755 -p "$SEMPERE_SIGN_DROP" "$drop"; rm -rf $d/unsigned; tarballs; (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS); cp $d/SHA256SUMS $d/sempere-1.2.3-macos-universal.tar.gz "$drop/"; chmod 755 "$SEMPERE_SIGN_DROP" "$drop"; chmod 644 "$drop/SHA256SUMS" "$drop/sempere-1.2.3-macos-universal.tar.gz"; rm -rf "$SEMPERE_SIGN_OUT"; rm -f $d/SHA256SUMS.sig; }
+handoff() { mkdir -m 755 -p "$SEMPERE_SIGN_DROP" "$drop"; rm -rf $d/unsigned; tarballs; (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS); cp $d/SHA256SUMS $d/sempere-1.2.3-macos-universal.tar.gz "$drop/"; echo "a profile, as data" > "$drop/sempere-cli.provisionprofile"; chmod 755 "$SEMPERE_SIGN_DROP" "$drop"; chmod 644 "$drop/SHA256SUMS" "$drop/sempere-1.2.3-macos-universal.tar.gz" "$drop/sempere-cli.provisionprofile"; rm -rf "$SEMPERE_SIGN_OUT"; rm -f $d/SHA256SUMS.sig; }
 signit() { run bash scripts/release-sign.sh -k "${1:-$t/key}" 1.2.3; }
 handoff
 signit "$t/other"; check "the owner script refuses a key origin/main's signers lack, and writes no signature" '[[ $rc != 0 && $out == *"is not a key in"* && ! -f $signed/SHA256SUMS.sig ]]'
@@ -140,7 +146,15 @@ SEMPERE_SIGN_DEV=1 signit; check "a dry run (SEMPERE_SIGN_DEV=1) makes no SSH si
 rm -rf "$signed.dry-run"
 SEMPERE_SIGN_DEV=0 signit; check "SEMPERE_SIGN_DEV=0 is not a dry run" '[[ $rc == 0 && $out == *"done: "* && -f $signed/SHA256SUMS.sig && ! -e $signed.dry-run ]]'
 rm -rf "$signed"
-signit; check "the owner script signs and verifies with the test key (from the checkout, not the drop)" '[[ $rc == 0 && $out == *"done: "* && $out == *"signed by maintainer"* && -f $signed/SHA256SUMS.sig && -f $signed/SHA256SUMS ]]'
+mv "$drop/sempere-cli.provisionprofile" "$t/profile.keep"
+signit; check "the owner script refuses a hand-off folder without the CLI's profile, and writes no signature" '[[ $rc != 0 && ! -f $signed/SHA256SUMS.sig ]]'
+cp "$t/profile.keep" "$drop/sempere-cli.provisionprofile"; chmod 664 "$drop/sempere-cli.provisionprofile"
+signit; check "the owner script refuses a profile that is group-writable" '[[ $rc != 0 && $out == *"writable by group or world"* && ! -f $signed/SHA256SUMS.sig ]]'
+chmod 644 "$drop/sempere-cli.provisionprofile"
+SEMPERE_BUILD_USER=nobody signit; check "the owner script refuses a profile that is not the build account's" '[[ $rc != 0 ]]'
+rm -f "$t/profile.used"
+STUB_PROFILE_LOG="$t/profile.used" signit; check "the owner script signs and verifies with the test key (from the checkout, not the drop)" '[[ $rc == 0 && $out == *"done: "* && $out == *"signed by maintainer"* && -f $signed/SHA256SUMS.sig && -f $signed/SHA256SUMS ]]'
+check "the profile the signing step got is a copy of the hand-off folder's" '[[ $(cat "$t/profile.used") == "a profile, as data" ]]'
 run scripts/release-publish.sh 1.2.3; check "publish takes the .sig, the signed list and the signed macOS tarball from the maintainer's folder" '[[ $rc == 0 && $out == *"took SHA256SUMS.sig, SHA256SUMS and the signed, notarized sempere-1.2.3-macos-universal.tar.gz from"* && -f $d/SHA256SUMS.sig && -f $d/unsigned/sempere-1.2.3-macos-universal.tar.gz ]] && tail -1 $d/sempere-1.2.3-macos-universal.tar.gz | grep -q "signed by the stub" && cmp -s $d/SHA256SUMS $signed/SHA256SUMS'
 rm $d/SHA256SUMS.sig; SEMPERE_MAINTAINER_USER=nobody run scripts/release-publish.sh 1.2.3
 check "publish refuses a maintainer folder that is not the maintainer account's" '[[ $rc != 0 && $out == *"must belong to the maintainer account"* && ! -f $d/SHA256SUMS.sig ]]'

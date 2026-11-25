@@ -85,6 +85,12 @@ final class SyncRunCancel: @unchecked Sendable {
 @MainActor
 @Observable
 public final class SyncSession {
+    /// A failed run the bar does not show.
+    public struct QuietFailure: Equatable, Sendable {
+        public var message: String
+        public var at: Date
+    }
+
     /// The target's id (a `SyncTarget`, which a WebDAV location also is).
     public let locationID: UUID
     /// The vault (its `vaultId`), when known.
@@ -105,6 +111,17 @@ public final class SyncSession {
     public private(set) var problems: [WebDAVSyncProblem] = []
     /// The last run's error message, when it threw.
     private(set) var failure: String?
+    /// An iCloud (CloudKit) target's failure that is not shown in the bar (it may heal by itself, design §4): Vault Details
+    /// lists it with its time; the 24-hour stall rule (`cloudTracker`) turns one that never clears into a problem.
+    public private(set) var quietFailure: QuietFailure?
+    /// What a CloudKit run noticed that its report does not say (`CloudRunNotes`); set by the model for those targets.
+    var cloudNotes: CloudRunNotes?
+    /// Seeded on first use from what the registry persists (`lastSuccess`, `added`), so a relaunch does not restart the 24 hour count.
+    private var cloudTrackerStore: CloudStatusTracker?
+    private var cloudTracker: CloudStatusTracker {
+        get { cloudTrackerStore ?? CloudStatusTracker(lastSuccess: lastSuccess, added: added == .distantPast ? nil : added) }
+        set { cloudTrackerStore = newValue }
+    }
     /// Files of the local copy the target has not confirmed (recounted after each run and write).
     private(set) var unconfirmed = 0
     /// When a run last finished without problems.
@@ -404,10 +421,18 @@ public final class SyncSession {
                 // P4): no problem shown, no backoff; the next run continues. Only a complete run is a last success.
                 // An upload-only run keeps a device list another device changed (`keepServerChanges`):
                 // it arrives at the next unlocked run, so it is no problem then (`SyncRunAssessment`).
-                let assessed = SyncRunAssessment(report: report, twoWay: mode == .twoWay, targetRoots: targetRoots)
+                var assessed = SyncRunAssessment(report: report, twoWay: mode == .twoWay, targetRoots: targetRoots)
+                if kind == .cloudkit, cloudNotes?.takeStorageFull() == true {
+                    // The account is full: uploads stopped for the run, downloads went on (design §4).
+                    assessed.problems = [.cloud(.storageFull)]
+                }
                 continuing = assessed.cutShort
                 problems = assessed.problems
                 failure = nil
+                quietFailure = nil
+                if kind == .cloudkit {
+                    if assessed.isSuccess { cloudTracker.succeeded(at: now()) }
+                }
                 waitingForDeviceUnlock = false
                 arriving = report.arriving.count
                 let ok = assessed.problems.isEmpty
@@ -435,8 +460,12 @@ public final class SyncSession {
             } catch {
                 waitingForDeviceUnlock = false
                 continuing = false
-                problems = [WebDAVSyncProblem.from(error: error)]
                 failure = WebDAVErrorText.message(error)
+                if kind == .cloudkit {
+                    problems = cloudProblems(for: error)
+                } else {
+                    problems = [WebDAVSyncProblem.from(error: error)]
+                }
                 schedule.finished(at: now(), success: false)
                 await recount()
                 return nil
@@ -444,6 +473,24 @@ public final class SyncSession {
         }
         running = task
         return await task.value
+    }
+
+    /// An iCloud (CloudKit) target's failed run (design §4): offline, a definite problem, or quiet (listed in Vault Details, and a
+    /// problem only when no run succeeded for 24 hours with the network up).
+    private func cloudProblems(for error: Error) -> [WebDAVSyncProblem] {
+        let at = now()
+        cloudTracker.failed(error, networkUp: !networkDown, at: at)
+        switch cloudTracker.status(at: at) {
+        case .problem(let p):
+            quietFailure = nil
+            return [.cloud(p)]
+        case .offline:
+            quietFailure = nil
+            return [.offline]
+        case .ok, .quiet, .throttled:
+            quietFailure = QuietFailure(message: failure ?? "", at: at)
+            return []
+        }
     }
 
     /// A report of a run that stopped early after it moved files, with those stops left out of its errors; nil for any
@@ -523,7 +570,7 @@ public final class SyncSession {
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
                    staged: staged, networkDown: networkDown && kind.usesNetwork, continuing: continuing,
                    providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
-                   targetName: targetName, added: added == .distantPast ? nil : added, now: now())
+                   targetName: targetName, added: added == .distantPast ? nil : added, now: now(), cloudKit: kind == .cloudkit)
     }
 
     /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
@@ -559,9 +606,11 @@ public struct SyncStatus: Equatable, Sendable {
     public var unconfirmed: Int
     public var arriving: Int
     var twoWay: Bool
-    var lastSuccess: Date?
+    public var lastSuccess: Date?
     /// The target is a folder (iCloud Drive, any folder), not a server: the wording says so.
     public var folder = false
+    /// The target is iCloud (CloudKit): the wording says so, and there is no "waiting for iCloud to upload" (design §9).
+    public var cloudKit = false
     /// The last run waited for the device's first unlock (its password could not be read yet).
     var deviceLocked = false
     /// Files from other devices staged for the next unlock (`LockedStaging`).
@@ -592,7 +641,8 @@ public struct SyncStatus: Equatable, Sendable {
                 folder: Bool = false, deviceLocked: Bool = false, staged: Int = 0, networkDown: Bool = false,
                 continuing: Bool = false, providerPending: Int = 0, viaICloud: Bool = false,
                 providerError: ProviderUploads.State? = nil, targetName: String = "", added: Date? = nil,
-                now: Date = Date()) {
+                now: Date = Date(), cloudKit: Bool = false) {
+        self.cloudKit = cloudKit
         self.syncing = syncing
         self.problems = problems
         self.unconfirmed = unconfirmed
@@ -664,4 +714,18 @@ public struct SyncStatus: Equatable, Sendable {
         guard age >= Self.staleAfter else { return nil }
         return Int(age / (24 * 60 * 60))
     }
+}
+
+/// What a CloudKit target's run saw that its report does not carry (the model's run closure writes, the session reads after
+/// the run): the account's storage was full.
+public final class CloudRunNotes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storageFull = false
+
+    public init() {}
+
+    public func noteStorageFull() { lock.lock(); storageFull = true; lock.unlock() }
+
+    /// True once after `noteStorageFull`.
+    func takeStorageFull() -> Bool { lock.lock(); defer { lock.unlock() }; let v = storageFull; storageFull = false; return v }
 }

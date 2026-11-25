@@ -771,6 +771,27 @@ final class CloudRecordRemoteTests: TempDirTestCase {
         XCTAssertEqual(full.status(at: t0.addingTimeInterval(11)), .ok)
     }
 
+    /// A relaunch (a new tracker) counts from what the registry persisted, not from the first failure it sees; and a failure that is
+    /// not an offline one ends "offline".
+    func testTheDayCountSurvivesARelaunchAndOfflineEndsWithTheNextFailure() {
+        let t0 = Date(timeIntervalSince1970: 1_900_000_000)
+        let quiet = CloudRecordError.store(CloudStoreError(.internalError))
+        var relaunched = CloudStatusTracker(lastSuccess: t0)
+        relaunched.failed(quiet, networkUp: true, at: t0.addingTimeInterval(25 * 3600))
+        XCTAssertEqual(relaunched.status(at: t0.addingTimeInterval(25 * 3600)), .problem(.notAccepted(since: t0)), "a day without a success, as persisted")
+        var fresh = CloudStatusTracker(lastSuccess: nil, added: t0)
+        fresh.failed(quiet, networkUp: true, at: t0.addingTimeInterval(26 * 3600))
+        XCTAssertEqual(fresh.status(at: t0.addingTimeInterval(26 * 3600)), .problem(.notAccepted(since: t0)), "a target that never synced counts from when it was added")
+        var recent = CloudStatusTracker(lastSuccess: t0)
+        recent.failed(quiet, networkUp: true, at: t0.addingTimeInterval(3600))
+        XCTAssertEqual(recent.status(at: t0.addingTimeInterval(3600)), .ok)
+        var t = CloudStatusTracker()
+        t.failed(CloudRecordError.store(CloudStoreError(.networkUnavailable)), networkUp: false, at: t0)
+        XCTAssertEqual(t.status(at: t0), .offline)
+        t.failed(quiet, networkUp: false, at: t0.addingTimeInterval(60))
+        XCTAssertEqual(t.status(at: t0.addingTimeInterval(60)), .ok, "no longer offline once another kind of failure came")
+    }
+
     // MARK: Collections
 
     func testCollectionsExistWhileAFileIsBelowThemOrThisDeviceMadeThem() throws {

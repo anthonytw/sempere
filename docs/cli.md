@@ -865,6 +865,31 @@ a unique id prefix (4 characters or more), its name, path or URL.
   copies files out, never over a file there (`" 2"`, `" 3"`… added); they stay. `delete PATH...` removes
   them for good. A path held by several targets' quarantines needs `--target`.
 
+#### CloudKit and the CLI bundle
+
+`store target add VAULT --cloudkit` and `store sync` use iCloud (CloudKit) only in the **released macOS build**
+(docs/design/1.4-cloudkit.md §6.5). CloudKit is a restricted entitlement, and macOS honors it only for a program that runs
+from a bundle carrying a provisioning profile, so the macOS release ships `sempere` as `sempere.app/Contents/MacOS/sempere`
+(`LSUIElement`, no UI; the bundle also holds `Resources/fonts`) and Homebrew links `bin/sempere` to that executable. The
+bundle is `scripts/cli-bundle.sh`; the maintainer signs it with their Developer ID, the CLI App ID's profile and
+`packaging/cli/entitlements.plist` (iCloud container, CloudKit, `com.apple.developer.icloud-container-environment`
+`Production`; no sandbox, no push), notarizes and staples it (`scripts/release-sign-macos.sh`, docs/releasing.md). It runs
+from a symlink in `bin/` as it does directly.
+
+- Where it does not work, `--cloudkit` says so before anything is contacted and adds nothing (exit 1): a `swift build`
+  binary (no profile, no entitlement), Linux, and a Mac with no iCloud account (`Sign in to iCloud in System Settings first`).
+  Everything else in the CLI is the same in a bundle and out of it.
+- A Developer ID build talks to the container's **production** environment. A development-signed one (a test or the
+  maintainer's dry run, `release-sign-macos.sh --dev`) talks to **development**, which holds only test data; never sync a real
+  vault from one.
+- Testing it for real: `scripts/app.sh test-cloudkit` signs a development bundle, creates two stores with separate state
+  folders (two devices), joins one to the other through the zone (`device init`, `devices approve`, `device confirm`) and runs
+  both through convergence, a conflict, a delete, a 70 MiB attachment and a deleted zone (docs/io.md "Testing it against the
+  real database").
+- Deleting a vault's iCloud data is not a CLI command: `target remove` forgets the target on this machine and leaves the zone.
+  A zone another device or the user deleted makes the next run fail with "this vault's iCloud data is gone; nothing here was
+  deleted"; removing and adding the target uploads the vault again.
+
 Each vault has its own lock (`<store>/.locks/<vault id>.write`, `flock(2)`): the store takes it to install
 or remove a vault, and it is the one lock every writer of that vault on the device shares
 ([device-first sync](design/device-first-sync.md) §4), so writers of two vaults never wait for each other.
@@ -3469,6 +3494,28 @@ one, else `folder`), or on failure `{url, reachable: false, problem, message}` w
 the message is the error on one line, control characters escaped. Names from the server are escaped and shortened. Exit 0
 when at least one vault was found, 1 otherwise (no vault, or the server could
 not be used), 2 usage.
+
+```
+sempere cloudkit list [--store DIR] [--json]
+sempere cloudkit open VAULT [--name NAME] [--store DIR] [--json]
+sempere cloudkit delete VAULT --yes [--force] [--store DIR]
+```
+
+The vaults in the iCloud (CloudKit) account signed in on this Mac: what the app's Open Vault ▸ From iCloud, its suggestion
+on a device that lacks a target, and Delete from iCloud do (docs/design/1.4-cloudkit.md §8, §9). They need the released,
+signed `sempere` (as `store target add --cloudkit`); any other build says so and exits 1.
+`list` asks for the account's `sempere-<vault id>` zones and reads each vault's label from its `vault.json` record (an
+intact, inline record that is that vault's own; else the name is `Vault` and the first eight digits of the id): nothing is
+downloaded. Text: `ID  NAME  IN STORE` (`no`, `yes`, or `synced` when the vault here has an iCloud target). `--json`: an
+array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget}`. `open` takes a vault id or a unique prefix: it downloads the
+vault whole into a temporary folder (a keyless run, which uploads nothing), checks it as `store import` does, copies it into the
+store (`--name` or its label) and adds the iCloud target, whose first sync finds nothing to do; a vault the store holds already
+only gets the target (a label the store cannot use as a name, with `/` or `:`, is dropped: pass `--name`; a copy this command made is removed again if its target cannot be added). Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
+and the iCloud targets of that vault in this store (the zone first, so a failure leaves the targets in place), nothing else: refused (exit 1) when
+the vault here has no other target, and when the vault is not in this store at all, unless `--force`; without `--yes` it deletes nothing (exit 2). VAULT is
+at least the first eight hex digits of the id (`list`); a shorter or non-hex argument is exit 2. Other devices' iCloud targets then report that the vault's iCloud
+data is gone (Upload Again puts it back). Recovery from "zone gone" or "another Apple Account" is `store target remove` then
+`store target add --cloudkit`. `store info` shows an iCloud target's files and bytes at its last run.
 
 **`--jobs N`** (1 to 16, default 6) lists the note folders and their `att/`,
 downloads the files the vault lacks and uploads the files the server lacks,

@@ -180,6 +180,15 @@ extension CloudKitTargetProblem {
             return SyncTargetProblem.notAStoreVault.text
         case .duplicate:
             return String(localized: "This vault already syncs with iCloud.")
+        case .noOtherCopy:
+            return String(localized: "iCloud holds the only copy of this vault besides this device. Add a folder or WebDAV target, or set up a backup, before deleting it from iCloud.",
+                          comment: "Vault Details: Delete from iCloud refused")
+        case .otherAccount:
+            return CloudProblem.otherAccount.text
+        case .notACloudKitTarget:
+            return String(localized: "That is not an iCloud (CloudKit) target of this vault.")
+        case .noSuchVault:
+            return String(localized: "This vault is no longer in your iCloud.", comment: "Open from iCloud: the vault's data is gone")
         case .other(let message):
             return SyncTargetProblem.other(message).text
         }

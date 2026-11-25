@@ -157,6 +157,9 @@ public struct CloudRecordRemote: SyncRemote {
     public func announce(_ change: RemoteChange = .unknown) { core.yield(change) }
 
     /// The user chose to upload again after deleting the zone in iCloud settings: the next `createBase` may make it.
+    /// The account said it is full during this run (`quotaExceeded`): uploads stopped, downloads went on (design §4).
+    public var storageWasFull: Bool { core.locked { core.quotaFull } }
+
     public func acknowledgeDeletedZone() { core.locked { core.userDeletedZone = false } }
 
     // MARK: Plumbing

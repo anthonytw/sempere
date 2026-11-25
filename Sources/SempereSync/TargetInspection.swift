@@ -78,6 +78,10 @@ public struct TargetDetails: Codable, Hashable, Sendable, Identifiable {
     public var folderBytes: Int64?
     /// Files of that copy its provider has not downloaded (`.<name>.icloud` stand-ins), when measured.
     public var folderNotDownloaded: Int?
+    /// An iCloud (CloudKit) target: the live files its zone held at the last run (the metadata mirror) and their bytes; nil
+    /// for other kinds and before the first run.
+    public var cloudFiles: Int?
+    public var cloudBytes: Int64?
 
     public var id: UUID { target.id }
 }
@@ -387,13 +391,15 @@ extension VaultStore {
         return try registry.load(entry.vaultId).map { t in
             let stateURL = registry.stateURL(t.id, of: entry.vaultId)
             var measured: (bytes: Int64, notDownloaded: Int)?
+            let cloud = t.kind == .cloudkit ? CloudVaults.mirrorSummary(stateURL: stateURL) : nil
             if measureFolders, t.kind == .folder, let url = folder(t) { measured = TargetInspection.measureFolder(url) }
             return TargetDetails(target: t, syncedFiles: TargetInspection.syncedFiles(stateURL: stateURL),
                                  devices: TargetInspection.devices(stateURL: stateURL, thisDevice: thisDevice, names: names),
                                  quarantined: quarantine(t.id, of: entry.vaultId).list(),
                                  staged: LockedStaging(targetState: stateURL).pending(vaultFolder: entry.url).count,
                                  stateBytes: TargetInspection.bytes(of: registry.stateDirectory(t.id, of: entry.vaultId)),
-                                 folderBytes: measured?.bytes, folderNotDownloaded: measured?.notDownloaded)
+                                 folderBytes: measured?.bytes, folderNotDownloaded: measured?.notDownloaded,
+                                 cloudFiles: cloud?.files, cloudBytes: cloud?.bytes)
         }
     }
 

@@ -54,6 +54,9 @@ your use (no telemetry).
   notes cannot be opened.** Not by you, not by the developer, not by anyone.
   There is no reset, no recovery service and no back door. Print the recovery
   kit when you create a vault and keep it somewhere apart from your devices.
+- **If your vault syncs only through iCloud (CloudKit), keep a backup too.** CloudKit holds records, not files, so the
+  recovery steps (with the kit and `age`, which read files) cannot read it. A backup or a copy in a folder is a plain copy
+  of the vault they can read; Sync Targets says so under a vault whose only copy besides the device is iCloud.
 - **Only the vault's home device adds devices.** The device that created the
   vault approves a new device after you compare, on it, six words the new device
   shows with the six on its own screen and tap They Match (or type the words, or

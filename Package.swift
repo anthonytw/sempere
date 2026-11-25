@@ -29,7 +29,7 @@ let appleOnlyTargets: [Target] = [
     // The CloudKit adapter (`CloudKitDatabase`, a `CloudRecordStore`): the only target besides `SempereWebDAV` allowed
     // network code (CLAUDE.md), named in `NETWORK_ALLOWED` of `scripts/release-check.sh`. Whole file under `#if canImport(CloudKit)`.
     .target(name: "SempereCloudKit", dependencies: ["SempereSync", "Sempere", .product(name: "Crypto", package: "swift-crypto")]),
-    .testTarget(name: "SempereCloudKitTests", dependencies: ["SempereCloudKit", "SempereSync"]),
+    .testTarget(name: "SempereCloudKitTests", dependencies: ["SempereCloudKit", "SempereSync", "TempDirSupport"]),
 ]
 let cloudKitDependencies: [Target.Dependency] = [.target(name: "SempereCloudKit", condition: .when(platforms: [.macOS]))]
 let defaultLocalization: LanguageTag? = "en"

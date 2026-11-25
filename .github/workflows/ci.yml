@@ -178,6 +178,7 @@ jobs:
           scripts/check-ui-tests.sh
           scripts/test-mirror-gitea.sh
           scripts/test-release-flow.sh
+          scripts/test-profile-check.sh
           scripts/test-release-sweep-tree.sh
           python3 -I scripts/ci-gate-decision.py --self-test
           python3 -I scripts/test-runner.py --self-test
