@@ -29,6 +29,14 @@ public struct CloudVaultListing: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// Why a vault could not be copied out of iCloud.
+public enum CloudVaultsError: Error, Equatable, LocalizedError {
+    /// The zone's `vault.json` is another vault's (or unreadable): nothing was imported.
+    case zoneHoldsAnotherVault
+
+    public var errorDescription: String? { "this iCloud zone does not hold the vault its name says; nothing was copied" }
+}
+
 public enum CloudVaults {
     /// The most zones looked at (an account with more has some other use for its database).
     public static let maxZones = 500
@@ -90,6 +98,11 @@ public enum CloudVaults {
                                 expectedUser: String? = nil, options: SyncOptions = SyncOptions()) throws -> SyncReport {
         let remote = CloudTargetRun.remote(store: store, vaultId: vaultId, stateURL: stateURL, expectedUser: expectedUser)
         try FileIO.createPrivateDirectory(folder)
-        return try CloudTargetRun.run(vaultFolder: folder, remote: remote, vault: nil, stateURL: stateURL, twoWay: true, options: options)
+        let report = try CloudTargetRun.run(vaultFolder: folder, remote: remote, vault: nil, stateURL: stateURL, twoWay: true, options: options)
+        // The engine's same-vault check skips an empty folder: a zone that holds another vault's files (a hostile or confused
+        // account) must not be imported, or given a target, as this one.
+        guard report.errors.isEmpty, report.stoppedEarly == nil else { return report }
+        guard (try? Vault.open(at: folder).vaultId) == vaultId else { throw CloudVaultsError.zoneHoldsAnotherVault }
+        return report
     }
 }

@@ -93,6 +93,17 @@ final class CLIStoreTargetTests: CLITestCase {
             XCTAssertEqual(r.status, 1, "\(args): \(r.err)")
             XCTAssertTrue(r.err.contains("iCloud (CloudKit)"), r.err)
         }
+        // An empty, short or non-hex vault argument is a usage error before anything else: it would match every vault.
+        for bad in ["", "0b0f", "not-a-vault-id"] {
+            for verb in [["cloudkit", "open", bad], ["cloudkit", "delete", bad, "--yes"]] {
+                let r = try cli(verb + ["--store", store])
+                #if os(macOS)
+                XCTAssertEqual(r.status, 2, "\(verb): \(r.err)")
+                #else
+                XCTAssertEqual(r.status, 1, "\(verb): \(r.err)")   // a build with no CloudKit says so first
+                #endif
+            }
+        }
         let help = try cli(["cloudkit", "--help"])
         XCTAssertEqual(help.status, 0)
         for word in ["list", "open", "delete"] { XCTAssertTrue(help.out.contains(word), help.out) }

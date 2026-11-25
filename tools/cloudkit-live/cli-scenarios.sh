@@ -41,6 +41,8 @@ sa create Live --recovery-out "$work/recovery.key" >/dev/null || { bad "create";
 VA=$(ls -d "$work"/storeA/*/Live.sempere)
 id=$(basename "$(dirname "$VA")")
 zone=sempere-$(echo "$id" | tr 'A-Z' 'a-z')
+# The marker that lets `run.sh cleanup` find this vault's zone if the trap below never runs (it is the only kind of `sempere-` zone cleanup deletes).
+a vault label "cloudkit-live-test Live" --vault "$VA" >/dev/null || { bad "vault label"; exit 1; }
 sa target add Live --cloudkit >/dev/null || { bad "target add on A"; exit 1; }
 a notes new "First" --vault "$VA" >/dev/null
 a notes new "Second" --vault "$VA" >/dev/null

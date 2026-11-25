@@ -116,7 +116,12 @@ public final class SyncSession {
     public private(set) var quietFailure: QuietFailure?
     /// What a CloudKit run noticed that its report does not say (`CloudRunNotes`); set by the model for those targets.
     var cloudNotes: CloudRunNotes?
-    private var cloudTracker = CloudStatusTracker()
+    /// Seeded on first use from what the registry persists (`lastSuccess`, `added`), so a relaunch does not restart the 24 hour count.
+    private var cloudTrackerStore: CloudStatusTracker?
+    private var cloudTracker: CloudStatusTracker {
+        get { cloudTrackerStore ?? CloudStatusTracker(lastSuccess: lastSuccess, added: added == .distantPast ? nil : added) }
+        set { cloudTrackerStore = newValue }
+    }
     /// Files of the local copy the target has not confirmed (recounted after each run and write).
     private(set) var unconfirmed = 0
     /// When a run last finished without problems.

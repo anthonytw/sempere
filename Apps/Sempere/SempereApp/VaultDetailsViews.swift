@@ -119,7 +119,7 @@ private struct TargetDetailsSection: View {
                     }
                     .accessibilityIdentifier("vaultDetailsQuietFailure")
                 }
-                if model.hasCopyBesidesICloud(vaultID) || model.backupRecord()?.bookmark != nil {
+                if model.hasCopyBesidesICloud(vaultID) {
                     Button("Delete from iCloud…", role: .destructive) { deleting = true }
                         .accessibilityIdentifier("vaultDetailsDeleteFromICloud")
                 }

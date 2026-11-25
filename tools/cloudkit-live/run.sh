@@ -8,7 +8,9 @@
 #   tools/cloudkit-live/run.sh cli                  the two-store CLI scenarios (cli-scenarios.sh)
 #   tools/cloudkit-live/run.sh catalyst|simulator   the adapter scenarios as a Mac Catalyst process / in a clone of the sempere-cloudkit simulator
 #   tools/cloudkit-live/run.sh cross                Mac Catalyst and the simulator, one zone: each writes, the other reads
-#   tools/cloudkit-live/run.sh cleanup [PREFIX...]  delete the test zones (default: test-); `cleanup sempere-` also the vaults' zones
+#   tools/cloudkit-live/run.sh cleanup [PREFIX...]  delete the test zones (default: test-) and the vault zones of the suite's own test vaults
+#                                                   (their vault.json label starts with `cloudkit-live-test`; no other `sempere-` zone is ever deleted:
+#                                                   they may be your development builds' vaults)
 #
 # What it needs (it says which is missing and exits 77, "skipped", when the test account is not set up on this Mac):
 #   * ~/.config/sempere/release.env with SEMPERE_TEAM_ID (never committed; the team id appears nowhere in this repository);
@@ -98,6 +100,14 @@ sign_dev() {
 }
 
 build_driver() {
+  build_driver_built
+  [[ -n ${account_checked:-} ]] && return 0
+  account_checked=1
+  local who; who=$("$drv" account 2>&1) || skip "cloudkit-live could not read the iCloud account: $who"
+  [[ $who == available* ]] || skip "no usable iCloud account on this Mac (cloudkit-live account: ${who:-no answer}); sign in to iCloud in System Settings"
+}
+
+build_driver_built() {
   [[ -x $drv && $drv -nt tools/cloudkit-live/Sources/cloudkit-live/main.swift && -z ${SEMPERE_CKL_REBUILD:-} ]] && return 0
   echo "== build: the test driver"
   (cd tools/cloudkit-live && swift build -c release 2>&1 | tail -3) || die "the driver did not build"
@@ -291,7 +301,11 @@ do_cli() {
   echo "== two stores through the CLI bundle (real database, development)"
   rm -rf "$work/cli"; CKL=$drv SEMPERE=$cli "$here/cli-scenarios.sh" "$work/cli"
 }
-do_cleanup() { build_driver; "$drv" cleanup "$@"; }
+do_cleanup() {
+  build_driver; "$drv" cleanup "$@" || return 1
+  # Only the vault zones the suite made itself (a marker in the vault.json label), never a development build's.
+  "$drv" cleanup-vaults
+}
 
 case $sub in
   schema) do_schema ;;

@@ -32,6 +32,12 @@ public enum CloudKitTargetProblem: Error, Equatable, Sendable {
     case duplicate
     /// The account's iCloud holds no such vault (its zone is gone).
     case noSuchVault
+    /// Nothing but iCloud holds a copy of the vault (no other target, no backup): deleting its zone would delete the only one.
+    case noOtherCopy
+    /// The target was made with another Apple Account than the one signed in now: its zone is not this account's.
+    case otherAccount
+    /// Not a CloudKit target of this vault.
+    case notACloudKitTarget
     case other(String)
 }
 

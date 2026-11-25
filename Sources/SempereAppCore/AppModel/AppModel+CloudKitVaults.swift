@@ -105,29 +105,65 @@ extension AppModelCore {
 
     // MARK: Recovery and deleting (design §4, §9)
 
-    /// "Upload Again" (a zone that is gone or was deleted in iCloud settings) and "Use This Account" (another Apple Account):
-    /// the target is removed and made again for the account signed in now. The first run is a union into that account's zone
-    /// (a new one when the old is gone); nothing on this device is deleted.
+    /// "Upload Again" (a zone that is gone or was deleted in iCloud settings) and "Use This Account" (another Apple Account): the
+    /// target is made again for the account signed in now, **in place**: its account is replaced and its mirror and sync state
+    /// are reset (the first run is a union into that account's zone, a new one when the old is gone, and deletes nothing), while its
+    /// quarantine and the files staged for the next unlock stay. A failure before the change leaves the target as it was.
     @discardableResult
     public func restartCloudKitTarget(_ targetID: UUID, of vaultID: UUID) async throws -> SyncTarget {
-        try await removeSyncTarget(targetID, of: vaultID)
-        return try await addCloudKitTarget(to: vaultID)
-    }
-
-    /// "Delete from iCloud…": removes this vault's CloudKit target and deletes its zone with everything in it; other devices
-    /// stop syncing through it. Only for a vault that has another target (the caller checks `hasOtherCopy`, as the sheet does).
-    public func deleteFromICloud(_ targetID: UUID, of vaultID: UUID) async throws {
         guard let cloud = services.cloudKit, cloud.isAvailable() else { throw CloudKitTargetProblem.unavailable }
-        let zone = CloudTargetRun.zone(vaultId: vaultID)
-        try await removeSyncTarget(targetID, of: vaultID)
-        do { try await offMain { try cloud.makeStore().deleteZone(zone) } } catch {
+        guard syncStore.targets.targets(of: vaultID).contains(where: { $0.id == targetID && $0.kind == .cloudkit }) else {
+            throw CloudKitTargetProblem.notACloudKitTarget
+        }
+        let account = try await offMain { try cloud.makeStore().account() }
+        guard account.status == .available else { throw CloudKitTargetProblem.account(account.status) }
+        await syncCoordinator.stop(targetID)?.value
+        let targets = syncStore.targets
+        do {
+            try targets.update(targetID, of: vaultID) { $0.cloudUser = account.userHash; $0.lastSuccess = nil }
+        } catch {
+            syncTargetsChanged()
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
+        targets.resetState(targetID, of: vaultID)
+        try? FileManager.default.removeItem(at: targets.stateDirectory(targetID, of: vaultID).appendingPathComponent("cloudkit", isDirectory: true))
+        syncTargetsChanged()
+        syncCoordinator.sessions[targetID]?.demand()
+        guard let made = targets.targets(of: vaultID).first(where: { $0.id == targetID }) else { throw CloudKitTargetProblem.notACloudKitTarget }
+        return made
     }
 
-    /// True when the vault has a copy that is not CloudKit's: another target. (Backups are the sheet's note, §7.)
+    /// "Delete from iCloud…": deletes this vault's zone with everything in it (other devices stop syncing through it), then removes
+    /// the CloudKit target. Refused unless the target is this vault's CloudKit target, it was made with the account signed in now
+    /// (another account's zone is not deleted by a switch), and another copy exists: another target, or this vault's own backup. The
+    /// zone goes first, so a failure (offline, say) leaves the target and the retry in place.
+    public func deleteFromICloud(_ targetID: UUID, of vaultID: UUID) async throws {
+        guard let cloud = services.cloudKit, cloud.isAvailable() else { throw CloudKitTargetProblem.unavailable }
+        guard let target = syncStore.targets.targets(of: vaultID).first(where: { $0.id == targetID && $0.kind == .cloudkit }) else {
+            throw CloudKitTargetProblem.notACloudKitTarget
+        }
+        guard hasCopyBesidesICloud(vaultID) else { throw CloudKitTargetProblem.noOtherCopy }
+        let zone = CloudTargetRun.zone(vaultId: vaultID)
+        do {
+            try await offMain {
+                let store = cloud.makeStore()
+                let account = try store.account()
+                guard account.status == .available else { throw CloudKitTargetProblem.account(account.status) }
+                if let mine = target.cloudUser, account.userHash != mine { throw CloudKitTargetProblem.otherAccount }
+                try store.deleteZone(zone)
+            }
+        } catch let e as CloudKitTargetProblem {
+            throw e
+        } catch {
+            throw CloudKitTargetProblem.other(services.describeError(error))
+        }
+        try await removeSyncTarget(targetID, of: vaultID)
+    }
+
+    /// True when the vault has a copy that is not CloudKit's: another target, or this vault's own backup folder (not the open
+    /// vault's: Vault Details shows vaults that are not open).
     public func hasCopyBesidesICloud(_ vaultID: UUID) -> Bool {
-        syncStore.targets.targets(of: vaultID).contains { $0.kind != .cloudkit }
+        syncStore.targets.targets(of: vaultID).contains { $0.kind != .cloudkit } || backupStore.record(for: vaultID).bookmark != nil
     }
 }
 

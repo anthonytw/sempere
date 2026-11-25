@@ -501,8 +501,20 @@ case "account":
     print("\(a.status.rawValue) \(a.userHash ?? "-")")
 case "zones":
     for z in try zonesWith(args) { print(z) }
+case "cleanup-vaults":
+    // Vault zones made by this suite's CLI scenarios: their vault.json label starts with the marker. Any other `sempere-` zone is a
+    // vault of someone's development build and is never touched.
+    let marker = "cloudkit-live-test"
+    let mine = try CloudVaults.list(store: CloudKitDatabase()).filter { $0.named && $0.name.hasPrefix(marker) }.map(\.zone)
+    let n = deleteZones(mine)
+    print("deleted \(n) of \(mine.count) test vault zones (label starting \(marker))")
+    exit(n == mine.count ? 0 : 1)
 case "cleanup":
     let prefixes = args.isEmpty ? ["test-"] : args
+    if let bare = prefixes.first(where: { "sempere-".hasPrefix($0) || $0.hasPrefix("sempere-") }) {
+        print("refused: \"\(bare)\" would delete vault zones that are not this suite's; `cleanup-vaults` deletes the suite's own test vaults")
+        exit(2)
+    }
     let found = try zonesWith(prefixes)
     let n = deleteZones(found)
     print("deleted \(n) of \(found.count) zones (prefixes: \(prefixes.joined(separator: ", ")))")

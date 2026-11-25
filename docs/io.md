@@ -1368,8 +1368,7 @@ account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, i
    uploads again).
 5. **Cleanup.** The suite's zones go through the adapter's own `deleteZone`: `cktool` cannot delete private-database zones
    (design §13.7; `reset-schema` deletes development data but also the schema). Zones of earlier runs that were killed:
-   `scripts/app.sh test-cloudkit cleanup test- sempere-` (every `test-*` and vault zone of the test account's development
-   database; never run it against an account with real vaults: development holds only test data).
+   `scripts/app.sh test-cloudkit cleanup` (every `test-*` zone and the vault zones of the suite's own test vaults, whose label starts with `cloudkit-live-test`; no other `sempere-` zone is deleted: a development build's vaults live there too).
 
 What it needs on the seat (nothing of it is committed; the team id appears nowhere in the repository): `~/.config/sempere/release.env`
 with `SEMPERE_TEAM_ID`; a development profile of the CLI App ID that lists this Mac (`~/.config/sempere/profiles/`, or

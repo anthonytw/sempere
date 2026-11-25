@@ -1,6 +1,7 @@
 #if canImport(CloudKit)
 import CloudKit
 import Foundation
+import TempDirSupport
 import XCTest
 @testable import SempereCloudKit
 @testable import SempereSync
@@ -42,7 +43,7 @@ final class CloudKitSchemaTests: XCTestCase {
     private func written(_ kind: CloudRecordKind) throws -> [String: Field] {
         let zone = CKRecordZone.ID(zoneName: "z", ownerName: CKCurrentUserDefaultName)
         let r = CKRecord(recordType: kind.rawValue, recordID: CKRecord.ID(recordName: "x", zoneID: zone))
-        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("ck-schema-" + UUID().uuidString)
+        let scratch = TestTemp.root.appendingPathComponent("ck-schema-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let fields = CloudFields(schema: 1, path: "a/b", sha256: Data(repeating: 1, count: 32), size: 3, bytes: Data([1, 2, 3]), parts: 2, tomb: 1)
         try CloudKitDatabase.fill(r, CloudSave(name: "x", kind: kind, fields: fields, asset: .data(Data([1, 2, 3])), precondition: .none), scratch: scratch)

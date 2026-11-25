@@ -119,8 +119,23 @@ extension AppModelSuites {
             a.model.cloudKitAccountChanged()
             // "Use This Account": the target is made again for the account signed in now, and the vault goes into its zone.
             let old = try #require(a.model.openVaultTargets.first)
+            // What a sync refused and what waits for the unlock belong to the target and stay (nothing on this device is deleted).
+            let targets = a.model.syncStore.targets
+            let quarantined = targets.quarantineDirectory(old.id, of: a.vaultID).appendingPathComponent("notes/x/file.age")
+            let staged = targets.stateDirectory(old.id, of: a.vaultID).appendingPathComponent("incoming/notes/y/staged.age")
+            for url in [quarantined, staged] {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data("kept".utf8).write(to: url)
+            }
+            // Nothing signed in: the target is left as it was, remedy and all.
+            db.setAccount(CloudAccount(status: .noAccount))
+            await #expect(throws: CloudKitTargetProblem.account(.noAccount)) { try await a.model.restartCloudKitTarget(old.id, of: a.vaultID) }
+            #expect(a.model.openVaultTargets == [old])
+            db.setAccount(CloudAccount(status: .available, userHash: "second"))
             let fresh = try await a.model.restartCloudKitTarget(old.id, of: a.vaultID)
-            #expect(fresh.id != old.id && fresh.cloudUser == "second")
+            #expect(fresh.id == old.id && fresh.cloudUser == "second", "the same target, made again for this account")
+            #expect(FileManager.default.fileExists(atPath: quarantined.path) && FileManager.default.fileExists(atPath: staged.path))
+            #expect(!FileManager.default.fileExists(atPath: targets.stateURL(old.id, of: a.vaultID).path))
             await a.model.syncAllTargetsNow()
             #expect(try db.zones() == [CloudTargetRun.zone(vaultId: a.vaultID)])
             #expect(a.model.syncSessions.first?.problems.isEmpty == true)
@@ -195,12 +210,29 @@ extension AppModelSuites {
             c.model.cloudKitSuggestionAnswered(for: c.vaultID)
             #expect(await c.model.cloudKitSuggestion(for: c.vaultID) == false, "once")
 
-            // Delete from iCloud: the target and the zone go; the copy on the device stays.
+            // Delete from iCloud: refused while iCloud holds the only copy, for another account's zone and for a target that is no
+            // CloudKit target; a failure leaves the target in place; then the zone and the target go and the copy on the device stays.
             let target = try #require(a.model.openVaultTargets.first)
             #expect(a.model.hasCopyBesidesICloud(a.vaultID) == false)
+            await #expect(throws: CloudKitTargetProblem.noOtherCopy) { try await a.model.deleteFromICloud(target.id, of: a.vaultID) }
+            #expect(try db.zones() == [CloudTargetRun.zone(vaultId: a.vaultID)])
+            let folder = TestTemp.root.appendingPathComponent("other-copy-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let other = try a.model.addFolderTarget(folder, scope: folder, to: a.vaultID)
+            await #expect(throws: CloudKitTargetProblem.notACloudKitTarget) { try await a.model.deleteFromICloud(other.id, of: a.vaultID) }
+            db.setAccount(CloudAccount(status: .available, userHash: "someone-else"))
+            await #expect(throws: CloudKitTargetProblem.otherAccount) { try await a.model.deleteFromICloud(target.id, of: a.vaultID) }
+            #expect(try db.zones() == [CloudTargetRun.zone(vaultId: a.vaultID)], "another account's switch deletes nothing")
+            db.setAccount(CloudAccount(status: .available, userHash: target.cloudUser))
+            let faults = CloudFaults(seed: 3)
+            db.faults = faults
+            faults.setRate(.networkUnavailable, 1)
+            await #expect(throws: (any Error).self) { try await a.model.deleteFromICloud(target.id, of: a.vaultID) }
+            #expect(a.model.openVaultTargets.contains { $0.id == target.id }, "offline: the target and the retry stay")
+            db.faults = nil
             try await a.model.deleteFromICloud(target.id, of: a.vaultID)
             #expect(try db.zones().isEmpty)
-            #expect(a.model.openVaultTargets.isEmpty)
+            #expect(a.model.openVaultTargets.map(\.id) == [other.id])
             #expect(a.model.notes.contains { $0.id == note })
         }
     }

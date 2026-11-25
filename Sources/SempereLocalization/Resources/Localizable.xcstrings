@@ -25357,6 +25357,18 @@
         }
       }
     },
+    "That is not an iCloud (CloudKit) target of this vault." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese no es un destino de iCloud (CloudKit) de esta bóveda."
+          }
+        }
+      }
+    },
     "That is not line %lld of the new key." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -31937,6 +31949,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud lleva un rato sin subir los archivos de esta carpeta. Los cambios se conservan en este dispositivo. iCloud indica: %@"
+          }
+        }
+      }
+    },
+    "iCloud holds the only copy of this vault besides this device. Add a folder or WebDAV target, or set up a backup, before deleting it from iCloud." : {
+      "comment" : "Vault Details: Delete from iCloud refused",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud guarda la única copia de esta bóveda además de este dispositivo. Añade un destino de carpeta o WebDAV, o configura una copia de seguridad, antes de borrarla de iCloud."
           }
         }
       }

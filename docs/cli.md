@@ -3510,9 +3510,10 @@ downloaded. Text: `ID  NAME  IN STORE` (`no`, `yes`, or `synced` when the vault 
 array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget}`. `open` takes a vault id or a unique prefix: it downloads the
 vault whole into a temporary folder (a keyless run, which uploads nothing), checks it as `store import` does, copies it into the
 store (`--name` or its label) and adds the iCloud target, whose first sync finds nothing to do; a vault the store holds already
-only gets the target. Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
-and the iCloud targets of that vault in this store, nothing else: refused (exit 1) when the vault here has no other target,
-unless `--force`; without `--yes` it deletes nothing (exit 2). Other devices' iCloud targets then report that the vault's iCloud
+only gets the target (a label the store cannot use as a name, with `/` or `:`, is dropped: pass `--name`; a copy this command made is removed again if its target cannot be added). Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
+and the iCloud targets of that vault in this store (the zone first, so a failure leaves the targets in place), nothing else: refused (exit 1) when
+the vault here has no other target, and when the vault is not in this store at all, unless `--force`; without `--yes` it deletes nothing (exit 2). VAULT is
+at least the first eight hex digits of the id (`list`); a shorter or non-hex argument is exit 2. Other devices' iCloud targets then report that the vault's iCloud
 data is gone (Upload Again puts it back). Recovery from "zone gone" or "another Apple Account" is `store target remove` then
 `store target add --cloudkit`. `store info` shows an iCloud target's files and bytes at its last run.
 

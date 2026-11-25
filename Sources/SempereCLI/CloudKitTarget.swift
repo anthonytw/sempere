@@ -70,6 +70,17 @@ struct CloudKitCommand: ParsableCommand {
     )
 }
 
+/// The vault a command names, by id or id prefix of at least eight hex digits (an empty or short prefix would match every vault).
+enum CloudKitVaultArgument {
+    static func prefix(_ text: String) throws -> String {
+        let p = text.lowercased()
+        guard p.count >= 8, p.allSatisfy({ $0.isHexDigit || $0 == "-" }) else {
+            throw CLIError.usage("“\(text)” is not a vault id: give at least the first eight hex digits (sempere cloudkit list)")
+        }
+        return p
+    }
+}
+
 struct CloudKitList: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
@@ -123,7 +134,7 @@ struct CloudKitOpen: ParsableCommand {
             temporary folder, checked and copied into the store as a vault of its own (no key is needed), and gets an iCloud \
             target whose first sync finds nothing to do. A vault the store holds already just gets the target (if it has none). \
             Join this device afterwards (`sempere keys` / `sempere device`) to read it. Exit codes: 0, 1 on any failure \
-            (nothing is left in the store).
+            (a copy made by this command is removed again when its iCloud target cannot be added).
             """
     )
 
@@ -138,14 +149,16 @@ struct CloudKitOpen: ParsableCommand {
 
     func run() throws {
         #if canImport(SempereCloudKit)
+        let wanted = try CloudKitVaultArgument.prefix(vault)
         let user = try CloudKitCLI.accountHash()
         let db = CloudKitDatabase()
-        let listed = try CloudVaults.list(store: db).filter { $0.vaultId.hasPrefix(vault.lowercased()) }
+        let listed = try CloudVaults.list(store: db).filter { $0.vaultId.hasPrefix(wanted) }
         guard let found = listed.first else { throw CLIError.failure("no vault in this iCloud account matches “\(vault)”") }
         guard listed.count == 1 else { throw CLIError.usage("“\(vault)” matches \(listed.count) vaults; give more of the id") }
         let id = UUID(uuidString: found.vaultId) ?? UUID()
         let store = location.open()
         let entry: VaultStore.Entry
+        var imported = false
         if let existing = store.entry(id: id) {
             entry = existing
         } else {
@@ -158,10 +171,17 @@ struct CloudKitOpen: ParsableCommand {
             guard report.errors.isEmpty, report.stoppedEarly == nil else {
                 throw CLIError.failure("the download did not finish: \(report.errors.first.map { "\($0.path): \($0.message)" } ?? "stopped early")")
             }
-            entry = try store.importVault(from: folder, options: VaultStore.ImportOptions(name: name ?? (found.named ? found.name : nil)))
+            // The label names the folder; one the store refuses as a name (a `/` or `:`) is not worth failing after a full download for.
+            var chosen = name ?? (found.named ? found.name : nil)
+            if name == nil, let label = chosen, (try? VaultStore.folderName(for: label)) == nil { chosen = nil }
+            entry = try store.importVault(from: folder, options: VaultStore.ImportOptions(name: chosen))
+            imported = true
         }
         if !store.targets.targets(of: entry.vaultId).contains(where: { $0.kind == .cloudkit }) {
-            try store.targets.add(.cloudkit(user: user, name: "iCloud"), to: entry.vaultId)
+            do { try store.targets.add(.cloudkit(user: user, name: "iCloud"), to: entry.vaultId) } catch {
+                if imported { try? store.remove(entry.vaultId) }   // a copy that does not sync is not what was asked for
+                throw error
+            }
         }
         if output.json { return try output.emitJSON(entry) }
         output.info("Copied into the store as “\(entry.name)” (\(entry.vaultId.uuidString.lowercased())) and synced with iCloud")
@@ -198,20 +218,23 @@ struct CloudKitDelete: ParsableCommand {
 
     func run() throws {
         #if canImport(SempereCloudKit)
+        let wanted = try CloudKitVaultArgument.prefix(vault)
         _ = try CloudKitCLI.accountHash()
         let db = CloudKitDatabase()
-        let listed = try CloudVaults.list(store: db).filter { $0.vaultId.hasPrefix(vault.lowercased()) }
+        let listed = try CloudVaults.list(store: db).filter { $0.vaultId.hasPrefix(wanted) }
         guard let found = listed.first else { throw CLIError.failure("no vault in this iCloud account matches “\(vault)”") }
         guard listed.count == 1 else { throw CLIError.usage("“\(vault)” matches \(listed.count) vaults; give more of the id") }
         let id = UUID(uuidString: found.vaultId) ?? UUID()
         let store = location.open()
-        if store.entry(id: id) != nil, !force,
-           !store.targets.targets(of: id).contains(where: { $0.kind != .cloudkit }) {
+        if store.entry(id: id) == nil {
+            if !force { throw CLIError.failure("“\(found.name)” is not in this store, so nothing here is a copy of it: pass --force to delete it from iCloud anyway") }
+        } else if !force, !store.targets.targets(of: id).contains(where: { $0.kind != .cloudkit }) {
             throw CLIError.failure("“\(found.name)” has no other sync target here: add a folder or WebDAV target or a backup first, or pass --force")
         }
         guard yes else { throw CLIError.usage("this deletes “\(found.name)” from iCloud for every device: pass --yes") }
-        for t in store.targets.targets(of: id) where t.kind == .cloudkit { try store.targets.remove(t.id, of: id) }
+        // The zone first: a failure (offline, say) leaves the targets, and the retry, in place.
         try db.deleteZone(found.zone)
+        for t in store.targets.targets(of: id) where t.kind == .cloudkit { try store.targets.remove(t.id, of: id) }
         if output.json { return try output.emitJSON(["deleted": found.vaultId]) }
         output.info("Deleted “\(found.name)” from iCloud")
         #else

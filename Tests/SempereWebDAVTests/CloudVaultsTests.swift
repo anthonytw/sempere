@@ -1,12 +1,13 @@
 import Crypto
 import Foundation
+import TempDirSupport
 import XCTest
 @testable import Sempere
 @testable import SempereSync
 
 /// What `CloudVaults.list` believes of a zone (docs/design/1.4-cloudkit.md §8; untrusted input, format.md §9): a name only from an
 /// intact, inline, schema-current `vault.json` record that is that vault's own.
-final class CloudVaultsTests: XCTestCase {
+final class CloudVaultsTests: TempDirTestCase {
     private let id = "0b0f1f3e-5a3c-4d1e-9f3a-111111111111"
 
     private func manifest(_ label: String?, vaultId: String? = nil) -> Data {
@@ -53,6 +54,18 @@ final class CloudVaultsTests: XCTestCase {
         let empty = MemoryCloudDatabase()
         empty.makeZone(CloudRecordNaming.zoneName(vaultId: id))
         XCTAssertEqual(try CloudVaults.list(store: empty).first?.named, false, "a zone without vault.json is listed")
+    }
+
+    /// Zone X holding vault Y's `vault.json` (a hostile or confused account) is never copied out as X: the engine's own check skips an
+    /// empty folder, so `download` makes it.
+    func testAZoneHoldingAnotherVaultsManifestIsNotCopiedOut() throws {
+        let db = MemoryCloudDatabase()
+        put(db, manifest("Not mine", vaultId: "0b0f1f3e-5a3c-4d1e-9f3a-222222222222"))
+        let folder = tmp.appendingPathComponent("copy.sempere")
+        XCTAssertThrowsError(try CloudVaults.download(vaultId: UUID(uuidString: id)!, store: db, into: folder,
+                                                      stateURL: tmp.appendingPathComponent("state/sync-state.json"))) { error in
+            XCTAssertEqual(error as? CloudVaultsError, .zoneHoldsAnotherVault)
+        }
     }
 
     func testALongNameIsBounded() throws {
