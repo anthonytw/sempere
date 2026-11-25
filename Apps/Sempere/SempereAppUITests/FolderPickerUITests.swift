@@ -353,14 +353,22 @@ final class FolderPickerUITests: XCTestCase {
         let bar = app.navigationBars["New Vault"].firstMatch
         guard bar.waitForExistence(timeout: 5) else { return }
         let point = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: 150))
-        for _ in 0..<8 {
-            if element.waitForExistence(timeout: 1), element.isHittable { return }
+        func step() {
             #if targetEnvironment(macCatalyst)
             point.scroll(byDeltaX: 0, deltaY: down ? -80 : 80)
             #else
             point.press(forDuration: 0.05, thenDragTo: point.withOffset(CGVector(dx: 0, dy: down ? -150 : 150)))
             #endif
             Thread.sleep(forTimeInterval: 0.5)
+        }
+        for _ in 0..<8 {
+            if element.waitForExistence(timeout: 1), element.isHittable {
+                // "Hittable" is true while the row is still clipped at the sheet's edge, where a click opens nothing (the
+                // iCloud row of 1.4 pushed Back Up To there): go on to the end of the form, which these rows are at.
+                for _ in 0..<3 { step() }
+                return
+            }
+            step()
         }
     }
 
