@@ -24,6 +24,10 @@
 #                              # note-open timings) on Mac Catalyst: slow, wall-clock; test, test-mac and the PR gate leave them out
 #   scripts/app.sh test-ui    # the iPad UI tests (ui_ipad below: real drags, finger input, the launch smoke tests) on an iPad simulator
 #   scripts/app.sh test-mac-smoke # the launch smoke tests (LaunchSmokeUITests: fresh state, every layout and window) on Mac Catalyst
+#   scripts/app.sh test-cloudkit # the real CloudKit database, DEVELOPMENT environment only (tools/cloudkit-live/run.sh; docs/io.md "Testing it against
+#                             # the real database"): imports and checks the schema, runs the adapter and transport scenarios and two stores of the
+#                             # signed CLI bundle syncing one vault. Exits 77 ("skipped") when this Mac has no test account. Not in the PR gate:
+#                             # local-ci.sh --testflight and --release run it. Subcommands: schema | suite [NAME...] | cli | cleanup [PREFIX...]
 #   scripts/app.sh simulator [PREFIX [SUFFIX]] # print the simulator id `test` would use (or one named PREFIX…SUFFIX)
 #
 # The test subcommands pass any further arguments on to xcodebuild. An -only-testing among them
@@ -493,6 +497,12 @@ case "${1:-}" in
       -destination 'platform=macOS,variant=Mac Catalyst' \
       CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=-
     ;;
+  test-cloudkit)
+    # Signed with the development profile and run unsandboxed (no xcodebuild, no simulator, no screen): see tools/cloudkit-live/run.sh.
+    # Only the development environment is ever touched; it never deploys the schema.
+    rc=0; tools/cloudkit-live/run.sh "${@:2}" || rc=$?
+    exit "$rc"
+    ;;
   test-mac)
     shutdown_simulators
     tmp_guard_start
@@ -576,7 +586,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|test-quarantine|build-ios|build-sim-unit|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
+    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|test-quarantine|build-ios|build-sim-unit|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|test-cloudkit|simulator" >&2
     exit 2
     ;;
 esac

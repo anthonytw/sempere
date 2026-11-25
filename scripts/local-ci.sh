@@ -8,11 +8,12 @@
 #                                     # Linux package tests and the WebDAV tests; targets whose hash already passed
 #                                     # are skipped (docs/design/ci-lean.md)
 #   scripts/local-ci.sh --testflight  # the gate, then the dense-note performance suite, the Mac unit tests with no network,
-#                                     # the Mac launch smoke tests and every Mac UI test;
+#                                     # the Mac launch smoke tests and every Mac UI test, then the real-CloudKit suite
+#                                     # (`cloudkit`: development environment, skipped plainly when this Mac has no test account);
 #                                     # posts `local/testflight-suite`
 #   scripts/local-ci.sh --release     # all of --testflight, with the iPad and iPhone suites and the pseudo-language UI test on
-#                                     # the iPad before the Mac UI tests, then the iPad UI tests and the iPhone canvas UI tests;
-#                                     # posts `local/release-sweep`
+#                                     # the iPad before the Mac UI tests, then the iPad UI tests, the iPhone canvas UI tests and
+#                                     # the real-CloudKit suite; posts `local/release-sweep`
 #   scripts/local-ci.sh --cli         # a CLI-only release's checks, no app: the package tests on this Mac, then in
 #                                     # Docker the Linux tests, the WebDAV integration tests and the static
 #                                     # release build (scripts/ci-linux.sh); posts `local/cli-suite`
@@ -77,8 +78,8 @@ gate_steps=(help ios-build watch mac package linux webdav)
 steps=("${gate_steps[@]}")
 case "$mode" in
   gate)       context=$gate_context ;;
-  testflight) context=local/testflight-suite; steps+=(mac-perf mac-offline mac-smoke mac-ui watch-test) ;;
-  release)    context=local/release-sweep;    steps+=(mac-perf mac-offline mac-smoke sim-unit pseudo mac-ui ipad-ui iphone-ui watch-test) ;;
+  testflight) context=local/testflight-suite; steps+=(mac-perf mac-offline mac-smoke mac-ui watch-test cloudkit) ;;
+  release)    context=local/release-sweep;    steps+=(mac-perf mac-offline mac-smoke sim-unit pseudo mac-ui ipad-ui iphone-ui watch-test cloudkit) ;;
   cli)        context=local/cli-suite; gate_steps=(); steps=(package linux webdav static) ;;
 esac
 
@@ -107,6 +108,7 @@ describe() {   # step: what it runs
     watch)      echo "scripts/app.sh build-watch      (the Apple Watch app, its widgets and its tests compiled for a watchOS simulator, and the app and widgets for a watch; nothing run)" ;;
     watch-test) echo "scripts/app.sh test-watch, then test-watch-ui (the watch app's unit tests and its UI tests on a watchOS simulator, on a fake recorder)" ;;
     mac-offline) echo "scripts/app.sh test-mac-offline (Mac Catalyst unit tests with the network refused, OfflineModeTests)" ;;
+    cloudkit)   echo "scripts/app.sh test-cloudkit    (the real CloudKit database, development environment: schema import, adapter scenarios, two stores through the signed CLI; says SKIPPED when this Mac has no test account; never in the PR gate)" ;;
     mac-ui)     echo "scripts/app.sh test-mac-ui     (Mac UI tests; screen)" ;;
     mac-smoke)  echo "scripts/app.sh test-mac-smoke  (Mac launch smoke tests; screen)" ;;
     mac-perf)   echo "scripts/app.sh test-mac-perf   (the benchmarks: dense-note open time, scroll and zoom hitches, memory, note-open timings)" ;;
@@ -182,6 +184,10 @@ run_step() {
     watch)      scripts/app.sh build-watch ;;
     watch-test) scripts/app.sh test-watch && scripts/app.sh test-watch-ui ;;
     mac-offline) scripts/app.sh test-mac-offline ;;
+    cloudkit)   # exit 77 is the suite's "this Mac has no test account": the step says so in its log and does not fail
+                scripts/app.sh test-cloudkit; rc=$?
+                if [[ $rc == 77 ]]; then echo "cloudkit: SKIPPED (no test account on this Mac); the real-CloudKit suite did NOT run"; return 0; fi
+                return $rc ;;
     mac-ui)     scripts/app.sh test-mac-ui ;;
     mac-smoke)  scripts/app.sh test-mac-smoke ;;
     mac-perf)   scripts/app.sh test-mac-perf ;;

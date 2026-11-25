@@ -865,6 +865,31 @@ a unique id prefix (4 characters or more), its name, path or URL.
   copies files out, never over a file there (`" 2"`, `" 3"`… added); they stay. `delete PATH...` removes
   them for good. A path held by several targets' quarantines needs `--target`.
 
+#### CloudKit and the CLI bundle
+
+`store target add VAULT --cloudkit` and `store sync` use iCloud (CloudKit) only in the **released macOS build**
+(docs/design/1.4-cloudkit.md §6.5). CloudKit is a restricted entitlement, and macOS honors it only for a program that runs
+from a bundle carrying a provisioning profile, so the macOS release ships `sempere` as `sempere.app/Contents/MacOS/sempere`
+(`LSUIElement`, no UI; the bundle also holds `Resources/fonts`) and Homebrew links `bin/sempere` to that executable. The
+bundle is `scripts/cli-bundle.sh`; the maintainer signs it with their Developer ID, the CLI App ID's profile and
+`packaging/cli/entitlements.plist` (iCloud container, CloudKit, `com.apple.developer.icloud-container-environment`
+`Production`; no sandbox, no push), notarizes and staples it (`scripts/release-sign-macos.sh`, docs/releasing.md). It runs
+from a symlink in `bin/` as it does directly.
+
+- Where it does not work, `--cloudkit` says so before anything is contacted and adds nothing (exit 1): a `swift build`
+  binary (no profile, no entitlement), Linux, and a Mac with no iCloud account (`Sign in to iCloud in System Settings first`).
+  Everything else in the CLI is the same in a bundle and out of it.
+- A Developer ID build talks to the container's **production** environment. A development-signed one (a test or the
+  maintainer's dry run, `release-sign-macos.sh --dev`) talks to **development**, which holds only test data; never sync a real
+  vault from one.
+- Testing it for real: `scripts/app.sh test-cloudkit` signs a development bundle, creates two stores with separate state
+  folders (two devices), joins one to the other through the zone (`device init`, `devices approve`, `device confirm`) and runs
+  both through convergence, a conflict, a delete, a 70 MiB attachment and a deleted zone (docs/io.md "Testing it against the
+  real database").
+- Deleting a vault's iCloud data is not a CLI command: `target remove` forgets the target on this machine and leaves the zone.
+  A zone another device or the user deleted makes the next run fail with "this vault's iCloud data is gone; nothing here was
+  deleted"; removing and adding the target uploads the vault again.
+
 Each vault has its own lock (`<store>/.locks/<vault id>.write`, `flock(2)`): the store takes it to install
 or remove a vault, and it is the one lock every writer of that vault on the device shares
 ([device-first sync](design/device-first-sync.md) §4), so writers of two vaults never wait for each other.

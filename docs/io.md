@@ -1304,6 +1304,75 @@ resumes), bound what is read, and keep the hooks' defaults unless the store need
 a fixture in the conformance suite and the engine's scenarios (docs/ci.md "Transports"). Possible
 later ones are first-class S3-compatible or Dropbox adapters (docs/design/device-first-sync.md §3.4).
 
+## The CloudKit target (app and CLI)
+
+The iCloud (CloudKit) target syncs a store vault through its own zone in the private database of the signed-in Apple Account
+(design `docs/design/1.4-cloudkit.md`; the transport and its records are "CloudKit records" above). The pieces:
+
+| Piece | Where | What |
+|---|---|---|
+| Transport | `SempereSync` (`CloudRecordRemote`) | Foundation only, Linux-tested on `MemoryCloudDatabase`; every rule (names, conditions, tombstones, parts, the mirror, error mapping) |
+| Adapter | `Sources/SempereCloudKit/CloudKitDatabase.swift` | the one file of CloudKit calls (a `CloudRecordStore`), shared by the app and the Mac CLI; Apple only, `#if canImport(CloudKit)`; blocking calls on `CKOperation`s with their own timeouts |
+| Run | `CloudTargetRun` | one run of a store vault with a CloudKit target: the app's sessions and `sempere store sync` use it |
+| App | `AppModel+CloudKit`, `Apps/Sempere/SempereApp/CloudKitLive.swift` | `addCloudKitTarget`, the account hash a run checks, the database subscription and push (hints only), `cloudKitAccountChanged` |
+| CLI | `Sources/SempereCLI/CloudKitTarget.swift`, `store target add --cloudkit` | macOS only, through the signed bundle `sempere.app` (docs/cli.md "CloudKit and the CLI bundle") |
+
+**Signing and the environments.** CloudKit is a restricted entitlement: a process that lacks it must never create a `CKContainer`
+(it raises an Objective-C exception, not an error), so `CloudKitDatabase.availability()` reads the process's own entitlements
+first (macOS and Mac Catalyst; iOS apps always have it) and every caller checks it. A **development**-signed build
+(`com.apple.developer.icloud-container-environment` = `Development`, an Apple Development certificate and a development profile) talks to
+the container's development environment; a TestFlight, App Store or Developer ID build talks to **production**, whose schema is
+deployed once by hand in the CloudKit Console (`cktool` refuses every write in production, so no script and no test deploys it).
+The development schema is `tools/cloudkit-spike/schema.ckdb` (`VaultFile`, `VaultFilePart`: the fields and their encryption);
+`CloudKitSchemaTests` fails when the fields the adapter writes drift from it, and `test-cloudkit` imports it into development first.
+
+**A push is never needed.** The database subscription's silent push and the app's schedule only start a run sooner; every run
+reads the zone's change feed itself (`prepareRun`). No test waits for a push (C0 saw pushes withheld between processes of one
+Mac, design §13.6), and the real-device push is an owner check (design §10.3).
+
+### Testing it against the real database
+
+`scripts/app.sh test-cloudkit` (through the build lock; `tools/cloudkit-live/run.sh`, the steps one at a time: `schema`, `suite
+[NAME...]`, `cli`, `cleanup [PREFIX...]`) runs against the **development** environment only. It is **not part of the PR gate**
+(docs/ci.md "Real CloudKit"): `local-ci.sh --testflight` and `--release` run it as the step `cloudkit`, and a Mac with no test
+account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, in order:
+
+1. **Schema.** `xcrun cktool import-schema --validate` of `schema.ckdb` into development, then `export-schema` and a comparison of
+   the user record types and fields (development also holds the system type `Users`). A mismatch fails the run.
+2. **Adapter and transport scenarios** (`tools/cloudkit-live/Sources`, a separate Swift package so the root `swift build` never
+   builds it; a plain executable in a bundle signed with the CLI App ID's development profile, run unsandboxed): each scenario
+   makes zones `test-<uuid>` and deletes them when it ends (the suite also deletes what a failed one left): the account;
+   zone create, list, the database feed and delete; creates racing for one name (one winner of eight), replaces under a tag, a stale tag,
+   a cold process replacing, a missing record; **convergence** of two devices (two adapter instances and two mirrors on one
+   zone); a **conflict** (a create race, two replaces from one tag: one loses and reads the winner's bytes); **deletes** (a stale
+   `ifETag` leaves the file, a current one removes it for both devices, the path can be created again); a **large file** split into
+   parts, with a small layout and a 70 MiB file with the real one (64 MiB threshold, 16 MiB parts); the **zone deleted under a
+   device** (`zoneGone`, a reader that holds nothing, `acknowledgeDeletedZone` and the upload again); a **change-token round trip**
+   (a quiet feed returns nothing, a token revived from its bytes in another adapter instance, a mirror kept on disk that a new
+   process continues from with no full fetch). The feed follows a write within seconds: waits are bounded polls (`eventually`),
+   never a push.
+3. **Two stores through the CLI bundle** (`cli-scenarios.sh`; it replaces `tools/cloudkit-spike/cli-smoke.sh`): device A creates
+   a vault with notes, an image and a setting; device B (its own state folder, so its own keys) **joins through CloudKit alone**
+   (`device init`, `devices approve`, `device confirm`, the files carried by the zone); then convergence, a conflict (both change
+   one setting and rename one note while apart, and create notes), a deleted note, a 70 MiB attachment, a quiet run, and the
+   zone deleted under B (the run fails with "nothing here was deleted", B keeps its notes, and removing then adding the target
+   uploads again).
+4. **Cleanup.** The suite's zones go through the adapter's own `deleteZone`: `cktool` cannot delete private-database zones
+   (design §13.7; `reset-schema` deletes development data but also the schema). Zones of earlier runs that were killed:
+   `scripts/app.sh test-cloudkit cleanup test- sempere-` (every `test-*` and vault zone of the test account's development
+   database; never run it against an account with real vaults: development holds only test data).
+
+What it needs on the seat (nothing of it is committed; the team id appears nowhere in the repository): `~/.config/sempere/release.env`
+with `SEMPERE_TEAM_ID`; a development profile of the CLI App ID that lists this Mac (`~/.config/sempere/profiles/`, or
+`SEMPERE_CLI_DEV_PROFILE`); the test Apple ID signed in on the claude macOS account; the `cktool` management token. The Mac is
+registered by its **Provisioning UDID**, not the hardware UUID (a profile for the UUID is accepted by the API and the signed app is then
+killed at launch, exit 137). **Never launch these builds sandboxed**: a rebuilt, re-signed sandboxed app brings up a macOS consent dialog
+nobody can click on the seat, and every sandboxed launch then hangs in `_libsecinit_appsandbox`; the suite's processes are unsandboxed,
+which CloudKit accepts.
+
+What it does not cover (design §10.3 and §13): a push to a sleeping device, account sign-out and account switch, `changeTokenExpired`
+(a token cannot be forged), `quotaExceeded`, a physical iPhone or iPad, and production.
+
 ## WebDAV sync (`Sources/SempereWebDAV`)
 
 The one target with network code: the WebDAV client and transport, and `WebDAVSyncRemote`, the
