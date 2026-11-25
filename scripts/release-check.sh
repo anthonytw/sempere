@@ -82,11 +82,39 @@ ENTITLEMENTS_ALLOWED = {
     "com.apple.security.application-groups",             # quick voice status for the widgets (iOS app + widget)
     "com.apple.security.network.client",                 # WebDAV vaults: connections to the user's own server (Mac)
     "com.apple.security.network.server",                 # joining nearby: Add Device listens for the new device (Mac)
+    # iCloud (CloudKit) sync targets (docs/design/1.4-cloudkit.md §6.4): the app's one container, its private database, and the
+    # silent pushes that tell it another device wrote (a hint: nothing depends on one). The two push keys are the iOS and the
+    # Mac Catalyst spellings; neither the widgets nor the watch may have any of the four (CLOUDKIT_APP_ONLY below).
+    "com.apple.developer.icloud-container-identifiers",
+    "com.apple.developer.icloud-services",
+    "aps-environment",                                   # iOS
+    "com.apple.developer.aps-environment",               # Mac Catalyst
 }
 
 # The only value an entitlement on the allow-list may take, where it has one.
 ENTITLEMENT_VALUES = {
     "com.apple.security.application-groups": ["group.io.github.anthonytw.sempere"],
+    "com.apple.developer.icloud-container-identifiers": ["iCloud.io.github.anthonytw.sempere"],
+    "com.apple.developer.icloud-services": ["CloudKit"],
+    # The push environment is a build setting (`APS_ENVIRONMENT`: development in Debug, production in Release, checked below).
+    "aps-environment": "$(APS_ENVIRONMENT)",
+    "com.apple.developer.aps-environment": "$(APS_ENVIRONMENT)",
+}
+CLOUDKIT_KEYS = {"com.apple.developer.icloud-container-identifiers", "com.apple.developer.icloud-services",
+                 "aps-environment", "com.apple.developer.aps-environment"}
+# The only entitlements files that may hold them: the app's (the Mac's and the iPhone and iPad's).
+CLOUDKIT_APP_ONLY = {"Sempere.entitlements", "SempereiOS.entitlements"}
+
+# The macOS CLI's bundle (docs/design/1.4-cloudkit.md §6.5): packaging/cli/entitlements.plist, whose team and App ID come from
+# the profile at signing time. The container and its service are pinned; no push (the CLI runs, syncs, exits), no sandbox, no
+# get-task-allow (hardened runtime, notarized).
+CLI_ENTITLEMENTS = "packaging/cli/entitlements.plist"
+CLI_ENTITLEMENT_VALUES = {
+    "com.apple.application-identifier": "@APPLICATION_IDENTIFIER@",
+    "com.apple.developer.team-identifier": "@TEAM_IDENTIFIER@",
+    "com.apple.developer.icloud-container-identifiers": ["iCloud.io.github.anthonytw.sempere"],
+    "com.apple.developer.icloud-services": ["CloudKit"],
+    "com.apple.developer.icloud-container-environment": "@CONTAINER_ENVIRONMENT@",
 }
 
 # Apple's approved reasons per required-reason API category (TN3183 /
@@ -149,6 +177,8 @@ PRODUCT_SOURCES = {
                          "Age", "CZlib"],
     # WebDAV vaults (`AppModel+WebDAV`, docs/io.md "WebDAV vaults in the app").
     "SempereWebDAV": ["SempereWebDAV", "SempereSync", "Sempere", "Age", "CZlib"],
+    # iCloud (CloudKit) sync targets (docs/design/1.4-cloudkit.md §6.3): the adapter, which links the sync engine.
+    "SempereCloudKit": ["SempereCloudKit", "SempereSync", "Sempere", "Age", "CZlib"],
     # The sync engine (docs/io.md "Sync engine and transports"), linked by the app directly too.
     "SempereSync": ["SempereSync", "Sempere", "Age", "CZlib"],
     # The string catalog and the code that words library values (docs/design/thin-app.md), linked by the app and
@@ -211,6 +241,11 @@ NETWORK_ALLOWED = {
     # The handwritten-math model downloader (URLSessionModelFetcher): runs only when the user
     # taps Download on a MathModelCatalog entry, and the catalog is empty (checked below).
     "Apps/Sempere/SempereApp/MathModels.swift",
+    # iCloud (CloudKit) sync targets (docs/design/1.4-cloudkit.md §6.3): the one file of CloudKit calls, shared by the app and the
+    # Mac CLI. It connects to Apple's iCloud servers as the signed-in user and stores the vault's encrypted files in that
+    # account's private iCloud database (counted against its iCloud storage); the privacy policy (both copies) and DESIGN.md
+    # "Network" say so. The developer cannot read that database.
+    "Sources/SempereCloudKit/CloudKitDatabase.swift",
 }
 
 # Where the downloader's catalog lives; it must stay empty while the documents say the
@@ -440,6 +475,9 @@ for p in sorted(ent_files):
             errors.append(f"{rel(p)}: {k} must be exactly {want}")
     for k in sorted(set(ents) - ENTITLEMENTS_ALLOWED):
         errors.append(f"{rel(p)}: entitlement {k} is not in the allow-list (scripts/release-check.sh)")
+    if os.path.basename(p) not in CLOUDKIT_APP_ONLY:
+        for k in sorted(set(ents) & CLOUDKIT_KEYS):
+            errors.append(f"{rel(p)}: {k} belongs to the app only (iCloud and push stay off the widgets and the watch)")
     only = WATCH_ENTITLEMENT_FILES.get(os.path.basename(p))
     if only is not None:
         for k in sorted(set(ents) - only):
@@ -451,6 +489,65 @@ for name in sorted(WATCH_ENTITLEMENT_FILES):
         errors.append(f"{name} is not referenced by any CODE_SIGN_ENTITLEMENTS: the watch target would be built without its App Group")
 if not mac_ents:
     errors.append("no CODE_SIGN_ENTITLEMENTS[sdk=macosx*]: the Mac Catalyst build would not be sandboxed")
+
+# SempereAdHoc.entitlements (ad hoc signed test and screenshot runs, which cannot carry the restricted iCloud and push entitlements) is
+# the Mac app's file without exactly those: any other difference would test an app that is not the one that ships.
+try:
+    with open(os.path.join(app_dir, "Sempere.entitlements"), "rb") as f:
+        mac_full = plistlib.load(f)
+    with open(os.path.join(app_dir, "SempereAdHoc.entitlements"), "rb") as f:
+        mac_adhoc = plistlib.load(f)
+    if {k: v for k, v in mac_full.items() if k not in CLOUDKIT_KEYS} != mac_adhoc:
+        errors.append("SempereAdHoc.entitlements must equal Sempere.entitlements without the iCloud and push entitlements")
+except FileNotFoundError:
+    errors.append("SempereAdHoc.entitlements is missing: ad hoc signed Mac test runs cannot carry the iCloud and push entitlements")
+except Exception as e:
+    errors.append(f"SempereAdHoc.entitlements or Sempere.entitlements is not a valid plist ({e})")
+
+# The ad hoc file is for scripts/app.sh's command-line signing only: the project must never point a build at it (a shipped build
+# without iCloud and push).
+if "SempereAdHoc.entitlements" in pbx:
+    errors.append("project.pbxproj mentions SempereAdHoc.entitlements: it is for ad hoc signed test runs only (scripts/app.sh), never a build setting")
+
+# The push environment: development in every Debug configuration that sets it, production in every Release one, never unset
+# for the app (the entitlements name $(APS_ENVIRONMENT)).
+uses_aps = any(os.path.isfile(p) and "$(APS_ENVIRONMENT)" in read(p) for p in ent_files)
+if uses_aps:
+    for config, want in (("Debug", "development"), ("Release", "production")):
+        values = []
+        for block in re.findall(r'^\t\t[0-9A-F]{24} /\* ' + config + r' \*/ = \{(.*?)^\t\t\};', pbx, re.S | re.M):
+            values += re.findall(r'^\s*APS_ENVIRONMENT\s*=\s*"?(\w+)"?;', block, re.M)
+        if not values:
+            errors.append(f"APS_ENVIRONMENT is not set in any {config} configuration: the entitlements name it")
+        for v in values:
+            if v != want:
+                errors.append(f"APS_ENVIRONMENT is {v} in a {config} configuration; it must be {want}")
+
+# The iPhone and iPad app wakes for its silent pushes: UIBackgroundModes holds remote-notification (SempereInfo.plist).
+info_app = os.path.join(app_dir, "SempereInfo.plist")
+if os.path.isfile(info_app) and uses_aps:
+    try:
+        with open(info_app, "rb") as f:
+            modes = plistlib.load(f).get("UIBackgroundModes", [])
+    except Exception:
+        modes = []
+    if "remote-notification" not in modes:
+        errors.append("SempereInfo.plist: UIBackgroundModes must hold remote-notification (the app's entitlements ask for pushes)")
+
+# The CLI bundle's entitlements.
+cli_ent = os.path.join(root, CLI_ENTITLEMENTS)
+if os.path.isfile(cli_ent):
+    try:
+        with open(cli_ent, "rb") as f:
+            cli = plistlib.load(f)
+    except Exception as e:
+        errors.append(f"{CLI_ENTITLEMENTS}: not a valid plist ({e})")
+        cli = {}
+    for k, want in CLI_ENTITLEMENT_VALUES.items():
+        if cli.get(k) != want:
+            errors.append(f"{CLI_ENTITLEMENTS}: {k} must be exactly {want!r}")
+    for k in sorted(set(cli) - set(CLI_ENTITLEMENT_VALUES)):
+        errors.append(f"{CLI_ENTITLEMENTS}: entitlement {k} is not allowed (the CLI bundle holds the container and nothing else: no push, no sandbox, no get-task-allow)")
 
 # --- Privacy manifests and required-reason APIs ------------------------------------
 

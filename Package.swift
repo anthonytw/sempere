@@ -10,16 +10,28 @@ let hasNotability = FileManager.default.fileExists(
 // `SempereLocalization` (the app's string catalog, docs/design/thin-app.md "Rules") is Apple-only: SwiftPM on Linux
 // has no rule for an `.xcstrings` resource and Linux Foundation has no `String(localized:bundle:)`. Nothing on
 // Linux needs it (the CLI stays English); `LocalizationCatalogTests` reads the catalog's JSON there instead.
+//
+// `SempereCloudKit` (docs/design/1.4-cloudkit.md §6.3) is Apple-only too: the one file of CloudKit calls, shared by the
+// app and the Mac CLI (which links it on macOS only; without it the CLI says CloudKit is unavailable).
 #if os(Linux)
 let appleOnlyProducts: [Product] = []
 let appleOnlyTargets: [Target] = []
+let cloudKitDependencies: [Target.Dependency] = []
 let defaultLocalization: LanguageTag? = nil
 #else
-let appleOnlyProducts: [Product] = [.library(name: "SempereLocalization", targets: ["SempereLocalization"])]
+let appleOnlyProducts: [Product] = [
+    .library(name: "SempereLocalization", targets: ["SempereLocalization"]),
+    .library(name: "SempereCloudKit", targets: ["SempereCloudKit"]),
+]
 let appleOnlyTargets: [Target] = [
     .target(name: "SempereLocalization", resources: [.process("Resources/Localizable.xcstrings")]),
     .testTarget(name: "SempereLocalizationTests", dependencies: ["SempereLocalization"]),
+    // The CloudKit adapter (`CloudKitDatabase`, a `CloudRecordStore`): the only target besides `SempereWebDAV` allowed
+    // network code (CLAUDE.md), named in `NETWORK_ALLOWED` of `scripts/release-check.sh`. Whole file under `#if canImport(CloudKit)`.
+    .target(name: "SempereCloudKit", dependencies: ["SempereSync", "Sempere", .product(name: "Crypto", package: "swift-crypto")]),
+    .testTarget(name: "SempereCloudKitTests", dependencies: ["SempereCloudKit", "SempereSync"]),
 ]
+let cloudKitDependencies: [Target.Dependency] = [.target(name: "SempereCloudKit", condition: .when(platforms: [.macOS]))]
 let defaultLocalization: LanguageTag? = "en"
 #endif
 
@@ -149,7 +161,7 @@ let package = Package(
                 "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereImporters", "SempereSync", "SempereWebDAV", "SempereFonts",
                 "SempereSpeech", "SempereCapture", "SempereInsights", "SempereInsightsApple", "SempereShareViewer",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-            ]
+            ] + cloudKitDependencies
         ),
         // Seeded mutation fuzzer shared by the test targets (Foundation only).
         .target(name: "FuzzSupport", path: "Tests/FuzzSupport"),

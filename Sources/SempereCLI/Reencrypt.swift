@@ -170,7 +170,7 @@ struct VaultReencrypt: ParsableCommand {
             var reachable: [ReencryptCoordinator.Target] = []
             for t in targets {
                 do {
-                    let r = try EpochTargets.remote(t, passwordEnv: pull.passwordEnv)
+                    let r = try EpochTargets.remote(t, passwordEnv: pull.passwordEnv, vaultId: vault.vaultId, stateDirectory: store?.targets.stateDirectory(t.id, of: vault.vaultId))
                     _ = try r.list([])
                     reachable.append(.init(name: t.name, remote: r, syncedBefore: store.map { FolderTargetRun.syncedBefore(
                         stateURL: $0.targets.stateURL(t.id, of: vault.vaultId)) } ?? true))
@@ -220,7 +220,7 @@ struct VaultReencrypt: ParsableCommand {
         } else if !vault.isReencryptPending {
             // A start that stopped before its epoch: its claims and its local journal go.
             if let journal = try vault.abandonReencryptionStart() {
-                let remotes = targets.compactMap { t in (try? EpochTargets.remote(t, passwordEnv: pull.passwordEnv)).map {
+                let remotes = targets.compactMap { t in (try? EpochTargets.remote(t, passwordEnv: pull.passwordEnv, vaultId: vault.vaultId, stateDirectory: store?.targets.stateDirectory(t.id, of: vault.vaultId))).map {
                     ReencryptCoordinator.Target(name: t.name, remote: $0) } }
                 let released = ReencryptCoordinator.release(journal, on: remotes)
                 output.info("A re-encryption start that did not reach its epoch was abandoned (claims released on "
@@ -235,7 +235,7 @@ struct VaultReencrypt: ParsableCommand {
         var byName: [String: SyncTarget] = [:]
         for t in targets {
             byName[t.name] = t
-            do { remotes.append(.init(name: t.name, remote: try EpochTargets.remote(t, passwordEnv: pull.passwordEnv))) } catch {
+            do { remotes.append(.init(name: t.name, remote: try EpochTargets.remote(t, passwordEnv: pull.passwordEnv, vaultId: vault.vaultId, stateDirectory: store?.targets.stateDirectory(t.id, of: vault.vaultId)))) } catch {
                 unreachable[t.name] = CLIError.from(error).message
             }
         }
@@ -341,6 +341,10 @@ struct VaultReencrypt: ParsableCommand {
             try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             report = try SyncEngine(directory: vault.url, vault: vault, client: try login.client(url), stateURL: stateURL,
                                     options: options).run()
+        case .cloudkit:
+            let remote = try CloudKitCLI.remote(t, vaultId: vault.vaultId, stateDirectory: store.targets.stateDirectory(t.id, of: vault.vaultId))
+            report = try CloudTargetRun.run(vaultFolder: vault.url, remote: remote, vault: vault, stateURL: stateURL, twoWay: true,
+                                            options: options)
         default:
             throw SyncTargetError.io("target kind \(t.kind) is not supported by this version")
         }

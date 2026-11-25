@@ -1098,6 +1098,12 @@ operations are the ones the engine makes, with transport-neutral names:
 | `interrupt`, `location`, `missingCollectionError` | the run's bound and cancellation reach a request in flight; where the remote is, for messages; the transport's own "not there" error | `WebDAVClient.interrupt`, the URL, a PROPFIND 404 |
 | `capabilities`, `RemoteEntry.availability`, `requestDownload`, `conflictVersions`, `resolveConflicts`, `changes` | what the remote promises (`RemoteCapabilities`: strong stamps, ranged reads, deep listing, folder stamps that follow a child write, atomic create, maximum object size), and hooks for stores that evict files, fork conflict versions or announce changes; defaults: available, nothing to do, no versions, no hints | strong stamps, ranged reads, deep listing and folder stamps (each still checked per server), no atomic create (blobs go to a temporary name, then MOVE); the hook defaults |
 
+The iCloud (CloudKit) target is the third transport (docs/design/1.4-cloudkit.md): `CloudRecordRemote` keeps these promises over a
+`CloudRecordStore` (records named by the hash of their path, a change tag as the strong version token, conditional deletes by
+tombstone, a metadata mirror brought up to date by `prepareRun()`), tested on Linux against `MemoryCloudDatabase`; its one Apple
+file, `SempereCloudKit/CloudKitDatabase.swift`, converts `CKRecord` and `CKError`, and `CloudTargetRun` runs it for the app and
+`sempere store sync` (`store target add --cloudkit`, macOS, the signed release only).
+
 Engine failures are `SyncError` (`vaultMismatch`, `limitExceeded`, `cancelled`, ...); a transport's
 own failures are its own error type and pass through unchanged (`WebDAVError`). A transport marks
 the ones a later run may not see (no network, a cut connection) as `TransientRemoteError`, so the

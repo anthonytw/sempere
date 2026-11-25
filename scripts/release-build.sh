@@ -23,7 +23,8 @@
 #      (scripts/smoke-linux-cli.sh). The architecture Docker runs natively must pass; the emulated one
 #      is reported, because emulation has failed on its own before (tar under qemu on Ubuntu 26.04)
 #   6. SHA256SUMS and notes.md (the CHANGELOG section). This build account cannot use the maintainer's key, so it signs
-#      nothing: SHA256SUMS goes to a hand-off folder (SEMPERE_SIGN_DROP, default /Users/Shared/sempere-release, then
+#      nothing: SHA256SUMS and the macOS tarball (an UNSIGNED sempere.app, which the maintainer signs with their Developer ID,
+#      notarizes and repacks) go to a hand-off folder (SEMPERE_SIGN_DROP, default /Users/Shared/sempere-release, then
 #      vVERSION/; owned by this account, never group- or world-writable, checked before the long build). The maintainer
 #      signs from their own clone of GitHub (scripts/release-sign.sh at origin/main; docs/releasing.md)
 # Output: build/release/vVERSION/. Next: the maintainer signs, then scripts/release-publish.sh VERSION.
@@ -46,7 +47,7 @@ SMOKE_IMAGES=(
   $ALPINE_IMAGE
 )
 # The scripts this one copies from this checkout into the tag's worktree.
-TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh scripts/build-linux-static.sh scripts/static-sdk-pin.sh scripts/static-sdk-cache.sh scripts/release-build-all.sh scripts/apt-install.sh scripts/container.sh scripts/lima/sempere-docker.yaml)
+TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh scripts/build-linux-static.sh scripts/static-sdk-pin.sh scripts/static-sdk-cache.sh scripts/release-build-all.sh scripts/cli-bundle.sh packaging/cli/Info.plist scripts/apt-install.sh scripts/container.sh scripts/lima/sempere-docker.yaml)
 unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh volumes
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
@@ -126,8 +127,14 @@ archs=$(lipo -archs "$bin")
 [[ $archs == *arm64* && $archs == *x86_64* ]] || die "the macOS binary has only: $archs"
 got=$("$bin" --version); got=${got%%$'\n'*}
 [[ $got == "sempere $version" ]] || die "the macOS binary says '$got'"
-scripts/package-cli.sh "$bin" "$version" macos-universal build/dist >/dev/null
-echo "ok    macos-universal ($archs)"
+# The macOS tarball carries the CLI as a bundle, sempere.app (docs/design/1.4-cloudkit.md §6.5): CloudKit needs a provisioning
+# profile, which lives in a bundle. It leaves here UNSIGNED: Developer ID signing, notarization and the repack are the maintainer's
+# (scripts/release-sign.sh, whose key is not on this account), so this tarball is not a release file by itself.
+scripts/cli-bundle.sh "$bin" "$version" build/cli-bundle Sources/SempereFonts/Fonts >/dev/null
+got=$(build/cli-bundle/sempere.app/Contents/MacOS/sempere --version); got=${got%%$'\n'*}
+[[ $got == "sempere $version" ]] || die "the macOS bundle's binary says '$got'"
+SEMPERE_CLI_BUNDLE=build/cli-bundle scripts/package-cli.sh "$bin" "$version" macos-universal build/dist >/dev/null
+echo "ok    macos-universal ($archs), as an unsigned sempere.app for the maintainer to sign"
 cp build/dist/*.tar.gz "$out/"
 
 step "Linux tarballs on other distributions"
@@ -157,8 +164,10 @@ step "SHA256SUMS"
 
 step "hand-off to the maintainer"
 rm -f "$drop/$tag/SHA256SUMS"
+rm -f "$drop/$tag/sempere-$version-macos-universal.tar.gz"
 cp "$out/SHA256SUMS" "$drop/$tag/SHA256SUMS"; chmod 0644 "$drop/$tag/SHA256SUMS"
-echo "built $tag in $out. Hand-off folder: $drop/$tag (SHA256SUMS only; the list above is what the maintainer should see)"
+cp "$out/sempere-$version-macos-universal.tar.gz" "$drop/$tag/"; chmod 0644 "$drop/$tag/sempere-$version-macos-universal.tar.gz"
+echo "built $tag in $out. Hand-off folder: $drop/$tag (SHA256SUMS and the unsigned macOS tarball, data only; the list above is what the maintainer should see)"
 echo "Next, from the maintainer's own account, in their clone of GitHub:"
 echo "  git fetch origin && git checkout --detach origin/main && bash scripts/release-sign.sh $version"
 echo "then, here: just release-publish $version"

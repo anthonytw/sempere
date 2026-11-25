@@ -52,6 +52,17 @@ if [[ -f $sums ]]; then
   if cmp -s "$sums" "$d/SHA256SUMS"; then echo "ok    the same files as the local build"; else echo "FAIL  the published files differ from $sums"; exit 1; fi
 fi
 if [[ $(uname) == Darwin ]]; then
+  # The macOS tarball holds the CLI as sempere.app, signed with the maintainer's Developer ID, notarized and stapled
+  # (docs/design/1.4-cloudkit.md §6.5): all three are checked here, not only that it runs.
   tar -xzf "$d/sempere-$version-macos-universal.tar.gz" -C "$d"
-  v=$("$d/sempere-$version-macos-universal/sempere" --version); echo "${v%%$'\n'*}"
+  app="$d/sempere-$version-macos-universal/sempere.app"
+  v=$("$app/Contents/MacOS/sempere" --version); echo "${v%%$'\n'*}"
+  if [[ ${SEMPERE_VERIFY_UNSIGNED:-} == 1 ]]; then echo "warn  the signature of sempere.app is not checked (SEMPERE_VERIFY_UNSIGNED=1)"
+  else
+    codesign --verify --strict --deep "$app" || { echo "FAIL  sempere.app does not carry a valid signature"; exit 1; }
+    codesign -dvv "$app" 2>&1 | grep -q 'Authority=Developer ID Application' || { echo "FAIL  sempere.app is not signed with a Developer ID Application identity"; exit 1; }
+    xcrun stapler validate "$app" >/dev/null || { echo "FAIL  sempere.app has no valid notarization ticket stapled"; exit 1; }
+    spctl --assess --type execute "$app" || { echo "FAIL  Gatekeeper refuses sempere.app"; exit 1; }
+    echo "ok    sempere.app is signed with Developer ID, notarized and stapled"
+  fi
 fi

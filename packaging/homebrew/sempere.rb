@@ -34,9 +34,17 @@ class Sempere < Formula
   end
 
   def install
-    bin.install "sempere"
-    # Fonts for text in exports (Noto, OFL 1.1); found at ../share/sempere/fonts from the binary.
-    (share/"sempere/fonts").install Dir["fonts/*"]
+    if OS.mac?
+      # The macOS tarball holds the CLI as a signed, notarized bundle, sempere.app (docs/design/1.4-cloudkit.md §6.5): CloudKit is
+      # a restricted entitlement, which macOS honors only for a program inside a bundle that carries its provisioning profile.
+      # bin/sempere is a link to the bundle's executable; its fonts are inside the bundle.
+      prefix.install "sempere.app"
+      bin.install_symlink prefix/"sempere.app/Contents/MacOS/sempere"
+    else
+      bin.install "sempere"
+      # Fonts for text in exports (Noto, OFL 1.1); found at ../share/sempere/fonts from the binary.
+      (share/"sempere/fonts").install Dir["fonts/*"]
+    end
     doc.install "README.md", "CHANGELOG.md", "LICENSE-EXCEPTION", "docs/cli.md"
   end
 

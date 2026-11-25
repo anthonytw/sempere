@@ -111,6 +111,9 @@ public struct AppModelServices {
     public var insights: InsightsServices = .none
     /// Core Spotlight (`CoreSpotlightIndex` in the app, docs/design/1.3-spotlight.md); headless, none.
     public var spotlightIndex: any SpotlightIndexing = NoSpotlightIndex()
+    /// iCloud (CloudKit) targets (`CloudKitServices`, docs/design/1.4-cloudkit.md): the app's `SempereCloudKit` adapter; headless,
+    /// none (a target of that kind is listed and never run).
+    public var cloudKit: CloudKitServices?
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,

@@ -41,6 +41,8 @@ enum AppHost: AppModelHost {
                          describeError: AppModel.describe)
         services.insights = AppInsights.services
         services.spotlightIndex = CoreSpotlightIndex()
+        // iCloud (CloudKit) targets (docs/design/1.4-cloudkit.md); a build not signed for the container says so when one is added.
+        services.cloudKit = CloudKitLive.services
         return services
     }
 

@@ -4728,6 +4728,19 @@
         }
       }
     },
+    "Add iCloud (CloudKit)" : {
+      "comment" : "Sync Targets: adds this vault's zone in the user's private iCloud database",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir iCloud (CloudKit)"
+          }
+        }
+      }
+    },
     "Add images, PDF pages, videos, equations and text boxes." : {
       "comment" : "Quick tour page 3",
       "extractionState" : "manual",
@@ -22753,6 +22766,18 @@
         }
       }
     },
+    "Sign in to iCloud in Settings first." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primero inicia sesión en iCloud en Ajustes."
+          }
+        }
+      }
+    },
     "Similar topic" : {
       "comment" : "Ask result row: the note matched by meaning",
       "extractionState" : "manual",
@@ -28424,6 +28449,18 @@
         }
       }
     },
+    "This vault already syncs with iCloud." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda ya se sincroniza con iCloud."
+          }
+        }
+      }
+    },
     "This vault already syncs with that folder." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -31335,6 +31372,18 @@
         }
       }
     },
+    "iCloud (CloudKit) is not available in this build of Sempere." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud (CloudKit) no está disponible en esta versión de Sempere."
+          }
+        }
+      }
+    },
     "iCloud Drive" : {
       "comment" : "Where a sync folder is: the iCloud Drive root (Apple's name, not translated)",
       "extractionState" : "manual",
@@ -31414,6 +31463,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud lleva un rato sin subir los archivos de esta carpeta. Los cambios se conservan en este dispositivo. iCloud indica: %@"
+          }
+        }
+      }
+    },
+    "iCloud is not answering right now. Try again in a moment." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud no responde en este momento. Inténtalo de nuevo en un momento."
+          }
+        }
+      }
+    },
+    "iCloud is restricted on this device (Screen Time or device management)." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud está restringido en este dispositivo (Tiempo de uso o gestión de dispositivos)."
           }
         }
       }

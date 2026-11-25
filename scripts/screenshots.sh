@@ -143,7 +143,7 @@ mac() {
   TEST_RUNNER_SEMPERE_SHOTS_DIR="$raw" xcodebuild test -project "$project" -scheme "$scheme" \
     -derivedDataPath "$derived" -destination 'platform=macOS,variant=Mac Catalyst' \
     -only-testing:SempereAppUITests/ScreenshotTests -resultBundlePath "$out/mac.xcresult" \
-    CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${hardened[@]+"${hardened[@]}"} 2>&1 | tee "$out/mac.log" || status=${PIPESTATUS[0]}
+    CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_ENTITLEMENTS="$PWD/Apps/Sempere/SempereAdHoc.entitlements" ${hardened[@]+"${hardened[@]}"} 2>&1 | tee "$out/mac.log" || status=${PIPESTATUS[0]}
   grep -E "error: |SHOTDEBUG" "$out/mac.log" > "$out/mac-summary.txt" || true
   # The Mac test runner is sandboxed and cannot write into the checkout: take the shots
   # from the result bundle's attachments instead.

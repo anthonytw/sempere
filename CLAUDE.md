@@ -44,7 +44,9 @@ Do not use features newer than Swift 6.0 in `Sources/`.
   scrypt and PBKDF2 are the only primitives implemented locally
   (swift-crypto lacks them); they must have RFC test vectors.
 - No network code in `Sources/` except the `SempereWebDAV` target (`URLSession`, via
-  `FoundationNetworking` on Linux). `scripts/check-portability.sh` enforces it. The sync engine is
+  `FoundationNetworking` on Linux) and `SempereCloudKit` (Apple only, one file of CloudKit calls, `#if canImport(CloudKit)`:
+  the adapter of `CloudRecordStore`, docs/design/1.4-cloudkit.md §6.3; it may also import `Security`, for the entitlement check
+  a macOS process must make before it touches CloudKit). `scripts/check-portability.sh` enforces it. The sync engine is
   `SempereSync` (network-free, Foundation only); transports reach it through `SyncRemote`
   (docs/io.md "Sync engine and transports"), and WebDAV's is `WebDAVSyncRemote`.
 - `sempere/1` is the first released format and must stay stable: do not change what an existing field,
@@ -305,9 +307,13 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   `audio`, a microphone string, and only the package products in `WATCH_PRODUCTS_ALLOWED` (no network code, no `SempereAppCore`).
   It also fails on networking (`URLSession`, Network.framework, sockets, WebKit, …) in any
   non-test folder of `Apps/Sempere` or a linked `Sources/` target outside `NETWORK_ALLOWED` (the
-  WebDAV client: `WebDAVRemote.swift`, `SempereWebDAV`'s transport and client; and the dormant
-  math-model downloader, `MathModels.swift`) and on a non-empty `MathModelCatalog.entries`: the
-  privacy policy names the only connections (a WebDAV server the user sets up; DESIGN.md "Network"). The CLI release refuses a CHANGELOG section with `TODO(user)` or no date
+  WebDAV client: `WebDAVRemote.swift`, `SempereWebDAV`'s transport and client; the CloudKit adapter,
+  `SempereCloudKit/CloudKitDatabase.swift`; and the dormant math-model downloader, `MathModels.swift`) and on a non-empty `MathModelCatalog.entries`: the
+  privacy policy names the only connections (a WebDAV server the user sets up, the user's own iCloud account for a CloudKit
+  target; DESIGN.md "Network"). iCloud and push entitlements (`com.apple.developer.icloud-*`, `aps-environment`) belong to the app
+  only (never the widgets or the watch): the container and `CloudKit` are pinned, the push environment is the build setting
+  `APS_ENVIRONMENT` (development in Debug, production in Release), `UIBackgroundModes` holds `remote-notification`, and the CLI
+  bundle's `packaging/cli/entitlements.plist` is checked too. The CLI release refuses a CHANGELOG section with `TODO(user)` or no date
   (`scripts/changelog-section.sh`); never fill in the release date yourself.
   `ITSAppUsesNonExemptEncryption` stays `NO` while France is excluded
   (France is excluded from availability until the ANSSI declaration is approved). The privacy policy has two copies

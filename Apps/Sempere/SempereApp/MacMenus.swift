@@ -275,6 +275,12 @@ final class SempereAppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    /// A silent push of the iCloud database subscription (`CloudKitLive`): other devices wrote, the zones that changed run now.
+    /// Entitled to nothing without the capability: the notification never arrives, and anything else is ignored.
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+        await CloudKitLive.received(userInfo)
+    }
+
     /// Quitting (⌘Q on a Mac): decrypted attachments are deleted where the
     /// system does not encrypt them at rest (`BlobCache.purgeAtQuit`), and so
     /// are the plaintext work copies of PDFs picked or opened for import

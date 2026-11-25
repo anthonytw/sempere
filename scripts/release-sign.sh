@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Sign a release's SHA256SUMS with YOUR SSH key, from YOUR OWN clone of GitHub (docs/releasing.md "Sign the checksums").
-# You never run code the build account wrote: this script is the repository's, at origin/main, and the signers come from
-# `git show origin/main:packaging/allowed_signers`. The build account's hand-off folder carries data only (SHA256SUMS).
+# Sign a release from YOUR OWN clone of GitHub: the macOS tarball with your Developer ID, then SHA256SUMS with your SSH key
+# (docs/releasing.md "Sign the checksums"). You never run code the build account wrote: this script is the repository's, at
+# origin/main, and the signers come from `git show origin/main:packaging/allowed_signers`. The build account's hand-off folder
+# carries data only: SHA256SUMS and the unsigned macOS tarball (its sempere.app is signed here, never opened or run).
 #
 #   git fetch origin && git checkout --detach origin/main
 #   bash scripts/release-sign.sh [-k KEY] VERSION
@@ -14,8 +15,16 @@
 #      /Users/Shared/sempere-sign) is yours and not writable by group or world (it is created, mode 755, if missing)
 #   2. copies SHA256SUMS to a private temp folder and refuses a list that is not exactly one newline-terminated line per tarball:
 #      sempere-VERSION-{macos-universal,linux-x86_64,linux-aarch64}.tar.gz, each with a 64-hex hash
-#   3. shows the list, signs the private copy (namespace `file`), and verifies the signature against origin/main's signers
-#   4. only then moves SHA256SUMS and SHA256SUMS.sig into your output folder, vVERSION/, where release-publish reads them
+#   3. the macOS tarball (docs/design/1.4-cloudkit.md §6.5): checks it is the one the list names, then scripts/release-sign-macos.sh
+#      signs its sempere.app with your Developer ID Application identity (hardened runtime, the CLI's entitlements, the embedded
+#      Developer ID profile), notarizes it (notarytool, keychain profile sempere-notary), staples it and repacks the tarball; the
+#      list's macOS line becomes the signed tarball's hash. The Linux lines stay the build's
+#   4. shows the list, signs the private copy (namespace `file`), and verifies the signature against origin/main's signers
+#   5. only then moves SHA256SUMS, SHA256SUMS.sig and the signed macOS tarball into your output folder, vVERSION/, where
+#      release-publish reads them
+# Compare the list it shows with the one release-build printed: the Linux lines must be identical; the macOS line is the one that
+# changes, and the script prints "build hash -> signed hash" for it (the build hash is checked against the hand-off file).
+# One-time setup, and what to type: docs/releasing.md "One-time setup for the maintainer".
 # Compare the printed list with the one release-build printed in its "SHA256SUMS" step. You cannot check the hashes without
 # rebuilding: the signature means "the maintainer approved what the build account produced".
 set -euo pipefail
@@ -42,8 +51,13 @@ if [[ $key == key::* ]]; then printf '%s\n' "${key#key::}" > "$tmp/key.pub"; key
 else key=${key/#\~/$HOME}; [[ -f $key ]] || die "the signing key $key is not a file"; fi
 if [[ ! -e $out ]]; then mkdir -m 755 -p "$out"; fi
 "$check" owned "$out" "$(id -u)"
-if [[ ! -e $out/$tag ]]; then mkdir -m 755 "$out/$tag"; fi
-"$check" owned "$out/$tag" "$(id -u)"
+# SEMPERE_SIGN_DEV=1 is a dry run of the macOS step with a development identity and profile (scripts/release-sign-macos.sh --dev):
+# what it makes goes to a folder release-publish never reads.
+dev=false; [[ ${SEMPERE_SIGN_DEV:-} == 1 ]] && dev=true   # only the value 1 turns the dry run on
+# A dry run makes NO SSH signature at all (a development-signed set must never be publishable): no SHA256SUMS.sig is written.
+dest=$out/$tag; $dev && dest=$out/$tag.dry-run
+if [[ ! -e $dest ]]; then mkdir -m 755 "$dest"; fi
+"$check" owned "$dest" "$(id -u)"
 
 mkdir "$tmp/w"; cp "$drop/$tag/SHA256SUMS" "$tmp/w/SHA256SUMS"
 git show "$remote/main:packaging/allowed_signers" > "$tmp/w/allowed_signers"
@@ -56,13 +70,38 @@ fi
 for p in macos-universal linux-x86_64 linux-aarch64; do
   [[ $(grep -c -E "^[0-9a-f]{64}  sempere-$version-$p\.tar\.gz\$" "$tmp/w/SHA256SUMS") == 1 ]] || die "SHA256SUMS lacks exactly one valid line for sempere-$version-$p.tar.gz"
 done
+# The key first, before the minutes of notarization: a throwaway file signed with it must be a signer of origin/main.
+echo probe > "$tmp/w/probe"
+ssh-keygen -Y sign -f "$key" -n file "$tmp/w/probe" >/dev/null 2>&1 || die "ssh-keygen could not sign with $key (an agent that holds the key must be running)"
+[[ -n $(ssh-keygen -Y find-principals -f "$tmp/w/allowed_signers" -s "$tmp/w/probe.sig" 2>/dev/null | head -1) ]] \
+  || die "$key is not a key in $remote/main's packaging/allowed_signers: wrong key, nothing written"
+rm -f "$tmp/w/probe" "$tmp/w/probe.sig"
+# The macOS tarball: the hand-off folder's, as the list names it (data from the build account; release-sign-macos.sh unpacks it
+# entry by entry and runs none of it). Signed and notarized here, so its hash, and the list's macOS line, change.
+mac=sempere-$version-macos-universal.tar.gz
+"$check" owned "$drop/$tag/$mac" "$builder"
+cp "$drop/$tag/$mac" "$tmp/w/$mac.unsigned"
+want=$(sed -n "s/^\([0-9a-f]\{64\}\)  $mac\$/\1/p" "$tmp/w/SHA256SUMS")
+[[ $(shasum -a 256 < "$tmp/w/$mac.unsigned" | cut -d' ' -f1) == "$want" ]] || die "$drop/$tag/$mac is not the file SHA256SUMS names (build again)"
+echo "Signing and notarizing $mac (your Developer ID; notarization waits for Apple)..."
+bash scripts/release-sign-macos.sh $($dev && echo --dev) --version "$version" "$tmp/w/$mac.unsigned" "$tmp/w/$mac" || die "the macOS tarball was not signed: nothing written"
+signed_hash=$(shasum -a 256 < "$tmp/w/$mac" | cut -d' ' -f1)
+echo "macOS tarball: build hash $want (checked against the hand-off file) -> signed hash $signed_hash (this line changes in the list below; the Linux lines are the build's)"
+sed "s/^[0-9a-f]\{64\}  $mac\$/$signed_hash  $mac/" "$tmp/w/SHA256SUMS" > "$tmp/w/SHA256SUMS.new" && mv "$tmp/w/SHA256SUMS.new" "$tmp/w/SHA256SUMS"
+rm -f "$tmp/w/$mac.unsigned"
 echo "Signing this list:"; cat -v "$tmp/w/SHA256SUMS" | sed 's/^/  /'
+if $dev; then
+  rm -f "$dest/SHA256SUMS" "$dest/SHA256SUMS.sig" "$dest/$mac"
+  mv "$tmp/w/$mac" "$tmp/w/SHA256SUMS" "$dest/"
+  echo "dry run done: $dest holds the dev-signed tarball and the list; NO signature was made, and release-publish never reads this folder"
+  exit 0
+fi
 ssh-keygen -Y sign -f "$key" -n file "$tmp/w/SHA256SUMS" >/dev/null 2>&1 || die "ssh-keygen could not sign with $key (an agent that holds the key must be running)"
 who=$(ssh-keygen -Y find-principals -f "$tmp/w/allowed_signers" -s "$tmp/w/SHA256SUMS.sig" 2>/dev/null | head -1) || true
 [[ -n $who ]] || die "$key is not a key in $remote/main's packaging/allowed_signers: wrong key, nothing written"
 ssh-keygen -Y verify -f "$tmp/w/allowed_signers" -I "$who" -n file -s "$tmp/w/SHA256SUMS.sig" < "$tmp/w/SHA256SUMS" >/dev/null 2>&1 \
   || die "the signature does not verify against the list"
-rm -f "$out/$tag/SHA256SUMS" "$out/$tag/SHA256SUMS.sig"
-mv "$tmp/w/SHA256SUMS" "$tmp/w/SHA256SUMS.sig" "$out/$tag/"
-chmod 0644 "$out/$tag/SHA256SUMS" "$out/$tag/SHA256SUMS.sig"
-echo "done: $out/$tag/SHA256SUMS.sig signed by $who. Next, in the build account: just release-publish $version"
+rm -f "$dest/SHA256SUMS" "$dest/SHA256SUMS.sig" "$dest/$mac"
+mv "$tmp/w/$mac" "$tmp/w/SHA256SUMS" "$tmp/w/SHA256SUMS.sig" "$dest/"
+chmod 0644 "$dest/SHA256SUMS" "$dest/SHA256SUMS.sig" "$dest/$mac"
+echo "done: $dest/SHA256SUMS.sig signed by $who. Next, in the build account: just release-publish $version"

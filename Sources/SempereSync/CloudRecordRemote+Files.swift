@@ -74,6 +74,13 @@ extension CloudRecordRemote {
     /// One save, grouped with the others that wait with it; its own result.
     func submitSave(_ save: CloudSave) throws -> CloudSaveOutcome {
         do {
+            // A save with an asset goes by itself: its upload is the slow part, and a request that carries one holds the
+            // others' answers (and fails them together when it is cut). Only plain records are grouped.
+            if save.asset != nil {
+                let r = try call { try store.modify(zone: zone, saves: [save], deletes: [], atomic: false) }
+                guard r.saves.count == 1, r.deletes.isEmpty else { throw CloudStoreError(.internalError, "the answer does not match the request") }
+                return r.saves[0]
+            }
             let o = try batcher.submit(save: save) { saves, deletes in
                 try self.call { try self.store.modify(zone: self.zone, saves: saves, deletes: deletes, atomic: false) }
             }
@@ -91,17 +98,35 @@ extension CloudRecordRemote {
 
     /// Streams a live file's bytes, checked against the record's SHA-256, and returns its change tag. A record that
     /// changed while its bytes were read is read again (once): its hash then says whose bytes arrived.
-    private func readContent(_ path: [String], maxBytes: Int, begin: () throws -> Void, sink: (Data) throws -> Void) throws -> String {
+    /// A download that continues: the bytes already in the file (`local` reads a range of them) are kept up to the last part
+    /// boundary whose part they match, and only the parts after it are fetched (a push wakes an iOS app for about 30 s, so a
+    /// large file arrives over several of them). Only a split file resumes (design §2.5); any other starts over.
+    struct Resume {
+        var from: Int64
+        var tag: String?
+        var local: (Int64, Int) throws -> Data?
+    }
+
+    private func readContent(_ path: [String], maxBytes: Int, resume: Resume? = nil, begin: (Int64) throws -> Void,
+                             sink: (Data) throws -> Void) throws -> (tag: String, resumedAt: Int64) {
         var lastError: Error?
+        var resume = resume
         for _ in 0..<2 {
             try checkInterrupt()
             guard let (f, record) = try fetchFile(path, payload: true), !f.tomb else { throw CloudRecordError.notFound(shown(path)) }
             if f.isNewer { throw CloudRecordError.newerSchema(path: path.joined(separator: "/")) }
             if f.size > Int64(maxBytes) { throw CloudRecordError.tooLarge(path: shown(path), limit: maxBytes) }
             let content = try body(of: f, record, path)
-            try begin()
+            // What was already received counts only for the version it came from.
+            if let r = resume, r.tag.map({ Self.quote(f.tag) != $0 }) ?? false { resume = nil }
             var whole = SHA256()
             var total: Int64 = 0
+            var kept: (bytes: Int64, parts: Int) = (0, 0)
+            func skip(_ d: Data) { total += Int64(d.count); whole.update(data: d) }
+            if case .parts(let n) = content, let r = resume, r.from > 0 {
+                kept = try keptParts(f, count: n, path, resume: r, skip: skip)
+            }
+            try begin(kept.bytes)
             func take(_ d: Data) throws {
                 total += Int64(d.count)
                 guard total <= f.size else { throw CloudRecordError.corrupt(path: shown(path), reason: "more bytes than its size") }
@@ -114,29 +139,60 @@ extension CloudRecordRemote {
             case .asset:
                 try perform { try store.readAsset(zone: zone, name: f.name, maxBytes: f.size) { try take($0) } }
             case .parts(let n):
-                try readParts(f, count: n, path, take)
+                try readParts(f, count: n, path, kept: kept, take)
             }
             guard total == f.size, Data(whole.finalize()) == f.sha256 else {
                 lastError = CloudRecordError.corrupt(path: shown(path), reason: "SHA-256 does not match")
-                // Another device may have replaced it meanwhile: ask again once.
+                // Another device may have replaced it meanwhile: ask again once. So is a resumed read that did not add up.
+                if kept.bytes > 0 { resume = nil; continue }
                 if let again = try fetchFile(path, payload: false), again.file.tag != f.tag { continue }
                 throw lastError!
             }
-            return f.tag
+            return (f.tag, kept.bytes)
         }
         throw lastError ?? CloudRecordError.corrupt(path: shown(path), reason: "changed while being read")
     }
 
-    private func readParts(_ f: CloudMirror.File, count n: Int, _ path: [String], _ take: (Data) throws -> Void) throws {
-        var offered: Int64 = 0
-        for i in 0..<n {
+    /// The part records of a split file, checked, in order (`from`: the first one wanted; the sizes before it still count).
+    private func partRecord(_ f: CloudMirror.File, _ i: Int, _ path: [String], known: CloudRecord?? = nil) throws -> (name: String, size: Int64, sha: Data) {
+        let name = CloudRecordNaming.partName(fileName: f.name, fileSha: f.sha256 ?? Data(), index: i)
+        let fetched: CloudRecord? = try known ?? perform({ try store.fetch(zone: zone, name: name, payload: false) })
+        guard let part = fetched, part.kind == .part,
+              let size = part.fields.size, size > 0, size <= Int64(layout.partSize) * 4,
+              let sha = part.fields.sha256, sha.count == 32, (part.fields.schema ?? 0) <= CloudSchema.current else {
+            throw CloudRecordError.corrupt(path: shown(path), reason: "part \(i) is missing or invalid")
+        }
+        return (name, size, sha)
+    }
+
+    /// How much of the bytes already received (`resume.from`) can be kept: whole parts from the start whose own SHA-256
+    /// the local bytes match. Feeds them to `skip` (the whole file's hash and count) and returns where reading goes on.
+    private func keptParts(_ f: CloudMirror.File, count n: Int, _ path: [String], resume r: Resume, skip: (Data) -> Void) throws -> (bytes: Int64, parts: Int) {
+        var offset: Int64 = 0
+        var count = 0
+        // The part records that can matter (those that fit in what was received, and the next), in one request, not one each.
+        let wanted = min(n, Int(r.from / Int64(max(layout.partSize, 1))) + 1)
+        let names = (0..<wanted).map { CloudRecordNaming.partName(fileName: f.name, fileSha: f.sha256 ?? Data(), index: $0) }
+        let records = try perform { try store.fetchMany(zone: zone, names: names, payload: false) }
+        for i in 0..<wanted {
             try checkInterrupt()
-            let name = CloudRecordNaming.partName(fileName: f.name, fileSha: f.sha256 ?? Data(), index: i)
-            guard let part = try perform({ try store.fetch(zone: zone, name: name, payload: false) }), part.kind == .part,
-                  let size = part.fields.size, size > 0, size <= Int64(layout.partSize) * 4,
-                  let sha = part.fields.sha256, sha.count == 32, (part.fields.schema ?? 0) <= CloudSchema.current else {
-                throw CloudRecordError.corrupt(path: shown(path), reason: "part \(i) is missing or invalid")
-            }
+            let part = try partRecord(f, i, path, known: .some(records[names[i]]))
+            guard offset + part.size <= r.from, offset + part.size <= f.size, part.size <= Int64(Int32.max),
+                  let have = try r.local(offset, Int(part.size)), Int64(have.count) == part.size,
+                  Data(SHA256.hash(data: have)) == part.sha else { break }
+            skip(have)
+            offset += part.size
+            count += 1
+        }
+        return (offset, count)
+    }
+
+    private func readParts(_ f: CloudMirror.File, count n: Int, _ path: [String], kept: (bytes: Int64, parts: Int) = (0, 0),
+                           _ take: (Data) throws -> Void) throws {
+        var offered: Int64 = kept.bytes
+        for i in kept.parts..<n {   // the first ones were kept from the earlier attempt (`keptParts`)
+            try checkInterrupt()
+            let (name, size, sha) = try partRecord(f, i, path)
             offered += size
             guard offered <= f.size else { throw CloudRecordError.corrupt(path: shown(path), reason: "parts add up to more than the size") }
             var h = SHA256()
@@ -158,7 +214,7 @@ extension CloudRecordRemote {
     public func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) {
         try check(path)
         var data = Data()
-        let tag = try readContent(path, maxBytes: maxBytes, begin: { data = Data() }, sink: { data.append($0) })
+        let tag = try readContent(path, maxBytes: maxBytes, begin: { _ in data = Data() }, sink: { data.append($0) }).tag
         return (data, Self.quote(tag))
     }
 
@@ -174,20 +230,27 @@ extension CloudRecordRemote {
         }
         let handle = try FileHandle(forWritingTo: file)
         defer { try? handle.close() }
-        // No ranged reads: a download always starts over.
+        // No ranged reads: a split file continues at the last part boundary its bytes match, any other starts over.
         var written = 0
         do {
-            let tag = try readContent(path, maxBytes: maxBytes, begin: {
-                try handle.truncate(atOffset: 0)
-                try handle.seek(toOffset: 0)
+            let reader = resumeFrom > 0 ? try? FileHandle(forReadingFrom: file) : nil
+            defer { try? reader?.close() }
+            let resume = Resume(from: Int64(resumeFrom), tag: ifETag) { offset, length in
+                guard let reader else { return nil }
+                try reader.seek(toOffset: UInt64(offset))
+                return try reader.read(upToCount: length)
+            }
+            let result = try readContent(path, maxBytes: maxBytes, resume: resumeFrom > 0 ? resume : nil, begin: { keep in
+                try handle.truncate(atOffset: UInt64(keep))
+                try handle.seek(toOffset: UInt64(keep))
                 written = 0
             }, sink: { chunk in
                 try handle.write(contentsOf: chunk)
                 written += chunk.count
                 try progress?(chunk.count)
             })
-            if written == 0 { try progress?(0) }
-            return DownloadResult(resumed: false, etag: Self.quote(tag))
+            if written == 0, result.resumedAt == 0 { try progress?(0) }
+            return DownloadResult(resumed: result.resumedAt > 0, etag: Self.quote(result.tag))
         } catch let e as CloudRecordError {
             // Bytes that failed their checks are not left to be taken for the file.
             if case .corrupt = e { try? handle.truncate(atOffset: 0) }
@@ -557,14 +620,21 @@ extension CloudRecordRemote {
         guard !tombs.isEmpty || !orphans.isEmpty else { return }
         do {
             var deletable: [CloudMirror.File] = []
-            for t in tombs {
+            // One request for up to `batchRecords` tombstones, not one each (a fetch is 0.1 s, design §13.4).
+            var i = 0
+            while i < tombs.count {
                 try checkInterrupt()
-                guard let cur = try call({ try store.fetch(zone: zone, name: t.name, payload: false) }) else {
-                    core.with { $0.removeRecord(named: t.name) }
-                    continue
-                }
-                if case .file(let f) = CloudMirror.ingest(cur) {
-                    if f.tomb, f.tag == t.tag { deletable.append(t) } else { core.with { $0.upsert(f) } }
+                let chunk = Array(tombs[i ..< min(i + max(layout.batchRecords, 1), tombs.count)])
+                i += chunk.count
+                let current = try call { try store.fetchMany(zone: zone, names: chunk.map(\.name), payload: false) }
+                for t in chunk {
+                    guard let cur = current[t.name] else {
+                        core.with { $0.removeRecord(named: t.name) }
+                        continue
+                    }
+                    if case .file(let f) = CloudMirror.ingest(cur) {
+                        if f.tomb, f.tag == t.tag { deletable.append(t) } else { core.with { $0.upsert(f) } }
+                    }
                 }
             }
             try deleteRecords(deletable.map(\.name))

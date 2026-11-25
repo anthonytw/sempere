@@ -123,9 +123,15 @@ nothing else.
 The app's only connections go to a WebDAV server the user sets up and opens
 a vault from (`docs/io.md`, "WebDAV vaults in the app"): it downloads the
 vault's already encrypted files from there when the vault is opened and uploads
-its changes, push-only, over HTTPS (plain http is accepted only for localhost). Otherwise files move through the
+its changes, push-only, over HTTPS (plain http is accepted only for localhost); and,
+for a vault the user gives an iCloud (CloudKit) sync target, to Apple's iCloud servers as the
+signed-in Apple Account (`docs/design/1.4-cloudkit.md`): the vault's already encrypted files go
+into that account's private CloudKit database, one zone per vault, counted against its iCloud
+storage and unreadable to the developer, and Apple's push service wakes the app when another
+device wrote (a hint: nothing depends on it). That code is one file, `Sources/SempereCloudKit/CloudKitDatabase.swift`,
+shared with the Mac CLI. Otherwise files move through the
 system's Files and iCloud services, and on-device speech models are the
-system's downloads. Network code lives in `Sources/SempereWebDAV` (the CLI's
+system's downloads. Network code lives in `Sources/SempereWebDAV` and `Sources/SempereCloudKit` (the CLI's
 `sync webdav` and the app's WebDAV vaults, through
 `Apps/Sempere/SempereApp/WebDAVRemote.swift`) and in one other app file, the
 handwritten-math model downloader (`Apps/Sempere/SempereApp/MathModels.swift`),

@@ -36,8 +36,11 @@ maintainer's Mac, and their `SHA256SUMS` is signed (`SHA256SUMS.sig`, checked wi
 ## Notes
 
 - The Linux binary is fully static (Static Linux SDK, musl): it needs nothing from the system.
-- The macOS binary is not notarized. Homebrew downloads set no quarantine flag, so it runs;
-  a tarball downloaded in a browser may need `xattr -d com.apple.quarantine sempere`.
+- The macOS tarball holds `sempere.app`, signed with the maintainer's Developer ID, notarized and stapled
+  (`scripts/release-sign.sh`, docs/releasing.md): iCloud (CloudKit) sync targets need the entitlement and the provisioning
+  profile it carries, which macOS honors only inside a bundle. The formula installs the bundle into the keg and links
+  `bin/sempere` to the executable in it; a tarball unpacked by hand runs as `sempere.app/Contents/MacOS/sempere`. A build
+  from source (`swift build`) has no profile and says that iCloud is not available.
   TODO(user): notarize once the Developer ID certificate exists (requires the paid program).
 - Optional automation: a workflow in the tap, triggered by `repository_dispatch` from the
   release job, running `update-formula.sh` and opening a PR. Not set up.

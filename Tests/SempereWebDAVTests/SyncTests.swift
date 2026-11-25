@@ -493,4 +493,6 @@ final class Locked<T>: @unchecked Sendable {
     private var v: T
     init(_ v: T) { self.v = v }
     var value: T { get { lock.lock(); defer { lock.unlock() }; return v } set { lock.lock(); v = newValue; lock.unlock() } }
+    /// A change made under the lock (`value[k] = x` from several threads is a read, then a write: updates are lost).
+    func mutate(_ body: (inout T) -> Void) { lock.lock(); body(&v); lock.unlock() }
 }

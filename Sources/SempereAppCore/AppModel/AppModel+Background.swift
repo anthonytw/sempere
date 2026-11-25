@@ -38,7 +38,7 @@ extension AppModelCore {
     /// The processing task to ask for: it requires the network only while a WebDAV target has uploads waiting
     /// (offline audit A-P3).
     var processingRequest: BackgroundSyncRequest {
-        .processing(needsNetwork: syncCoordinator.sessions.values.contains { $0.kind == .webdav && $0.unconfirmed > 0 })
+        .processing(needsNetwork: syncCoordinator.sessions.values.contains { $0.kind.usesNetwork && $0.unconfirmed > 0 })
     }
 
     // MARK: - Every vault's targets (P8)

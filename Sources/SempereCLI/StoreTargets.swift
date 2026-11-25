@@ -43,7 +43,7 @@ struct StoreTargetList: ParsableCommand {
         guard !targets.isEmpty else { return output.info("\(entry.name) has no sync targets") }
         var rows = [["ID", "KIND", "NAME", "PLACE", "LAST SYNC"]]
         for t in targets {
-            rows.append([t.id.uuidString.lowercased(), t.kind.rawValue, t.name, t.path ?? t.url ?? "",
+            rows.append([t.id.uuidString.lowercased(), t.kind.rawValue, t.name, t.place,
                          t.lastSuccess.map(Format.utc) ?? "never"])
         }
         print(Format.table(rows))
@@ -53,7 +53,7 @@ struct StoreTargetList: ParsableCommand {
 struct StoreTargetAdd: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "add",
-        abstract: "Add a folder or WebDAV sync target to a store vault.",
+        abstract: "Add a folder, WebDAV or iCloud (CloudKit) sync target to a store vault.",
         discussion: """
             --folder PATH: where the vault's copy goes, by the app's rule (Add Folder…): a PATH holding this vault \
             (any name) or named ….sempere-vault or ….sempere is the copy itself; any other folder gets it in a folder \
@@ -65,7 +65,9 @@ struct StoreTargetAdd: ParsableCommand {
             never stored, `store sync` takes it from the environment. A target at the same place is refused (exit 1).
             With --webdav the server folder is listed first (password from --password-env) and one that holds \
             anything but this vault is refused (exit 1); a missing folder is made by the first sync. --no-check \
-            skips that (no request is made).
+            skips that (no request is made). --cloudkit: the vault's zone in the private iCloud database of the Apple \
+            Account signed in on this Mac (macOS, the released build only: a source build says that CloudKit is \
+            unavailable); the vault is uploaded by the first sync, a union when another device uploaded it already.
             """
     )
 
@@ -88,6 +90,9 @@ struct StoreTargetAdd: ParsableCommand {
             help: ArgumentHelp("With --check: the environment variable holding the WebDAV password.", valueName: "var"))
     var passwordEnv: String?
 
+    @Flag(name: .long, help: "An iCloud (CloudKit) target: this vault's zone in the signed-in Apple Account's private database.")
+    var cloudkit = false
+
     @Option(name: .long, help: ArgumentHelp("The target's display name (default: the folder's name or the host).",
                                             valueName: "name"))
     var name: String?
@@ -96,7 +101,9 @@ struct StoreTargetAdd: ParsableCommand {
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
-        if (folder == nil) == (webdav == nil) { throw ValidationError("give one of --folder PATH or --webdav URL") }
+        if [folder != nil, webdav != nil, cloudkit].filter({ $0 }).count != 1 {
+            throw ValidationError("give one of --folder PATH, --webdav URL or --cloudkit")
+        }
         if user != nil && webdav == nil { throw ValidationError("--user goes with --webdav") }
         if passwordEnv != nil && webdav == nil { throw ValidationError("--password-env goes with --webdav") }
     }
@@ -113,6 +120,8 @@ struct StoreTargetAdd: ParsableCommand {
                                                          vaultId: entry.vaultId, missingIsNew: true).standardizedFileURL
             try store.checkFolderTarget(url)
             target = .folder(url, name: name)
+        } else if cloudkit {
+            target = .cloudkit(user: try CloudKitCLI.accountHash(), name: name ?? "iCloud")
         } else {
             let text = webdav ?? ""
             guard let url = URL(string: text) else { throw CLIError.usage("\(text) is not a URL") }
@@ -285,6 +294,10 @@ struct StoreSync: ParsableCommand {
                     options.skipUnchangedNotes = true
                     report = try SyncEngine(directory: entry.url, vault: vault.canRead ? vault : nil, client: client,
                                             stateURL: stateURL, options: options).run()
+                case .cloudkit:
+                    let remote = try CloudKitCLI.remote(t, vaultId: entry.vaultId, stateDirectory: store.targets.stateDirectory(t.id, of: entry.vaultId))
+                    report = try CloudTargetRun.run(vaultFolder: entry.url, remote: remote, vault: vault.canRead ? vault : nil,
+                                                    stateURL: stateURL, twoWay: true, options: options)
                 default:
                     throw SyncTargetError.io("target kind \(t.kind) is not supported by this version")
                 }
@@ -320,7 +333,7 @@ struct StoreSync: ParsableCommand {
     }
 }
 
-/// A target as `--json` prints it (no bookmark bytes).
+/// A target as `--json` prints it (no bookmark bytes). A CloudKit target has neither a path nor a URL.
 struct StoreTargetOutput: Encodable {
     var id: String
     var kind: String

@@ -700,7 +700,7 @@ sempere store import SOURCE [--name NAME] [--keep-syncing] [--store DIR] [--json
 sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
 sempere store remove VAULT --yes [--store DIR] [--json]
 sempere store target list VAULT [--store DIR] [--json]
-sempere store target add VAULT (--folder PATH | --webdav URL [--user NAME] [--password-env VAR | --no-check])
+sempere store target add VAULT (--folder PATH | --webdav URL [--user NAME] [--password-env VAR | --no-check] | --cloudkit)
                          [--name NAME] [--store DIR] [--json]
 sempere store target remove VAULT TARGET [--store DIR] [--json]
 sempere store sync VAULT [--target TARGET ...] [--identity FILE | --passphrase-env VAR] [--password-env VAR]
@@ -821,7 +821,17 @@ a unique id prefix (4 characters or more), its name, path or URL.
   is refused (exit 1): it must be empty, missing (the first sync creates it) or hold this vault
   (`WebDAVConnection.checkTargetFolder`, which the app's Add WebDAV Server… runs too). `--no-check` adds it
   without contacting the server.
-- `target remove` forgets a target and deletes its sync state on this machine; the folder or server is not
+- `--cloudkit` adds an iCloud (CloudKit) target: the vault's zone (`sempere-<vault id>`) in the private CloudKit database of
+  the Apple Account signed in on this Mac, with the account's hash recorded so that a run in another account pauses (exit 1)
+  instead of uploading into it (docs/design/1.4-cloudkit.md §4). It needs the **released** `sempere`, the signed bundle
+  `sempere.app` the Homebrew install links `bin/sempere` to (CloudKit is a restricted entitlement that macOS grants only to a
+  program in a bundle with a provisioning profile). A build from source (`swift build`), any build on Linux, and a Mac with no
+  iCloud account each say so plainly (exit 1), before anything is contacted, and add nothing. A registry written by another
+  device may hold such a target: it is listed (`target list`, `store info`: place "iCloud (CloudKit)") and `store sync` reports
+  it unavailable for that target alone. `store sync` runs it like the others (no password; the first run uploads the vault or
+  makes a union with the zone another device made; nothing is deleted); its mirror of the zone's metadata is in the target's
+  state folder (`cloudkit/`).
+- `target remove` forgets a target and deletes its sync state on this machine; the folder, server or iCloud zone is not
   touched.
 - `sync` runs the vault with each target in turn (or only the `--target` ones): the two-way sync of
   `sync folder` or `sync webdav` (every rule there applies), each with its own state and quarantine, under the

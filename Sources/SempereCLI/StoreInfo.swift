@@ -53,7 +53,7 @@ struct StoreInfo: ParsableCommand {
         for d in info.targets {
             let t = d.target
             print("")
-            print("  \(t.kind.rawValue) \(t.name): \(t.path ?? t.url ?? "")")
+            print("  \(t.kind.rawValue) \(t.name): \(t.place)")
             print("    last sync: \(t.lastSuccess.map(Format.utc) ?? "never"); \(d.syncedFiles) files in step; "
                   + "sync state \(Format.bytes(Int(d.stateBytes)))" + (d.folderBytes.map { "; folder \(Format.bytes(Int($0)))" } ?? "")
                   + ((d.folderNotDownloaded ?? 0) > 0 ? " (\(d.folderNotDownloaded ?? 0) files not downloaded)" : ""))

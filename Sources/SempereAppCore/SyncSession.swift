@@ -255,7 +255,7 @@ public final class SyncSession {
     /// A scheduled run may start now: runs are automatic, the pace is not paused (or a write or demand waits), and
     /// a WebDAV target has a network path.
     private var mayRunNow: Bool {
-        guard runsAutomatically, !(networkDown && kind == .webdav) else { return false }
+        guard runsAutomatically, !(networkDown && kind.usesNetwork) else { return false }
         return !periodicPaused || schedule.pendingWrite != nil || schedule.demanded
     }
 
@@ -521,7 +521,7 @@ public final class SyncSession {
     public var status: SyncStatus {
         SyncStatus(syncing: isSyncing, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
-                   staged: staged, networkDown: networkDown && kind == .webdav, continuing: continuing,
+                   staged: staged, networkDown: networkDown && kind.usesNetwork, continuing: continuing,
                    providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
                    targetName: targetName, added: added == .distantPast ? nil : added, now: now())
     }
