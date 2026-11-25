@@ -123,7 +123,10 @@ extension AppModelSuites {
             let targets = a.model.syncStore.targets
             let quarantined = targets.quarantineDirectory(old.id, of: a.vaultID).appendingPathComponent("notes/x/file.age")
             let staged = targets.stateDirectory(old.id, of: a.vaultID).appendingPathComponent("incoming/notes/y/staged.age")
-            for url in [quarantined, staged] {
+            // The staging's own sync state and cache were the old zone's: they go, the staged files stay.
+            let staging = LockedStaging(targetState: targets.stateURL(old.id, of: a.vaultID))
+            let stagingCache = staging.directory.appendingPathComponent("cloudkit/mirror.json")
+            for url in [quarantined, staged, staging.stateURL, stagingCache] {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try Data("kept".utf8).write(to: url)
             }
@@ -135,10 +138,14 @@ extension AppModelSuites {
             let fresh = try await a.model.restartCloudKitTarget(old.id, of: a.vaultID)
             #expect(fresh.id == old.id && fresh.cloudUser == "second", "the same target, made again for this account")
             #expect(FileManager.default.fileExists(atPath: quarantined.path) && FileManager.default.fileExists(atPath: staged.path))
+            #expect(!FileManager.default.fileExists(atPath: staging.stateURL.path) && !FileManager.default.fileExists(atPath: stagingCache.path))
+            // Runs start over: "has not synced since" counts from the restart, not from when the target was added.
+            #expect(old.restarted == nil && fresh.restarted != nil && fresh.added == old.added)
             #expect(!FileManager.default.fileExists(atPath: targets.stateURL(old.id, of: a.vaultID).path))
             await a.model.syncAllTargetsNow()
             #expect(try db.zones() == [CloudTargetRun.zone(vaultId: a.vaultID)])
             #expect(a.model.syncSessions.first?.problems.isEmpty == true)
+            #expect(a.model.syncSessions.first?.restarted == fresh.restarted, "the new session counts from the restart")
         }
 
         @Test func aFullAccountIsAProblemAndASignedOutOneIsToo() async throws {

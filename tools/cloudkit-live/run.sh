@@ -103,8 +103,15 @@ build_driver() {
   build_driver_built
   [[ -n ${account_checked:-} ]] && return 0
   account_checked=1
-  local who; who=$("$drv" account 2>&1) || skip "cloudkit-live could not read the iCloud account: $who"
-  [[ $who == available* ]] || skip "no usable iCloud account on this Mac (cloudkit-live account: ${who:-no answer}); sign in to iCloud in System Settings"
+  # Only a Mac with no account, or a restricted one, skips: the driver failing (not signed, no entitlement, CloudKit
+  # erroring) or iCloud not answering is a failure, so a broken seat does not pass as "skipped".
+  local who; who=$("$drv" account 2>&1) || die "cloudkit-live could not read the iCloud account: $who"
+  case $who in
+    available*) ;;
+    noAccount*|restricted*|managedAccountRestricted*)
+      skip "no usable iCloud account on this Mac (cloudkit-live account: $who); sign in to iCloud in System Settings" ;;
+    *) die "iCloud did not answer usably (cloudkit-live account: ${who:-no answer})" ;;
+  esac
 }
 
 build_driver_built() {

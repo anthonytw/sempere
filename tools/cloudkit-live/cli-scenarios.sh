@@ -13,6 +13,7 @@
 #   large       a 70 MiB attachment (a file over the 64 MiB part threshold: it is split into parts) reaches B intact
 #   token       a run with nothing to do moves nothing, and the mirror is kept on disk between processes
 #   zone        the zone is deleted under B: the run says so and keeps B's notes; removing and adding the target uploads again
+#   cloudkit    `cloudkit list` names the vault; `cloudkit delete` refuses a target made with another Apple Account, then deletes the zone
 # No scenario needs a push. A failed check prints `FAIL`, the logs stay in WORKDIR, and the exit status is 1.
 set -uo pipefail
 work=${1:?WORKDIR}
@@ -156,6 +157,29 @@ sa target add Live --cloudkit >/dev/null 2>&1 || bad "A target add again"
 sa sync Live >"$work/a-again.log" 2>&1 && ok "A syncs with the new zone" || { bad "A's sync with the new zone"; tail -5 "$work/a-again.log"; }
 sb sync LiveB >/dev/null 2>&1
 check "the devices agree again, B's new note included" test "$(list a "$VA")" = "$(list b "$VB")"
+
+# --- cloudkit -----------------------------------------------------------------------------------------------------------------
+echo "run cloudkit"
+a cloudkit list --store "$work/storeA" 2>&1 | grep -qi "^${id:0:8}" && ok "cloudkit list names the vault" || bad "cloudkit list"
+# B's target as if made with another Apple Account: delete must refuse (the zone here is not that account's).
+python3 - "$work/storeB/.sync/$id/targets.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+def walk(x):
+    if isinstance(x, dict):
+        if x.get("kind") == "cloudkit": x["cloudUser"] = "0" * 64
+        for v in x.values(): walk(v)
+    elif isinstance(x, list):
+        for v in x: walk(v)
+walk(d); json.dump(d, open(p, "w"))
+PY
+b cloudkit delete "${id:0:8}" --yes --force --store "$work/storeB" >"$work/b-delete.log" 2>&1; st=$?
+check "delete refuses a target of another Apple Account" test "$st" != 0
+check "it says so" grep -q "another Apple Account" "$work/b-delete.log"
+check "the zone is still there" bash -c '"$0" zones | grep -qx "$1"' "$CKL" "$zone"
+a cloudkit delete "${id:0:8}" --yes --force --store "$work/storeA" >"$work/a-delete.log" 2>&1 && ok "delete with the account the target was made with" \
+  || { bad "cloudkit delete on A"; tail -3 "$work/a-delete.log"; }
+check "the zone is gone" bash -c '! "$0" zones | grep -qx "$1"' "$CKL" "$zone"
 
 [[ $fail == 0 ]] && echo "cli scenarios: all passed" || echo "cli scenarios: FAILED (logs in $work)"
 exit $fail

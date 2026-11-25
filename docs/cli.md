@@ -886,7 +886,7 @@ from a symlink in `bin/` as it does directly.
   folders (two devices), joins one to the other through the zone (`device init`, `devices approve`, `device confirm`) and runs
   both through convergence, a conflict, a delete, a 70 MiB attachment and a deleted zone (docs/io.md "Testing it against the
   real database").
-- Deleting a vault's iCloud data is not a CLI command: `target remove` forgets the target on this machine and leaves the zone.
+- `target remove` forgets the target on this machine and leaves the zone; `sempere cloudkit delete` deletes the zone (below).
   A zone another device or the user deleted makes the next run fail with "this vault's iCloud data is gone; nothing here was
   deleted"; removing and adding the target uploads the vault again.
 
@@ -3512,7 +3512,7 @@ vault whole into a temporary folder (a keyless run, which uploads nothing), chec
 store (`--name` or its label) and adds the iCloud target, whose first sync finds nothing to do; a vault the store holds already
 only gets the target (a label the store cannot use as a name, with `/` or `:`, is dropped: pass `--name`; a copy this command made is removed again if its target cannot be added). Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
 and the iCloud targets of that vault in this store (the zone first, so a failure leaves the targets in place), nothing else: refused (exit 1) when
-the vault here has no other target, and when the vault is not in this store at all, unless `--force`; without `--yes` it deletes nothing (exit 2). VAULT is
+the vault here has no other target, and when the vault is not in this store at all, unless `--force`, and always when an iCloud target of it here was made with another Apple Account than the one signed in (as the app's Delete from iCloud); without `--yes` it deletes nothing (exit 2). VAULT is
 at least the first eight hex digits of the id (`list`); a shorter or non-hex argument is exit 2. Other devices' iCloud targets then report that the vault's iCloud
 data is gone (Upload Again puts it back). Recovery from "zone gone" or "another Apple Account" is `store target remove` then
 `store target add --cloudkit`. `store info` shows an iCloud target's files and bytes at its last run.

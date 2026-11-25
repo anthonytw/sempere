@@ -48,6 +48,14 @@ public struct LockedStaging: Sendable {
     /// The placing run's state (fresh each time).
     var placeStateURL: URL { directory.appendingPathComponent("place-state.json") }
 
+    /// Forgets the shadow's sync state with the target (and a CloudKit target's cache beside it), keeping what is staged: for a
+    /// target made again in another zone or account, whose next locked run starts over (a union into the shadow).
+    public func resetState() {
+        try? FileManager.default.removeItem(at: stateURL)
+        SyncState.removeTransfers(stateURL)
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("cloudkit", isDirectory: true))
+    }
+
     /// True when something is staged (a locked run ran since the last placing).
     public var exists: Bool { FileManager.default.fileExists(atPath: shadow.path) }
 
