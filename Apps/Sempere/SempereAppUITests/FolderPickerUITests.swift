@@ -364,8 +364,8 @@ final class FolderPickerUITests: XCTestCase {
         for _ in 0..<8 {
             if element.waitForExistence(timeout: 1), element.isHittable {
                 // "Hittable" is true while the row is still clipped at the sheet's edge, where a click opens nothing (the
-                // iCloud row of 1.4 pushed Back Up To there): go on to the end of the form, which these rows are at.
-                for _ in 0..<3 { step() }
+                // iCloud row of 1.4 pushed Back Up To there): going down, go on to the end of the form, which these rows are at.
+                if down { for _ in 0..<3 { step() } }
                 return
             }
             step()

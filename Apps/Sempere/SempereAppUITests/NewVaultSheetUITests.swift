@@ -224,18 +224,17 @@ final class NewVaultSheetUITests: XCTestCase {
         // Below Back Up To since #109: out of view on the Mac's sheet (where a form reports no row
         // scrolled out of view) until the form scrolls.
         reveal(element(app, id), in: app)
-        // "Hittable" is true while the row is still clipped at the sheet's bottom edge, where a click does nothing (the
-        // iCloud row of 1.4 pushed the passphrase toggle there): go on to the end of the form, which these rows are at.
+        #if targetEnvironment(macCatalyst)
+        // On the Mac, "hittable" is true while the row is still clipped at the sheet's bottom edge, where a click does
+        // nothing (the iCloud row of 1.4 pushed the passphrase toggle there): go on to the end of the form, which these
+        // rows are at.
         if let point = formPoint {
             for _ in 0..<3 {
-                #if targetEnvironment(macCatalyst)
                 point.scroll(byDeltaX: 0, deltaY: -80)
-                #else
-                point.press(forDuration: 0.05, thenDragTo: point.withOffset(CGVector(dx: 0, dy: -150)))
-                #endif
                 Thread.sleep(forTimeInterval: 0.5)
             }
         }
+        #endif
         let row = app.switches[id].firstMatch
         let control: XCUIElement
         if row.waitForExistence(timeout: 30) {
