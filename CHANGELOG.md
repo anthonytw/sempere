@@ -6,6 +6,15 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
+## [1.4.0] - TODO(user): release date (YYYY-MM-DD)
+
+### Added
+
+- iCloud (CloudKit) sync target: the sync engine now talks to your private iCloud database. On a Mac, `sempere store target add VAULT --cloudkit` adds it, and the macOS command-line tool ships as a signed and notarized `sempere.app` bundle that Homebrew links `bin/sempere` to (a build from source says that iCloud is not available).
+- iCloud (CloudKit) in the app: Sync Targets lists iCloud (CloudKit) first when you add a target, and the welcome list has Open from iCloud…, which finds the vaults in your Apple Account by name, copies one onto this device and keeps it syncing. A device that has a vault but no iCloud target for it suggests the target once. New Vault can sync with iCloud from the start, and offers it in place of a folder in iCloud Drive.
+- The status of an iCloud target says what is wrong and what to do: iCloud storage full, signed out, restricted, another Apple Account (Use This Account), data deleted in iCloud settings or gone (Upload Again), or an update needed. Failures that heal by themselves stay out of the bar and show in Vault Details, which also shows the zone's size and Delete from iCloud…. A vault whose only copy besides this device is iCloud explains why to keep a backup too. Everything is in Spanish too.
+- `sempere cloudkit list`, `open` and `delete` do what the app's iCloud screens do; `sempere store info` shows an iCloud target's size.
+
 ## [1.3.0] - 2026-11-23
 
 ### Security
@@ -375,7 +384,8 @@ This release fixes four issues found by the project's first security audit
 
 Initial release.
 
-[Unreleased]: https://github.com/anthonytw/sempere/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/anthonytw/sempere/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/anthonytw/sempere/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/anthonytw/sempere/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/anthonytw/sempere/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/anthonytw/sempere/compare/v1.0.1...v1.1.0
