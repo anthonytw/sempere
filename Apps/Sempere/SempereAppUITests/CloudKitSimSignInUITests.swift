@@ -16,6 +16,7 @@ final class CloudKitSimSignInUITests: XCTestCase {
     private var email = ""
     private var password = ""
     private var steps: [String] = []
+    private var passwordTyped = false   // at most once in the whole run
 
     override func setUpWithError() throws {
         // The credentials are in a 0600 file of the run's own TMPDIR on the host (a simulator process reads host paths): the
@@ -34,6 +35,11 @@ final class CloudKitSimSignInUITests: XCTestCase {
     }
 
     private struct Stop: Error {}
+
+    /// A marker line the script reads, written straight to stderr (unbuffered: a crash right after must not lose it).
+    private func mark(_ line: String) {
+        FileHandle.standardError.write(Data((line + "\n").utf8))
+    }
 
     /// Texts on screen (labels of static texts, buttons and cells) matching `pattern`, case-insensitively.
     private func has(_ app: XCUIApplication, _ pattern: String) -> Bool {
@@ -79,6 +85,7 @@ final class CloudKitSimSignInUITests: XCTestCase {
 
     /// Stops the run: leaves a clean state (a sheet closed, Settings ended), reports, and returns the error to throw.
     private func stop(_ message: String) -> Error {
+        if !passwordTyped { mark("SIGNIN-NOTHING-TYPED") }   // the only positive evidence that no attempt was made
         for _ in 0..<3 { _ = tap(settings, "(cancel|not now|close|dismiss)", "cleanup") }
         settings.terminate()
         XCTFail(message + " Steps: " + steps.joined(separator: " > "))
@@ -99,7 +106,8 @@ final class CloudKitSimSignInUITests: XCTestCase {
     private func typeOnce(_ field: XCUIElement, _ text: String) -> Bool {
         let v = field.value as? String ?? ""
         if v.contains("\u{2022}") || v.contains("\u{25CF}") { return false }   // bullets: already filled
-        print("SIGNIN-PASSWORD-TYPING")   // before the keys go in: the script counts an attempt from here on
+        passwordTyped = true
+        mark("SIGNIN-PASSWORD-TYPING")   // before the keys go in: the script counts an attempt from here on
         field.tap()
         field.typeText(text)
         return true
@@ -127,7 +135,6 @@ final class CloudKitSimSignInUITests: XCTestCase {
         defer { settings.terminate() }
         XCTAssertTrue(settings.wait(for: .runningForeground, timeout: 30))
 
-        var passwordTyped = false   // at most once in the whole run
         var emailTyped = false
         var accountOpened = false
         Thread.sleep(forTimeInterval: 6)   // the expired token's alert comes a moment after Settings opens

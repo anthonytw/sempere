@@ -1376,7 +1376,7 @@ account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, i
    `~/.cache/sempere/sim-cloudkit-base.flock`) from the account check to the clone; a killed run frees it by itself.
    A verification code (two-factor) is never answered: that run exits 3, "needs a code sent to the account's trusted device",
    and the simulator stays signed out. Each password gets one attempt: an "attempted" marker in `~/.cache/sempere/`, keyed to the keychain item's modification date, is written
-   before the test starts and is removed only by a run that ends in a sign-in, ends without typing, or stops at the verification-code
+   before the test starts and is removed only by a run that ends in a sign-in, reports (SIGNIN-NOTHING-TYPED) that it ended without typing, or stops at the verification-code
    screen (the password was accepted then). Any other ending after the password was typed (a refusal, a stop, a timeout, a crash, a
    signal) leaves it, and later runs exit 4 until the keychain item is changed. In every failing case the simulator leg fails (the other legs and the cleanup still run). `SEMPERE_CKL_NO_SIGNIN=1` turns the automatic sign-in off.
 4. **Two stores through the CLI bundle** (`cli-scenarios.sh`; it replaces `tools/cloudkit-spike/cli-smoke.sh`): device A creates

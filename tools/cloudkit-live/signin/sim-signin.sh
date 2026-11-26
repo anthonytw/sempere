@@ -111,14 +111,15 @@ if [[ $(<"$log") == *"$pw"* ]]; then echo "error: the password appears in the xc
 pw=""
 grep -E "SIGNIN-|Test Case .*CloudKitSimSignIn|error:|\*\* TEST|needs a code|Executed" "$log" | tail -25 | while IFS= read -r line; do echo "${line//"$email"/<apple-id>}"; done || true
 if grep -q "SIGNIN-OK" "$log" && [[ $rc -eq 0 ]]; then rm -f "$marker"; exit 0; fi
-if ! grep -q "SIGNIN-PASSWORD-TYPING" "$log"; then
-  rm -f "$marker"   # nothing was typed: no attempt to count
-  if grep -q "two-factor" "$log"; then echo "sim-signin: needs a code sent to the account's trusted device (two-factor); the simulator is left signed out" >&2; exit 3; fi
-  echo "sim-signin: no sign-in happened (nothing was typed)" >&2; exit 1
-fi
 if grep -q "two-factor" "$log"; then
-  rm -f "$marker"   # the password was accepted (Apple asks for the code after it)
+  rm -f "$marker"   # a verification-code screen: the password was accepted (Apple asks for the code after it)
   echo "sim-signin: needs a code sent to the account's trusted device (two-factor); the simulator is left signed out" >&2; exit 3
 fi
-echo "sim-signin: the password was typed and the run did not end in a sign-in; not retried (marker $marker). Change the keychain item $pw_service to try again." >&2
+# The marker goes only on positive evidence: SIGNIN-OK above, or the test's final line saying it ended having typed nothing (both are
+# written unbuffered). A missing line (a crash, a kill, a launch failure) keeps it, as does any typing.
+if grep -q "SIGNIN-NOTHING-TYPED" "$log" && ! grep -q "SIGNIN-PASSWORD-TYPING" "$log"; then
+  rm -f "$marker"
+  echo "sim-signin: no sign-in happened (nothing was typed)" >&2; exit 1
+fi
+echo "sim-signin: the run did not end in a sign-in and did not show that nothing was typed; not retried (marker $marker). Change the keychain item $pw_service to try again." >&2
 exit 4
