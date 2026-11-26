@@ -179,6 +179,29 @@ final class InAppVaultStoreTests: TempDirTestCase {
         XCTAssertEqual(try store.importVault(from: try sourceVault()).vaultId, SampleFixture.vaultId)
     }
 
+    /// A partial copy made by Open from iCloud (`ImportOptions.allowPartial`) comes in with its markers; any other import still refuses it.
+    func testAPartialCopyIsKeptWhenTheCallerSaysSo() throws {
+        let fm = FileManager.default
+        let source = makeScratch().appendingPathComponent("V.sempere")
+        try fm.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.copyItem(at: FixtureTests.bundled("sample.sempere"), to: source)
+        let lecture = "notes/\(SampleFixture.lecture.uuidString.lowercased())"
+        try fm.createDirectory(at: source.appendingPathComponent(".sempere-partial"), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: source.appendingPathComponent(".sempere-partial/record.json"))
+        for f in try fm.contentsOfDirectory(atPath: source.appendingPathComponent(lecture).path) where f.hasSuffix(".age") {
+            try fm.removeItem(at: source.appendingPathComponent("\(lecture)/\(f)"))
+        }
+        try Data().write(to: source.appendingPathComponent("\(lecture)/.sempere-pending"))
+        XCTAssertThrowsError(try store.importVault(from: source))
+        var options = VaultStore.ImportOptions()
+        options.allowPartial = true
+        let entry = try store.importVault(from: source, options: options)
+        XCTAssertTrue(PartialCopy.isPartial(entry.url))
+        XCTAssertTrue(fm.fileExists(atPath: entry.url.appendingPathComponent("\(lecture)/.sempere-pending").path))
+        XCTAssertTrue(fm.fileExists(atPath: entry.url.appendingPathComponent(".sempere-partial/record.json").path))
+        XCTAssertTrue(stagingLeftovers().isEmpty)
+    }
+
     func testIncompleteOrUnsafeSourcesAreRefused() throws {
         let fm = FileManager.default
         func refused(_ prepare: (URL) throws -> Void, file: StaticString = #filePath, line: UInt = #line,

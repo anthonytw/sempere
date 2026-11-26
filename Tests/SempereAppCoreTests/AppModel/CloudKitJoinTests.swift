@@ -27,6 +27,55 @@ extension AppModelSuites {
             return CloudKitTargetTests.Device(model: model, library: library)
         }
 
+        /// Open from iCloud is a partial copy (design §8): with many notes and large blobs in the zone, only control records are read before
+        /// the vault opens locked, the join request goes out at once, and the notes arrive after home approves.
+        @Test func openFromICloudFetchesNoNotesBeforeTheJoin() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let db = MemoryCloudDatabase()
+            let counting = SlowCloudStore(db)
+            let home = Self.device(db, trust: false), phone = Self.device(db, trust: true, store: counting)
+            defer { home.model.close(); phone.model.close() }
+            try await CloudKitTargetTests.opened(home, vault: vault, key: key)
+            var notes: [UUID] = []
+            for i in 0..<25 { notes.append(try await home.model.createNote(title: "Note \(i)", paper: .ruled, notebook: nil)) }
+            _ = try await home.model.addCloudKitTarget(to: home.vaultID)
+            await home.model.syncAllTargetsNow()
+            counting.resetNoteReads()
+
+            let listed = try await phone.model.cloudKitVaults()
+            try await phone.model.openCloudKitVault(try #require(listed.first).vaultId, library: phone.library)
+            #expect(phone.model.phase == .locked)
+            #expect(phone.model.vaultCopy == nil)
+            #expect(counting.noteReads == 0, "no revision or blob was read to open the vault: \(counting.noteReads)")
+            let url = try #require(phone.model.vaultURL)
+            #expect(PartialCopy.isPartial(url), "the copy is partial until the notes are fetched")
+            #expect(PartialCopyState.incompleteNotes(url).count >= notes.count, "pending \(PartialCopyState.incompleteNotes(url).count) of \(notes.count)")
+
+            // The join request goes out in the first runs, still with no note read.
+            let keys = RememberedKeys(store: MemoryDeviceKeyStore())
+            guard case .waiting(let words, _) = try await phone.model.startJoin(store: keys.store) else { throw CancellationError() }
+            await phone.model.syncAllTargetsNow()
+            #expect(phone.model.joinDelivery == .sent, "the request is in the zone")
+            #expect(counting.noteReads == 0, "waiting for approval reads no note: \(counting.noteReads) \(String(describing: phone.model.syncSessions.first?.lastReport))")
+
+            _ = try await home.model.lookForJoinRequests()
+            let reply = try await home.model.approveDevice(words: words, qr: nil)
+            await home.model.syncAllTargetsNow()
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { CloudKitLongRunTests.remoteDeviceCount(db, home.vaultID) == 2 })
+            await phone.model.syncAllTargetsNow()
+            await phone.model.refreshLockedManifest()
+            _ = await keys.unlockWithDeviceKey(phone.model)
+            let device = try await keys.store.keys(for: try #require(phone.model.vault?.vaultId), reason: .unlock(vaultName: nil))
+            try await phone.model.confirmJoin(words: reply.words, keys: device)
+            #expect(phone.model.phase == .unlocked)
+
+            // After approval the target's runs fetch the notes.
+            await phone.model.syncAllTargetsNow()
+            #expect(await TS.waitUntil(timeout: .seconds(60)) { Set(phone.model.notes.map(\.id)).isSuperset(of: notes) })
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { !PartialCopy.isPartial(url) }, "the copy is complete")
+        }
+
         @Test func aDeviceOpensAVaultFromICloudAndJoinsIt() async throws {
             let (vault, keyURL) = try await ModelFixture.vault()
             let key = try await ModelFixture.keyText(keyURL)
@@ -81,11 +130,14 @@ final class SlowCloudStore: CloudRecordStore, @unchecked Sendable {
     let base: MemoryCloudDatabase
     private let lock = NSLock()
     private let gate = NSLock()
-    private var _slow = false, _noteSaves = 0, _feedDelay = 0.0
+    private var _slow = false, _noteSaves = 0, _feedDelay = 0.0, _noteReads = 0
     let delay: Duration
     init(_ base: MemoryCloudDatabase, delay: Duration = .milliseconds(100)) { self.base = base; self.delay = delay }
     var slow: Bool { get { lock.withLock { _slow } } set { lock.withLock { _slow = newValue } } }
     var noteSaves: Int { lock.withLock { _noteSaves } }
+    /// Reads of a record's bytes (an asset or a payload fetch) of anything under `notes/`: a revision or a blob.
+    var noteReads: Int { lock.withLock { _noteReads } }
+    func resetNoteReads() { lock.withLock { _noteReads = 0 } }
     /// Seconds each page of the zone's change feed takes (a large zone's first feed).
     var feedDelay: Double { get { lock.withLock { _feedDelay } } set { lock.withLock { _feedDelay = newValue } } }
 
@@ -98,8 +150,13 @@ final class SlowCloudStore: CloudRecordStore, @unchecked Sendable {
         if feedDelay > 0 { Thread.sleep(forTimeInterval: feedDelay) }
         return try base.fetchChanges(zone: zone, since: token)
     }
-    func fetch(zone: String, name: String, payload: Bool) throws -> CloudRecord? { try base.fetch(zone: zone, name: name, payload: payload) }
+    func fetch(zone: String, name: String, payload: Bool) throws -> CloudRecord? {
+        let record = try base.fetch(zone: zone, name: name, payload: payload)
+        if payload, (record?.fields.path ?? "").hasPrefix("notes/") { lock.withLock { _noteReads += 1 } }
+        return record
+    }
     func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
+        lock.withLock { _noteReads += 1 }   // assets are only parts of large files and blobs (notes/…)
         try base.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk)
     }
     func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
