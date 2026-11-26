@@ -17435,6 +17435,19 @@
         }
       }
     },
+    "Open the place where Sempere may use the local network" : {
+      "comment" : "Tooltip of the button that opens Settings, Local Network",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre el lugar donde Sempere puede usar la red local"
+          }
+        }
+      }
+    },
     "Open this note" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,

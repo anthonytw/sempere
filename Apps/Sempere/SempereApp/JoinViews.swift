@@ -188,6 +188,7 @@ struct JoinDeviceView: View {
                             .accessibilityIdentifier("join.nearby")
                         if case .problem(let problem) = model.nearbyJoining, let title = problem.settingsTitle {
                             Button(title, systemImage: "gearshape") { NearbyLinkProblem.openSettings() }
+                                .help("Open the place where Sempere may use the local network")
                                 .accessibilityIdentifier("join.nearbySettings")
                         }
                     }
@@ -424,6 +425,7 @@ struct AddDeviceSheet: View {
                                 .accessibilityIdentifier("addDevice.nearby")
                             if case .problem(let problem) = model.nearbyApproving, let title = problem.settingsTitle {
                                 Button(title, systemImage: "gearshape") { NearbyLinkProblem.openSettings() }
+                                    .help("Open the place where Sempere may use the local network")
                                     .accessibilityIdentifier("addDevice.nearbySettings")
                             }
                         }
