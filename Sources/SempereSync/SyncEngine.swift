@@ -135,6 +135,13 @@ public struct SyncOptions: Sendable {
     /// (`SyncError.cancelled` in `errors` and `stoppedEarly`). What was
     /// done is kept, a blob cut short continues on the next run.
     public var isCancelled: (@Sendable () -> Bool)?
+    /// A stop that is honored only once the run's control files are done (the epoch records, `vault.json`, the mutable files, `joins/`
+    /// and `keys/`: `controlFilesDone`), and `joinCheckWindow`, the time the run may go on for after that point. A join check (the app's
+    /// Add Device look, an approval, a joiner asking for it) needs those files handled and nothing more, and a run cut before them
+    /// (a first feed of a large zone, `CloudRecordRemote.prepareRun`) would be cut again and again, never getting there. Until then the
+    /// run's own bound is only `limits.maxDuration` (the caller's safety bound). Not for background tasks (`isCancelled` is theirs).
+    public var softCancel: (@Sendable () -> Bool)?
+    public var joinCheckWindow: TimeInterval?
 
     /// Files a provider lists but has not downloaded yet (`Arrivals.swift`):
     /// the longest one run waits, in all, for the ones it asked for to arrive.
@@ -241,6 +248,9 @@ public final class SyncEngine {
     var keepNoState = false
     /// What this run has used of `options.limits`.
     var budget: RunBudget
+    /// Whether the control files are done this run, and the transport's deadline (moved by `controlFilesDone`).
+    let controlPhase = ControlPhase()
+    let controlDeadline = DeadlineBox()
     /// SHA-256 of the local `vault.json` when the run started (what `vault` was opened from).
     var checkerBaseManifest: String?
     var checkerCache: (manifest: String?, vault: Vault?)?
@@ -473,10 +483,13 @@ public final class SyncEngine {
         locked { refusedThisRun = [] }
         // A request in flight stops at the run's time bound or a cancellation, not only between requests.
         let limits = options.limits, cancelled = options.isCancelled, breaker = breaker
-        let deadline = Date().addingTimeInterval(limits.maxDuration)
+        let soft = options.softCancel, phase = controlPhase
+        let deadline = controlDeadline
+        deadline.set(Date().addingTimeInterval(limits.maxDuration))
         transport.interrupt = {
             if cancelled?() == true { return SyncError.cancelled }
-            if Date() > deadline { return RunBudget.timeExceeded(limits) }
+            if phase.isDone, soft?() == true { return SyncError.cancelled }
+            if Date() > deadline.value { return RunBudget.timeExceeded(limits) }
             return breaker.trippedError
         }
         updateProgress { _ in }
@@ -645,6 +658,7 @@ public final class SyncEngine {
                 }
             }
         }
+        controlFilesDone()
         prepareReplacements()
 
         // Notebook records (format.md §14): write-once, so the union of both sides.
@@ -2129,5 +2143,34 @@ final class SyncRunLock: @unchecked Sendable {
             condition.unlock()
         }
         return try body()
+    }
+}
+
+
+/// Set once a run's control files are done (`SyncOptions.softCancel`).
+final class ControlPhase: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    var isDone: Bool { lock.withLock { done } }
+    func finish() { lock.withLock { done = true } }
+}
+
+/// The time past which the transport's requests stop (`SyncOptions.limits.maxDuration`, or `joinCheckWindow` after the control files).
+final class DeadlineBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var date = Date.distantFuture
+    var value: Date { lock.withLock { date } }
+    func set(_ d: Date) { lock.withLock { date = d } }
+}
+
+extension SyncEngine {
+    /// The control files (epoch records, `vault.json` and the mutable files, `joins/`, `keys/`) are done: a soft stop is honored from
+    /// here, and a join-check run's window starts (`SyncOptions.joinCheckWindow`).
+    func controlFilesDone() {
+        controlPhase.finish()
+        guard let window = options.joinCheckWindow else { return }
+        let end = Date().addingTimeInterval(window)
+        controlDeadline.set(min(end, controlDeadline.value))
+        locked { budget.deadline = min(end, budget.deadline) }
     }
 }

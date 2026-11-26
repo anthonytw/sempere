@@ -1019,6 +1019,12 @@ public final class AppModelCore<Host: AppModelHost> {
     /// The vault opened again after its `vault.json` changed (`syncedVaultFileArrived`): its list is
     /// checked again (`listAlert`), the quick-capture profile follows the list's capture keys, and the
     /// views open their notes again (`keyEpoch`).
+    /// The open vault after only its label was written (`ensureICloudLabel`): the same keys and list, so nothing reopens.
+    func adoptLabeled(_ next: Vault) {
+        guard next.vaultId == vault?.vaultId else { return }
+        vault = next
+    }
+
     func adoptReopened(_ next: Vault) {
         guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
         let before = vault.map(SpotlightKeys.init)
@@ -1056,6 +1062,8 @@ public final class AppModelCore<Host: AppModelHost> {
         Task { await rescheduleBackupReminder() }
         startSettingsSync()
         startInsights()
+        // A vault in iCloud is listed by its name: written once the first load is done, off the unlock's critical path.
+        Task { [weak self] in await self?.ensureICloudLabel() }
     }
 
     /// Unlocks with the text of a key: a device key file (`DeviceKeys`, with

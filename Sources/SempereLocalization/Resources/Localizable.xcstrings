@@ -298,6 +298,19 @@
         }
       }
     },
+    "%@ · changed %@" : {
+      "comment" : "Open from iCloud: %1$@ is whether it is on this device, %2$@ when it last changed",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · cambiado %2$@"
+          }
+        }
+      }
+    },
     "%@ – %@" : {
       "comment" : "History: the start and end of an editing session",
       "extractionState" : "manual",
@@ -7961,6 +7974,19 @@
         }
       }
     },
+    "Could not read this vault's details just now. It may still open; try again if it does not." : {
+      "comment" : "Open from iCloud: a row whose vault.json could not be read (a failed request, a newer version)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer los detalles de esta bóveda ahora. Puede que aún se abra; inténtalo de nuevo si no."
+          }
+        }
+      }
+    },
     "Could not record: %@" : {
       "comment" : "The value is the reason, in English",
       "extractionState" : "manual",
@@ -8769,7 +8795,7 @@
       }
     },
     "Delete “%@” from iCloud?" : {
-      "comment" : "Vault Details: asks before deleting the vault's iCloud data; %@ is the vault's name",
+      "comment" : "Open from iCloud: asks before deleting a vault's iCloud data; %@ is its name",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -9258,6 +9284,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Descargado"
+          }
+        }
+      }
+    },
+    "Downloading %lld of %lld files from %@…" : {
+      "comment" : "Sync status while a run goes: %1$lld files done, %2$lld in all, %3$@ where from (iCloud, the folder, the server)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargando %1$lld de %2$lld archivos de %3$@…"
           }
         }
       }
@@ -15100,6 +15139,19 @@
         }
       }
     },
+    "No copy of this vault is on this device, and it has no other sync target here. If no other device holds it, it is gone for good." : {
+      "comment" : "Open from iCloud: delete confirmation when iCloud holds the only copy this device knows of",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo no tiene ninguna copia de esta bóveda ni otro destino de sincronización para ella. Si ningún otro dispositivo la tiene, se pierde para siempre."
+          }
+        }
+      }
+    },
     "No device has asked to join yet. A request comes through the sync target, and iCloud Drive can take a minute or two to deliver it. Still looking…" : {
       "comment" : "Add Device: no join request yet; the sheet keeps looking",
       "extractionState" : "manual",
@@ -16202,6 +16254,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No hay nada en cuarentena."
+          }
+        }
+      }
+    },
+    "Nothing to open: this iCloud space holds no vault. Delete it to clear it away." : {
+      "comment" : "Open from iCloud: a row whose zone has no readable vault in it",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada que abrir: este espacio de iCloud no contiene ninguna bóveda. Bórralo para quitarlo."
           }
         }
       }
@@ -25892,6 +25957,19 @@
         }
       }
     },
+    "The copy on this device stays. If this device has not joined the vault yet, that copy cannot be opened without joining." : {
+      "comment" : "Open from iCloud: delete confirmation when a copy is on this device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia de este dispositivo se queda. Si este dispositivo aún no se ha unido a la bóveda, esa copia no se puede abrir sin unirse."
+          }
+        }
+      }
+    },
     "The copy on this device, this device's key for it and the saved password are deleted. The vault on the server is not changed." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -26239,6 +26317,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El idioma de los resúmenes y de los títulos de notas de voz generados. «Igual que la nota» escribe cada uno en el idioma de su nota. Si lo cambias, los resúmenes y títulos se vuelven a generar, unos pocos cada vez, en todos los dispositivos de esta bóveda; las palabras clave se quedan en el idioma de la nota."
+          }
+        }
+      }
+    },
+    "The last attempt (%@) failed: %@" : {
+      "comment" : "Sync status after a failed run; %1$@ is when, %2$@ the error message (English)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El último intento (%1$@) falló: %2$@"
           }
         }
       }
@@ -27716,6 +27807,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta copia no se sincroniza con ninguna carpeta ni servidor, así que no puede unirse a tus otros dispositivos. Para unirte, vuelve a abrir la carpeta de sincronización de la bóveda con Abrir bóveda… y deja activado «Seguir sincronizando con esta carpeta»."
+          }
+        }
+      }
+    },
+    "This deletes the vault and every note in it from your iCloud. Other devices that sync it with iCloud stop syncing." : {
+      "comment" : "Open from iCloud: delete confirmation",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto borra la bóveda y todas sus notas de tu iCloud. Los demás dispositivos que la sincronizan con iCloud dejan de sincronizar."
           }
         }
       }
@@ -30348,6 +30452,32 @@
         }
       }
     },
+    "Uploading %lld files to %@…" : {
+      "comment" : "Sync status while a run goes: a count of files done, %2$@ where to (iCloud, the folder, the server)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subiendo %1$lld archivos a %2$@…"
+          }
+        }
+      }
+    },
+    "Uploading %lld of %lld files to %@…" : {
+      "comment" : "Sync status while a run goes: %1$lld files done, %2$lld in all, %3$@ where to (iCloud, the folder, the server)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subiendo %1$lld de %2$lld archivos a %3$@…"
+          }
+        }
+      }
+    },
     "Use / for levels, e.g. School/Math. An empty notebook stays in the sidebar until you delete it." : {
       "comment" : "New Notebook footer",
       "extractionState" : "manual",
@@ -31811,6 +31941,7 @@
       }
     },
     "iCloud" : {
+      "comment" : "Sync status: the iCloud (CloudKit) target, after “to” or “from”",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "shouldTranslate" : false
@@ -32385,6 +32516,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "no se puede leer el archivo"
+          }
+        }
+      }
+    },
+    "the folder" : {
+      "comment" : "Sync status: a folder target, after “to” or “from”",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la carpeta"
+          }
+        }
+      }
+    },
+    "the server" : {
+      "comment" : "Sync status: a WebDAV target, after “to” or “from”",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el servidor"
           }
         }
       }
