@@ -343,7 +343,8 @@ extension AppModelSuites {
 
         // MARK: Quick capture
 
-        /// A voice note recorded while its vault is closed goes into the vault's in-app inbox (found by id), and the vault's target uploads it at once (upload-only).
+        /// A voice note recorded while its vault is closed goes into the vault's in-app inbox (found by id), and the vault's target uploads it at once (upload-only);
+        /// the open device takes it from the folder and adopts it.
         @Test func aCaptureWhileTheVaultIsClosedIsUploaded() async throws {
             let w = try await Self.world()
             defer { w.a.model.close(); w.b.model.close() }
@@ -366,12 +367,14 @@ extension AppModelSuites {
             #expect(await TS.waitUntil(timeout: .seconds(30)) {
                 FileManager.default.fileExists(atPath: w.shared.appendingPathComponent("inbox/\(name)").path)
             }, "\(String(describing: session.lastReport)) \(session.failure ?? "") twoWay=\(session.twoWay)")
-            // The open device takes it from the folder.
-            await w.a.model.syncAllTargetsNow()
-            #expect(await TS.waitUntil(timeout: .seconds(30)) {
-                FileManager.default.fileExists(atPath: w.a.folder.appendingPathComponent("inbox/\(name)").path)
-                    || w.a.model.notes.contains { $0.title.hasPrefix("Voice note") }
-            })
+            // The open device takes it from the folder and adopts it. Checked on the end state, after the adoption: the inbox file
+            // is in A's copy only until the adoption deletes it (which may finish before the sync returns), and a voice note stores
+            // no title since 1.3, so waiting for either raced the adoption (a Linux runner, PR #81; docs/ci.md "Quarantine").
+            let note = CaptureAdoption.ids(for: outcome.id).note
+            await w.a.model.syncAllTargetsNow()   // the run's changes start the adoption (`applySyncChanges`)
+            await w.a.model.inboxAdoption?.value
+            #expect(w.a.model.notes.contains { $0.id == note }, "\(w.a.model.notes.map(\.id)) \(w.a.model.inboxProblem ?? "")")
+            #expect(!FileManager.default.fileExists(atPath: w.a.folder.appendingPathComponent("inbox/\(name)").path), "consumed")
         }
 
         /// P8b (design §4.1): while B's vault is closed, a background run stages what A wrote in B's target's

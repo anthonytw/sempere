@@ -190,6 +190,10 @@ public final class SyncSession {
     @ObservationIgnored private var runsStarted = 0
     /// When the loop looks at the waiting files next (`planProviderRecheck`); nil: no look planned.
     @ObservationIgnored private(set) var providerRecheckDue: Date?
+    /// How many times the looks stopped after `providerRecheckLimit` in a row (`planProviderRecheck`), and a call each time:
+    /// for tests to wait on the plan, never on a quiet spell (review of #90's gate run).
+    @ObservationIgnored private(set) var providerLooksStops = 0
+    @ObservationIgnored var onProviderLooksStopped: (() -> Void)?
     /// The count `start` makes, for tests to wait on (a later fresh count starts the provider's looks over).
     @ObservationIgnored private(set) var startCount: Task<Void, Never>?
     /// `unconfirmed` was counted at least once.
@@ -625,6 +629,8 @@ public final class SyncSession {
         let delays = providerRecheckDelays
         guard !delays.isEmpty, providerRecheckIdle < providerRecheckLimit else {
             providerRecheckDue = nil
+            providerLooksStops += 1
+            onProviderLooksStopped?()
             return
         }
         providerRecheckDue = now().addingTimeInterval(delays[min(providerRecheckStep, delays.count - 1)])
