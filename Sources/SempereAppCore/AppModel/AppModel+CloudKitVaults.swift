@@ -73,7 +73,9 @@ extension AppModelCore {
                                          options: downloadOptions).requireComplete()
             }
             vaultCopy?.stage = .copying(done: 0, total: 0)
-            entry = try await library.copyIn(folder, coordinated: false, files: services.files) { [weak self] done, total in
+            // Named as the listing is, so the open screen shows one name (the folder's), not "vault" with the label beneath it.
+            let storeName = Self.storeName(forICloudName: listing.name, taken: Set(library.vaultStore.list().map(\.name)))
+            entry = try await library.copyIn(folder, coordinated: false, name: storeName, files: services.files) { [weak self] done, total in
                 Task { @MainActor in self?.vaultCopy?.stage = .copying(done: done, total: total) }
             }
         } catch let e as VaultStoreError {
@@ -86,6 +88,24 @@ extension AppModelCore {
         _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state, seedUser: account.userHash)   // `work` is removed when this returns
         try await openVault(at: entry.url)
         remember(in: library)
+    }
+
+    /// The store name (folder name without `.sempere`) for a vault listed in iCloud as `name`: the name with anything a folder
+    /// cannot carry replaced, and " 2", " 3", … when another store vault has it. Nil when nothing usable is left (the folder's
+    /// own name is used then).
+    nonisolated static func storeName(forICloudName name: String, taken: Set<String>) -> String? {
+        var clean = String(name.unicodeScalars.map { u -> Character in
+            CharacterSet.controlCharacters.contains(u) || "/:\\".unicodeScalars.contains(u) ? "-" : Character(u)
+        }).trimmingCharacters(in: .whitespacesAndNewlines)
+        while clean.hasPrefix(".") { clean.removeFirst() }
+        if clean.lowercased().hasSuffix(".sempere") { clean = String(clean.dropLast(".sempere".count)) }
+        clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        while (clean + " 99.sempere").utf8.count > 255 { clean.removeLast() }
+        guard (try? VaultStore.folderName(for: clean)) != nil else { return nil }
+        let lowered = Set(taken.map { $0.lowercased() })
+        var candidate = clean, n = 1
+        while lowered.contains(candidate.lowercased()) { n += 1; candidate = "\(clean) \(n)" }
+        return candidate
     }
 
     // MARK: The vault's name in iCloud

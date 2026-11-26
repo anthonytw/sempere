@@ -202,6 +202,7 @@ extension AppModelSuites {
             try await b.model.openCloudKitVault(listed[0].vaultId, library: b.library)
             #expect(b.library.vaultStore.entry(id: a.vaultID) != nil)
             #expect(b.model.openVaultTargets.map(\.kind) == [.cloudkit])
+            #expect(b.library.vaultStore.entry(id: a.vaultID)?.name == listed[0].name, "one name: the listing's, not the folder 'vault'")
             try await b.model.unlock(identityText: key)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { b.model.notes.contains { $0.id == note } })
             // Opening a vault already here adds nothing twice.
@@ -270,6 +271,17 @@ extension AppModelSuites {
             try open.setLabel("Chosen label")
             #expect(open.setLabelIfMissing("Folder name") == false)
             #expect(open.label == "Chosen label")
+        }
+
+        @Test func aVaultOpenedFromICloudIsNamedAsListedWithASuffixOnACollision() {
+            #expect(AppModel.storeName(forICloudName: "Lecture notes", taken: []) == "Lecture notes")
+            #expect(AppModel.storeName(forICloudName: "Lecture notes", taken: ["lecture notes", "Lecture notes 2"]) == "Lecture notes 3")
+            #expect(AppModel.storeName(forICloudName: "a/b: c\\d", taken: []) == "a-b- c-d")
+            #expect(AppModel.storeName(forICloudName: ".hidden.sempere", taken: []) == "hidden")
+            #expect(AppModel.storeName(forICloudName: "  ", taken: []) == nil)
+            let long = String(repeating: "é", count: 300)
+            let made = AppModel.storeName(forICloudName: long, taken: [])
+            #expect(made != nil && (try? VaultStore.folderName(for: made ?? "")) != nil)
         }
 
         /// The name stayed "Vault 3f2a9c1b" after the iCloud target was removed and added again: the zone kept an old `vault.json`
