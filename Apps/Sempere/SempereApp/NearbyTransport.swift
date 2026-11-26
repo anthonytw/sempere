@@ -139,18 +139,21 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
                 let mark = waiting.since
                 queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak self, weak listener] in
                     guard waiting.waiting, waiting.since == mark, let self else { return }
-                    self.classify(error: error) {
-                        self.unregisterLoopback(id)
-                        listener?.cancel()
+                    let l = listener
+                    self.classify(error: error) { [self] in
+                        unregisterLoopback(id)
+                        l?.cancel()
                         failed.run { onFailure() }
                     }
                 }
             case .failed(let error):
                 // The system suspended the app, or the local network is not allowed: the model says why and starts
                 // it again later.
-                self?.classify(error: error) {
-                    self?.unregisterLoopback(id)
-                    listener?.cancel()
+                guard let self else { return }
+                let l = listener
+                self.classify(error: error) { [self] in
+                    unregisterLoopback(id)
+                    l?.cancel()
                     failed.run { onFailure() }
                 }
             case .cancelled:
@@ -237,14 +240,16 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
                 let mark = waiting.since
                 queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak self, weak browser] in
                     guard waiting.waiting, waiting.since == mark, let self else { return }
+                    let b = browser
                     self.classify(error: error) {
-                        browser?.cancel()
+                        b?.cancel()
                         failed.run { onFailure() }
                     }
                 }
             case .failed(let error):
+                let b = browser
                 self?.classify(error: error) {
-                    browser?.cancel()
+                    b?.cancel()
                     failed.run { onFailure() }
                 }
             default:
