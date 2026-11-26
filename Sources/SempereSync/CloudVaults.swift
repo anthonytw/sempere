@@ -125,12 +125,34 @@ public enum CloudVaults {
         return .vault(bytes: bytes, modified: r.modified)
     }
 
+    /// Copies a finished download's sync state and mirror (`seedState` is its `sync-state.json`) into a new target's state folder.
+    /// Best effort: without them the first run starts from nothing, as it always did.
+    public static func seed(_ stateURL: URL, from seedState: URL) {
+        let fm = FileManager.default
+        let from = seedState.deletingLastPathComponent(), to = stateURL.deletingLastPathComponent()
+        guard fm.fileExists(atPath: seedState.path), fm.fileExists(atPath: from.appendingPathComponent("cloudkit/mirror-2.txt").path),
+              !fm.fileExists(atPath: CloudRecordRemote.feedIncompleteMarker(from.appendingPathComponent("cloudkit/mirror-2.txt")).path) else { return }
+        do {
+            try fm.createDirectory(at: to, withIntermediateDirectories: true)
+            for name in ["sync-state.json", "cloudkit"] {
+                let dest = to.appendingPathComponent(name)
+                try? fm.removeItem(at: dest)
+                try fm.copyItem(at: from.appendingPathComponent(name), to: dest)
+            }
+        } catch {
+            try? fm.removeItem(at: to.appendingPathComponent("sync-state.json"))
+            try? fm.removeItem(at: to.appendingPathComponent("cloudkit"))
+        }
+    }
+
     /// What the zone held at the target's last run: live files and their bytes, from the metadata mirror in the state
     /// folder (never the network); nil before a first run or when the mirror cannot be read.
     public static func mirrorSummary(stateURL: URL) -> (files: Int, bytes: Int64)? {
         let url = stateURL.deletingLastPathComponent().appendingPathComponent("cloudkit", isDirectory: true)
             .appendingPathComponent("mirror-2.txt")
-        guard let data = try? BoundedRead.contents(of: url, maxBytes: 512 << 20),
+        // A feed cut short saved a partial mirror (`CloudRecordRemote.prepareRun`): it says nothing of the zone's size yet.
+        guard !FileManager.default.fileExists(atPath: CloudRecordRemote.feedIncompleteMarker(url).path),
+              let data = try? BoundedRead.contents(of: url, maxBytes: 512 << 20),
               let mirror = try? CloudMirror.decode(data, maxRecords: SyncLimits.defaultMaxEntries) else { return nil }
         let live = mirror.files.values.filter { !$0.tomb }
         return (live.count, live.reduce(0) { $0 + $1.size })

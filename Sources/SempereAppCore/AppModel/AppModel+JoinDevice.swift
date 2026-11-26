@@ -506,7 +506,8 @@ extension AppModelCore {
         nearbyApproved(request)
         // The approval goes out now, not after the run going (a first upload of a large vault can take hours): that run is stopped
         // between files and each target makes one bounded run, which sends `vault.json` early. Not awaited: the reply shows at once.
-        Task { [weak self] in await self?.syncAllTargetsForJoinCheck() }
+        let approvedAt = Date()
+        Task { [weak self] in await self?.syncAllTargetsForJoinCheck(since: approvedAt) }
         return JoinReply(deviceName: DeviceName.display(request.name), words: reply,
                          qr: JoinCodes.replyQR(vaultId: next.vaultId, root: next.root, frontier: next.manifest.epochId))
     }

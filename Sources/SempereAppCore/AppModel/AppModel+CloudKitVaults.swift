@@ -83,7 +83,7 @@ extension AppModelCore {
         } catch {
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
-        _ = try await addCloudKitTarget(to: entry.vaultId)
+        _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state)   // `work` is removed when this returns
         try await openVault(at: entry.url)
         remember(in: library)
     }

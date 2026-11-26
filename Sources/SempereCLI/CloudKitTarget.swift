@@ -169,6 +169,9 @@ struct CloudKitOpen: ParsableCommand {
         let store = location.open()
         let entry: VaultStore.Entry
         var imported = false
+        var seed: URL?   // the download's sync state and mirror: the target's first run continues from them
+        let keep = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-icloud-seed-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: keep) }
         if let existing = store.entry(id: id) {
             entry = existing
         } else {
@@ -186,9 +189,14 @@ struct CloudKitOpen: ParsableCommand {
             if name == nil, let label = chosen, (try? VaultStore.folderName(for: label)) == nil { chosen = nil }
             entry = try store.importVault(from: folder, options: VaultStore.ImportOptions(name: chosen))
             imported = true
+            let state = work.appendingPathComponent("state", isDirectory: true)
+            if (try? FileManager.default.copyItem(at: state, to: keep)) != nil { seed = keep.appendingPathComponent("sync-state.json") }
         }
         if !store.targets.targets(of: entry.vaultId).contains(where: { $0.kind == .cloudkit }) {
-            do { try store.targets.add(.cloudkit(user: user, name: "iCloud"), to: entry.vaultId) } catch {
+            do {
+                let made = try store.targets.add(.cloudkit(user: user, name: "iCloud"), to: entry.vaultId)
+                if let seed { CloudVaults.seed(store.targets.stateURL(made.id, of: entry.vaultId), from: seed) }
+            } catch {
                 if imported { try? store.remove(entry.vaultId) }   // a copy that does not sync is not what was asked for
                 throw error
             }

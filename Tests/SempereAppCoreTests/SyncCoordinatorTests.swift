@@ -905,16 +905,16 @@ struct SyncSessionJoinCheckTests {
             let n = started.add(1)
             if n == 1 {
                 // The first upload: runs until something stops it (the way the engine polls `isCancelled` between files).
-                for _ in 0..<2_000 where !request.cancels.contains(where: { $0.isSet }) { try await Task.sleep(for: .milliseconds(5)) }
-                guard request.cancels.contains(where: { $0.isSet }) else { Issue.record("never stopped"); return SyncReport() }
-            } else if request.maxDuration != nil { _ = bounds.add(1) }
+                for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
+                guard request.soft?.isSet == true else { Issue.record("never stopped"); return SyncReport() }
+            } else if request.joinWindow != nil { _ = bounds.add(1) }
             return SyncReport()
         }, countUnconfirmed: { 0 })
         session.vaultUnlocked()
         let long = Task { await session.syncNow() }
         for _ in 0..<400 where started.add(0) == 0 { try await Task.sleep(for: .milliseconds(5)) }
         #expect(session.isSyncing)
-        _ = await session.syncForJoinCheck(maxDuration: 30)
+        _ = await session.syncForJoinCheck()
         _ = await long.value
         #expect(started.add(0) >= 2, "a second run was made")
         #expect(bounds.add(0) == 1, "and it was bounded")
@@ -929,7 +929,7 @@ struct SyncSessionInterruptTests {
     private static func session(throwing: Bool, runs: Sync.Counter) -> SyncSession {
         let s = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
             guard runs.add(1) == 1 else { return SyncReport() }
-            for _ in 0..<2_000 where !request.cancels.contains(where: { $0.isSet }) { try await Task.sleep(for: .milliseconds(5)) }
+            for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
             if throwing { throw SyncError.cancelled }
             var report = SyncReport()
             report.stoppedEarly = "sync run canceled"
@@ -946,12 +946,37 @@ struct SyncSessionInterruptTests {
         session.vaultUnlocked()
         let long = Task { await session.syncNow() }
         for _ in 0..<400 where runs.add(0) == 0 { try await Task.sleep(for: .milliseconds(5)) }
-        _ = await session.syncForJoinCheck(maxDuration: 30)
+        _ = await session.syncForJoinCheck()
         _ = await long.value
         #expect(session.problems.isEmpty, "no problem shown")
         #expect(session.quietFailure == nil && session.failure == nil, "no \"last attempt failed: cancelled\"")
         #expect(session.schedule.failures == 0, "no backoff")
         #expect(session.status.lastFailure == nil)
+        session.stop()
+    }
+}
+
+/// A run that started after the approval was written carries it already: the approval's join check neither stops nor waits for it.
+@MainActor
+struct SyncSessionSinceTests {
+    @Test func aRunStartedAfterTheApprovalIsLeftAlone() async throws {
+        let runs = Sync.Counter(), stopped = Sync.Counter()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            guard runs.add(1) == 1 else { return SyncReport() }
+            for _ in 0..<60 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(10)) }
+            if request.soft?.isSet == true { _ = stopped.add(1) }
+            return SyncReport()
+        }, countUnconfirmed: { 0 })
+        session.vaultUnlocked()
+        let approvedAt = Date()
+        try await Task.sleep(for: .milliseconds(20))
+        let going = Task { await session.syncNow() }      // started after the approval: carries it
+        for _ in 0..<200 where runs.add(0) == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        let r = await session.syncForJoinCheck(since: approvedAt)
+        #expect(r == nil, "nothing to do: the run going carries the approval")
+        _ = await going.value
+        #expect(stopped.add(0) == 0, "and it was not stopped")
+        #expect(runs.add(0) == 1, "no run of the check's own")
         session.stop()
     }
 }

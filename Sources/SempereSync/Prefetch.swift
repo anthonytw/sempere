@@ -50,6 +50,7 @@ extension SyncEngine {
     /// Throws `SyncError.cancelled` once `options.isCancelled` says so.
     func checkCancelled() throws {
         if options.isCancelled?() == true { throw SyncError.cancelled }
+        if controlPhase.isDone, options.softCancel?() == true { throw SyncError.cancelled }
     }
 
     /// Changes `progress` and hands it to `options.progress`.

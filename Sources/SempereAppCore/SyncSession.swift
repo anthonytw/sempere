@@ -47,6 +47,10 @@ public struct SyncRunRequest: Sendable {
     /// Told how far the run is (`SyncOptions.progress`, on the sync's threads): the session shows it in the status while the run
     /// goes (`SyncSession.runProgress`).
     var progress: (@Sendable (SyncProgress) -> Void)?
+    /// The session's own stop (`SyncSession.interruptRun`): honored once the run's control files are done (`SyncOptions.softCancel`).
+    var soft: SyncRunCancel?
+    /// A join-check run's window after the control files (`SyncOptions.joinCheckWindow`).
+    var joinWindow: TimeInterval?
 
     init(mode: SyncRunMode, maxDuration: TimeInterval? = nil, stage: Bool = false, cancels: [SyncRunCancel] = [],
                 interactive: Bool = false, networkReturned: Date? = nil, largeBlobs: LargeBlobPolicy = .auto) {
@@ -64,6 +68,8 @@ public struct SyncRunRequest: Sendable {
         SyncBounds(maxDuration: maxDuration).apply(to: &options)
         options.largeBlobs = largeBlobs
         if let progress { options.progress = progress }
+        if let soft { options.softCancel = { soft.isSet } }
+        options.joinCheckWindow = joinWindow
         if let networkReturned { options.networkReturned = networkReturned }
         let cancels = self.cancels
         if !cancels.isEmpty { options.isCancelled = { cancels.contains { $0.isSet } } }
@@ -244,9 +250,11 @@ public final class SyncSession {
     /// The loop's sleep going now; cancelling it wakes the loop (`wake`).
     @ObservationIgnored private var sleeper: Task<Void, Never>?
     @ObservationIgnored private var running: Task<SyncReport?, Never>?
-    /// The bound of a join-check run (`syncForJoinCheck`): requests and approvals are handled in its first moments, and the caller (Add
+    /// The window of a join-check run after its control files (`syncForJoinCheck`): requests and approvals are handled in its first moments, and the caller (Add
     /// Device's look, every 10 s) waits for it to end, so it is short; the loop carries on with the rest of the upload afterwards.
     @ObservationIgnored var joinCheckDuration: TimeInterval = 10
+    /// When the run going started (`syncForJoinCheck(since:)`).
+    @ObservationIgnored private var runStartedAt: Date?
     /// The cancel flag of the run going (`interruptRun`).
     @ObservationIgnored private var runCancel: SyncRunCancel?
     /// The run going now, if any (the copy must not be replaced or removed until it has ended).
@@ -387,12 +395,20 @@ public final class SyncSession {
     /// on their waiting screens (TestFlight 1.4.0 (117), k5). That run is stopped between files, and this one is bounded; the
     /// loop continues the rest afterwards (`demand`).
     @discardableResult
-    func syncForJoinCheck(maxDuration: TimeInterval? = nil) async -> SyncReport? {
+    func syncForJoinCheck(since: Date? = nil) async -> SyncReport? {
+        // A run that started after what the check is for (an approval written at `since`) carries it already, early in the run:
+        // it is neither stopped nor waited for.
+        if let since, running != nil, let started = runStartedAt, started >= since { return nil }
         while let r = running { interruptRun(); _ = await r.value }
-        let report = await runOnce(maxDuration: maxDuration ?? joinCheckDuration, interactive: true)
+        // Bounded by phase, not by the clock alone: the window starts once the control files are done (a first feed of a large zone
+        // may take minutes and must not be cut again and again), and `joinCheckSafety` bounds the whole run.
+        let report = await runOnce(maxDuration: Self.joinCheckSafety, interactive: true, joinWindow: joinCheckDuration)
         demand()
         return report
     }
+
+    /// The whole of a join-check run is bounded by this, whatever phase it is in.
+    static let joinCheckSafety: TimeInterval = 20 * 60
 
     /// One run for a background task (`SyncCoordinator`): bounded by `maxDuration`, stopped between files when
     /// `cancel` is set. A session whose run is already going is skipped, never waited for: that run may be a
@@ -428,12 +444,14 @@ public final class SyncSession {
     // MARK: - Runs
 
     private func runOnce(maxDuration: TimeInterval? = nil, cancel: SyncRunCancel? = nil, interactive: Bool = false,
-                         full: Bool = false) async -> SyncReport? {
+                         full: Bool = false, joinWindow: TimeInterval? = nil) async -> SyncReport? {
         if let running { return await running.value }
         let mode: SyncRunMode = twoWay ? .twoWay : .uploadOnly
         let own = SyncRunCancel()
         runCancel = own
-        var request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, own, appCancel()].compactMap { $0 })
+        var request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, appCancel()].compactMap { $0 })
+        request.soft = own
+        request.joinWindow = joinWindow
         request.interactive = interactive
         request.largeBlobs = interactive || full ? .now : .auto
         request.networkReturned = networkReturnedAt
@@ -446,6 +464,7 @@ public final class SyncSession {
             await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
             isSyncing = true
+            runStartedAt = now()
             runsStarted += 1
             schedule.started(at: now())
             // The "of M" of an upload: the count must be in before the run starts (a new target's first run starts before it).

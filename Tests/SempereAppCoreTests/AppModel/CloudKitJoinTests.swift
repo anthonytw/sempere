@@ -58,6 +58,8 @@ extension AppModelSuites {
             #expect(look.requests.count == 1, "home found the request after one sync")
             let reply = try await home.model.approveDevice(words: words, qr: nil)
             await home.model.syncAllTargetsNow()
+            // The approval goes out by itself too (`approveFound`); the phone asks once it is in the zone.
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { CloudKitLongRunTests.remoteDeviceCount(db, home.vaultID) == 2 })
 
             // The phone's next run takes the approval; it confirms with the reply and unlocks.
             await phone.model.syncAllTargetsNow()
@@ -79,18 +81,23 @@ final class SlowCloudStore: CloudRecordStore, @unchecked Sendable {
     let base: MemoryCloudDatabase
     private let lock = NSLock()
     private let gate = NSLock()
-    private var _slow = false, _noteSaves = 0
+    private var _slow = false, _noteSaves = 0, _feedDelay = 0.0
     let delay: Duration
     init(_ base: MemoryCloudDatabase, delay: Duration = .milliseconds(100)) { self.base = base; self.delay = delay }
     var slow: Bool { get { lock.withLock { _slow } } set { lock.withLock { _slow = newValue } } }
     var noteSaves: Int { lock.withLock { _noteSaves } }
+    /// Seconds each page of the zone's change feed takes (a large zone's first feed).
+    var feedDelay: Double { get { lock.withLock { _feedDelay } } set { lock.withLock { _feedDelay = newValue } } }
 
     func account() throws -> CloudAccount { try base.account() }
     func createZone(_ zone: String) throws { try base.createZone(zone) }
     func deleteZone(_ zone: String) throws { try base.deleteZone(zone) }
     func zones() throws -> [String] { try base.zones() }
     func fetchDatabaseChanges(since token: CloudChangeToken?) throws -> CloudDatabaseChanges { try base.fetchDatabaseChanges(since: token) }
-    func fetchChanges(zone: String, since token: CloudChangeToken?) throws -> CloudZoneChanges { try base.fetchChanges(zone: zone, since: token) }
+    func fetchChanges(zone: String, since token: CloudChangeToken?) throws -> CloudZoneChanges {
+        if feedDelay > 0 { Thread.sleep(forTimeInterval: feedDelay) }
+        return try base.fetchChanges(zone: zone, since: token)
+    }
     func fetch(zone: String, name: String, payload: Bool) throws -> CloudRecord? { try base.fetch(zone: zone, name: name, payload: payload) }
     func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
         try base.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk)
@@ -174,6 +181,49 @@ extension AppModelSuites {
                     "the approval's vault.json is in the zone")
             #expect(p.slow.noteSaves < 80, "while the upload of the new notes was still going: \(p.slow.noteSaves) of 80 (\(before) at the tap)")
             #expect(session.problems.isEmpty && session.quietFailure == nil, "the interrupts left no failure")
+        }
+
+        /// k5, a joiner on a vault whose zone is large: with no mirror its first run reads the whole change feed, which takes longer than a
+        /// join-check run's window. The feed is saved as it goes and the window starts after the control files, and a stop waits for them,
+        /// so the run gets to `joins/` however many times it is asked: the request reaches the zone and the approval comes back.
+        @Test func aJoinerWithNoMirrorOfALargeZoneStillSendsItsRequest() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let db = MemoryCloudDatabase()
+            db.limits.pageSize = 8
+            let slow = SlowCloudStore(db)
+            let home = CloudKitJoinTests.device(db, trust: false, store: slow), phone = CloudKitJoinTests.device(db, trust: true, store: slow)
+            defer { home.model.close(); phone.model.close() }
+            try await CloudKitTargetTests.opened(home, vault: vault, key: key)
+            for i in 0..<30 { _ = try await home.model.createNote(title: "Note \(i)", paper: .ruled, notebook: nil) }
+            _ = try await home.model.addCloudKitTarget(to: home.vaultID)
+            await home.model.syncAllTargetsNow()
+            let listed = try await phone.model.cloudKitVaults()
+            try await phone.model.openCloudKitVault(try #require(listed.first).vaultId, library: phone.library)
+            let target = try #require(phone.model.openVaultTargets.first)
+            let state = phone.model.syncStore.targets.stateDirectory(target.id, of: phone.vaultID)
+            #expect(FileManager.default.fileExists(atPath: state.appendingPathComponent("cloudkit/mirror-2.txt").path),
+                    "the download's mirror became the target's")
+            // The mirror is lost (a reinstall of the state, an expired token): the next run reads the whole feed, slowly.
+            await phone.model.syncAllTargetsNow()
+            try? FileManager.default.removeItem(at: state.appendingPathComponent("cloudkit"))
+            slow.feedDelay = 0.25   // 100+ records in pages of 8: several seconds, against a window of 0.5 s
+            for s in phone.model.syncSessions { s.joinCheckDuration = 0.5 }
+            let keys = RememberedKeys(store: MemoryDeviceKeyStore())
+            guard case .waiting(let words, _) = try await phone.model.startJoin(store: keys.store) else { throw CancellationError() }
+            let file = try #require(phone.model.joinRequestedFile(phone.vaultID))
+            let requestName = CloudRecordNaming.fileName(["joins", file])
+            let zone = CloudTargetRun.zone(vaultId: phone.vaultID)
+            // The joiner's waiting screen asks every few seconds, each ask stopping the run going.
+            for _ in 0..<40 where db.rawRecord(zone: zone, requestName) == nil { await phone.model.askForApprovalNow() }
+            #expect(db.rawRecord(zone: zone, requestName) != nil, "the request reached the zone")
+            slow.feedDelay = 0
+            _ = try await home.model.approveDevice(words: words, qr: nil)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { Self.remoteDeviceCount(db, home.vaultID) == 2 })
+            await phone.model.askForApprovalNow()
+            await phone.model.refreshLockedManifest()
+            #expect({ if case .joining = $0 { true } else { false } }(await keys.unlockWithDeviceKey(phone.model)))
+            #expect(keys.joinStage?.isConfirming == true, "the approval came back")
         }
 
         @Test func theJoinerTakesItsApprovalWhenItAsks() async throws {
