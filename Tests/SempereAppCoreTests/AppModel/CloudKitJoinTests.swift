@@ -72,13 +72,16 @@ extension AppModelSuites {
     }
 }
 
-/// A store whose note uploads are slow, so a run is long (a first upload of a large vault) and the tests can act while it goes.
+/// A store whose note uploads are slow, so a run is long (a first upload of a large vault) and the tests can act while it goes. Note
+/// saves go through one gate, one at a time, `delay` per record: however many transfer threads the engine uses and however fast the
+/// machine is, N notes take at least N x `delay`, so "the upload is still going" holds on a slow runner too (it can only last longer).
 final class SlowCloudStore: CloudRecordStore, @unchecked Sendable {
     let base: MemoryCloudDatabase
     private let lock = NSLock()
+    private let gate = NSLock()
     private var _slow = false, _noteSaves = 0
     let delay: Duration
-    init(_ base: MemoryCloudDatabase, delay: Duration = .milliseconds(400)) { self.base = base; self.delay = delay }
+    init(_ base: MemoryCloudDatabase, delay: Duration = .milliseconds(100)) { self.base = base; self.delay = delay }
     var slow: Bool { get { lock.withLock { _slow } } set { lock.withLock { _slow = newValue } } }
     var noteSaves: Int { lock.withLock { _noteSaves } }
 
@@ -95,7 +98,10 @@ final class SlowCloudStore: CloudRecordStore, @unchecked Sendable {
     func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
         let notes = saves.filter { ($0.fields.path ?? "").hasPrefix("notes/") }.count
         if notes > 0 {
-            if slow { Thread.sleep(forTimeInterval: Double(delay.components.attoseconds) / 1e18 + Double(delay.components.seconds)) }
+            if slow {
+                let seconds = (Double(delay.components.attoseconds) / 1e18 + Double(delay.components.seconds)) * Double(notes)
+                gate.withLock { Thread.sleep(forTimeInterval: seconds) }
+            }
             lock.withLock { _noteSaves += notes }
         }
         return try base.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic)
@@ -148,7 +154,7 @@ extension AppModelSuites {
         }
 
         @Test func anApprovalReachesTheZoneWhileALongUploadGoes() async throws {
-            let p = try await Self.pair(notes: 40)
+            let p = try await Self.pair(notes: 80)
             defer { p.slow.slow = false; p.home.model.close(); p.phone.model.close() }
             let session = try #require(p.home.model.syncSessions.first)
             let before = p.slow.noteSaves
@@ -157,7 +163,7 @@ extension AppModelSuites {
             _ = try await p.home.model.approveDevice(words: p.words, qr: nil)
             #expect(await TS.waitUntil(timeout: .seconds(20)) { Self.remoteDeviceCount(p.db, p.home.vaultID) == 2 },
                     "the approval's vault.json is in the zone")
-            #expect(p.slow.noteSaves - before < 40, "while the upload of the new notes was still going: \(p.slow.noteSaves - before) of 40")
+            #expect(p.slow.noteSaves - before < 80, "while the upload of the new notes was still going: \(p.slow.noteSaves - before) of 80")
             #expect(session.problems.isEmpty && session.quietFailure == nil, "the interrupts left no failure")
         }
 
