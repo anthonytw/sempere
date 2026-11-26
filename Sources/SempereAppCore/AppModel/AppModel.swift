@@ -1046,7 +1046,6 @@ public final class AppModelCore<Host: AppModelHost> {
     /// quick-capture profile, adopts the inbox, reschedules the backup
     /// reminder and syncs settings.
     private func didUnlock(awaitNotes: Bool) async throws {
-        await ensureICloudLabel()   // before the first two-way run: a vault in iCloud is listed by its name
         // The open store vault's targets run two-way from now on (also those added while it is open).
         syncCoordinator.openVaultUnlocked()
         await webdavUnlocked()   // a partial copy's rows come from the server's summaries: before the listing
@@ -1063,6 +1062,8 @@ public final class AppModelCore<Host: AppModelHost> {
         Task { await rescheduleBackupReminder() }
         startSettingsSync()
         startInsights()
+        // A vault in iCloud is listed by its name: written once the first load is done, off the unlock's critical path.
+        Task { [weak self] in await self?.ensureICloudLabel() }
     }
 
     /// Unlocks with the text of a key: a device key file (`DeviceKeys`, with

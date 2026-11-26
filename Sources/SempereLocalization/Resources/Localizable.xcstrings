@@ -7974,6 +7974,19 @@
         }
       }
     },
+    "Could not read this vault's details just now. It may still open; try again if it does not." : {
+      "comment" : "Open from iCloud: a row whose vault.json could not be read (a failed request, a newer version)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer los detalles de esta bóveda ahora. Puede que aún se abra; inténtalo de nuevo si no."
+          }
+        }
+      }
+    },
     "Could not record: %@" : {
       "comment" : "The value is the reason, in English",
       "extractionState" : "manual",
@@ -25944,7 +25957,7 @@
         }
       }
     },
-    "The copy on this device stays." : {
+    "The copy on this device stays. If this device has not joined the vault yet, that copy cannot be opened without joining." : {
       "comment" : "Open from iCloud: delete confirmation when a copy is on this device",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -25952,7 +25965,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La copia de este dispositivo se queda."
+            "value" : "La copia de este dispositivo se queda. Si este dispositivo aún no se ha unido a la bóveda, esa copia no se puede abrir sin unirse."
           }
         }
       }

@@ -106,6 +106,8 @@ struct CloudKitList: ParsableCommand {
         var modified: Date?
         /// False for a zone that holds no readable vault (nothing to open; delete it with `cloudkit delete --force`).
         var hasVault: Bool
+        /// `present`, `absent` (an empty zone) or `unreadable` (a request failed, a newer layout: may be a real vault).
+        var manifest: String
     }
 
     func run() throws {
@@ -117,13 +119,13 @@ struct CloudKitList: ParsableCommand {
             let here = id.flatMap { store.entry(id: $0) } != nil
             let target = id.map { store.targets.targets(of: $0).contains { $0.kind == .cloudkit } } ?? false
             return Row(vaultId: v.vaultId, zone: v.zone, name: v.name, named: v.named, inStore: here, hasCloudKitTarget: target,
-                       modified: v.modified, hasVault: v.hasVault)
+                       modified: v.modified, hasVault: v.hasVault, manifest: v.manifest.rawValue)
         }
         if output.json { return try output.emitJSON(rows) }
         if rows.isEmpty { return output.info("No vaults in this iCloud account") }
         var table = [["ID", "NAME", "IN STORE", "CHANGED"]]
         for r in rows {
-            let changed = r.modified.map { RFC3339.string($0) } ?? (r.hasVault ? "-" : "no vault")
+            let changed = r.modified.map { RFC3339.string($0) } ?? (r.manifest == "absent" ? "no vault" : r.manifest == "unreadable" ? "unreadable" : "-")
             table.append([r.vaultId, r.name, r.inStore ? (r.hasCloudKitTarget ? "synced" : "yes") : "no", changed])
         }
         print(Format.table(table))

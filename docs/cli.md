@@ -3508,8 +3508,8 @@ signed `sempere` (as `store target add --cloudkit`); any other build says so and
 `list` asks for the account's `sempere-<vault id>` zones and reads each vault's label from its `vault.json` record (an
 intact, inline record that is that vault's own; else the name is `Vault` and the first eight digits of the id): nothing is
 downloaded. Text: `ID  NAME  IN STORE  CHANGED` (`no`, `yes`, or `synced` when the vault here has an iCloud target; `CHANGED` is when the
-vault's `vault.json` was last saved in iCloud, which tells two vaults of one name apart, or `no vault` for a zone that holds none: an empty or
-half-made one that only `delete --force` clears). `--json`: an array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget, modified, hasVault}`.
+vault's `vault.json` was last saved in iCloud, which tells two vaults of one name apart, `no vault` for a zone that holds none, or `unreadable`: an empty or
+half-made one that only `delete --force` clears). `--json`: an array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget, modified, hasVault, manifest}` (`manifest`: `present`, `absent` for an empty zone, or `unreadable` when the vault.json could not be read now: it may be a real vault).
 The name is the vault's `label`: `store create` writes the store name as it (`--vault-label` overrides), and `store sync` gives a vault that
 has none (made before) its store name when it has an iCloud target and the run has the vault's key; a label that is there is never replaced
 (`sempere vault label` changes it, and the next sync takes it to iCloud). `open` takes a vault id or a unique prefix: it downloads the

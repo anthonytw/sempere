@@ -186,6 +186,8 @@ public final class SyncSession {
     @ObservationIgnored private(set) var providerRecheckDue: Date?
     /// The count `start` makes, for tests to wait on (a later fresh count starts the provider's looks over).
     @ObservationIgnored private(set) var startCount: Task<Void, Never>?
+    /// `unconfirmed` was counted at least once.
+    @ObservationIgnored private var counted = false
     /// The folder is in iCloud Drive (the wording names it).
     @ObservationIgnored var uploadsViaICloud = false
     /// A folder target's path as run errors may spell it (as stored, symbolic links resolved): a write refused there
@@ -368,6 +370,11 @@ public final class SyncSession {
         return await runOnce(interactive: true)
     }
 
+    /// The run `own` was stopped by `interruptRun` and by nothing else (not the background task's `cancel`, not the app-wide flag).
+    private func interruptedByUs(_ own: SyncRunCancel, _ cancel: SyncRunCancel?) -> Bool {
+        own.isSet && cancel?.isSet != true && appCancel()?.isSet != true
+    }
+
     /// Stops the run going between files (it ends as a run cut short after it moved files: progress, no problem, and the next run
     /// continues). Nothing when no run goes.
     func interruptRun() { runCancel?.cancel() }
@@ -378,8 +385,7 @@ public final class SyncSession {
     /// loop continues the rest afterwards (`demand`).
     @discardableResult
     func syncForJoinCheck(maxDuration: TimeInterval = 60) async -> SyncReport? {
-        interruptRun()
-        while let running { _ = await running.value }
+        while let r = running { interruptRun(); _ = await r.value }
         let report = await runOnce(maxDuration: maxDuration, interactive: true)
         demand()
         return report
@@ -439,6 +445,8 @@ public final class SyncSession {
             isSyncing = true
             runsStarted += 1
             schedule.started(at: now())
+            // The "of M" of an upload: the count must be in before the run starts (a new target's first run starts before it).
+            if let startCount { await startCount.value } else if !counted { unconfirmed = await countUnconfirmed(); counted = true }
             runUploadTotal = unconfirmed
             let relay = WebDAVProgressRelay { [weak self] in self?.runProgress = $0 }
             var request = request
@@ -467,6 +475,12 @@ public final class SyncSession {
                     // The account is full: uploads stopped for the run, downloads went on (design §4).
                     assessed.problems = [.cloud(.storageFull)]
                 }
+                if interruptedByUs(own, cancel), report.stopReason == .cancelled {
+                    // Our own `interruptRun` stopped it (a join check), possibly before it moved a file: not a failure, no
+                    // problem and no backoff, and not a last success; the next run continues.
+                    assessed = SyncRunAssessment(report: SyncReport(), twoWay: mode == .twoWay)
+                    assessed.cutShort = true
+                }
                 continuing = assessed.cutShort
                 problems = assessed.problems
                 failure = nil
@@ -489,6 +503,12 @@ public final class SyncSession {
                 return report
             } catch is CancellationError {
                 schedule.finished(at: now(), success: false)
+                return nil
+            } catch where interruptedByUs(own, cancel) && (error as? SyncError) == .cancelled {
+                // Thrown rather than reported: the same neutral stop (`interruptRun`).
+                continuing = true
+                schedule.finished(at: now(), success: true, changed: true)
+                await recount()
                 return nil
             } catch let e as any DeviceUnlockWaiting where e.waitsForDeviceUnlock {
                 // Waiting for the device's first unlock: no problem shown, no backoff (the app becoming active
@@ -542,6 +562,7 @@ public final class SyncSession {
 
     private func recount() async {
         unconfirmed = await countUnconfirmed()
+        counted = true
         if let countStaged { staged = await countStaged() }
         if let providerSummary { apply(await providerSummary()) }
         planProviderRecheck(fresh: true)

@@ -867,8 +867,7 @@ struct SyncSessionProgressTests {
         seen.session = session
         session.kind = .cloudkit
         session.vaultUnlocked()
-        _ = await session.syncNow()    // the first run counts nothing yet: unconfirmed is read after a run
-        _ = await session.syncNow()    // the second starts knowing 340 files wait
+        _ = await session.syncNow()    // a new target's first run knows how many files wait: its "of M" is there
         #expect(seen.movement == .uploading(done: 120, of: 340))
         #expect(session.runProgress == nil, "between runs there is nothing in flight")
         session.stop()
@@ -919,6 +918,40 @@ struct SyncSessionJoinCheckTests {
         _ = await long.value
         #expect(started.add(0) >= 2, "a second run was made")
         #expect(bounds.add(0) == 1, "and it was bounded")
+        session.stop()
+    }
+}
+
+/// An interrupt of our own (`interruptRun`) is neutral: no problem, no quiet failure, no backoff, even before the run moved a file.
+@MainActor
+struct SyncSessionInterruptTests {
+    /// A run that goes on until stopped, then ends the way the engine ends a cancelled run (reported, or thrown).
+    private static func session(throwing: Bool, runs: Sync.Counter) -> SyncSession {
+        let s = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            guard runs.add(1) == 1 else { return SyncReport() }
+            for _ in 0..<2_000 where !request.cancels.contains(where: { $0.isSet }) { try await Task.sleep(for: .milliseconds(5)) }
+            if throwing { throw SyncError.cancelled }
+            var report = SyncReport()
+            report.stoppedEarly = "sync run canceled"
+            report.stopReason = .cancelled
+            return report
+        }, countUnconfirmed: { 0 })
+        s.kind = .cloudkit
+        return s
+    }
+
+    @Test(arguments: [false, true]) func aJoinCheckThatStopsARunIsNotAFailure(throwing: Bool) async throws {
+        let runs = Sync.Counter()
+        let session = Self.session(throwing: throwing, runs: runs)
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where runs.add(0) == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        _ = await session.syncForJoinCheck(maxDuration: 30)
+        _ = await long.value
+        #expect(session.problems.isEmpty, "no problem shown")
+        #expect(session.quietFailure == nil && session.failure == nil, "no \"last attempt failed: cancelled\"")
+        #expect(session.schedule.failures == 0, "no backoff")
+        #expect(session.status.lastFailure == nil)
         session.stop()
     }
 }

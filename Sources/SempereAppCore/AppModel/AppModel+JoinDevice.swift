@@ -306,6 +306,12 @@ extension AppModelCore {
         return .stage(.waiting(words: codes.words, qr: codes.qr))
     }
 
+    /// The joining device asks its targets for home's approval (the join screen, every `joinLookInterval`): a run going is stopped and
+    /// each target makes one bounded run, so a long keyless pull or staging run does not hold the approval back.
+    public func askForApprovalNow() async {
+        await syncAllTargetsForJoinCheck()
+    }
+
     /// The open vault's `vault.json` as on disk now (a run may have taken the approval since it opened).
     public func refreshLockedManifest() async {
         guard phase == .locked, let url = vaultURL, let gen = Optional(generation) else { return }
@@ -498,7 +504,9 @@ extension AppModelCore {
         adoptReopened(next)
         // A device that sent this request nearby gets the approval over the link now; the targets get it with the runs.
         nearbyApproved(request)
-        syncSessions.forEach { $0.demand() }
+        // The approval goes out now, not after the run going (a first upload of a large vault can take hours): that run is stopped
+        // between files and each target makes one bounded run, which sends `vault.json` early. Not awaited: the reply shows at once.
+        Task { [weak self] in await self?.syncAllTargetsForJoinCheck() }
         return JoinReply(deviceName: DeviceName.display(request.name), words: reply,
                          qr: JoinCodes.replyQR(vaultId: next.vaultId, root: next.root, frontier: next.manifest.epochId))
     }

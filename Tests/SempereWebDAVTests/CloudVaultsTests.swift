@@ -50,6 +50,10 @@ final class CloudVaultsTests: TempDirTestCase {
             XCTAssertEqual(listed.count, 1)
             XCTAssertFalse(listed[0].named)
             XCTAssertEqual(listed[0].name, "Vault 0b0f1f3e")
+            // Not believed, but not called empty either: a vault the app cannot read now is still a vault (Open stays on, and the
+            // delete confirmation warns of the only copy).
+            XCTAssertEqual(listed[0].manifest, .unreadable)
+            XCTAssertTrue(listed[0].hasVault)
         }
         let empty = MemoryCloudDatabase()
         empty.makeZone(CloudRecordNaming.zoneName(vaultId: id))
@@ -92,5 +96,21 @@ final class CloudVaultsTests: TempDirTestCase {
         let decoded = try JSONDecoder().decode(CloudVaultListing.self, from: old)
         XCTAssertTrue(decoded.hasVault)
         XCTAssertNil(decoded.modified)
+    }
+
+    /// A `fetch` that fails (offline, throttled) is not "no vault": the zone is listed as unreadable, never as an empty one.
+    func testAFailedFetchIsUnreadableNotAbsent() throws {
+        let db = MemoryCloudDatabase()
+        put(db, manifest("Mine"))
+        let faults = CloudFaults(seed: 1)
+        faults.script(.fetch, .error(CloudStoreError(.networkFailure)))
+        db.faults = faults
+        let listed = try CloudVaults.list(store: db)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].manifest, .unreadable)
+        XCTAssertTrue(listed[0].hasVault)
+        XCTAssertFalse(listed[0].named)
+        db.faults = nil
+        XCTAssertEqual(try CloudVaults.list(store: db)[0].manifest, .present, "and the next listing reads it")
     }
 }

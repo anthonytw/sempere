@@ -102,13 +102,23 @@ extension AppModelCore {
               let entry = syncStore.entry(id: open.vaultId),
               beforeTarget || syncStore.targets.targets(of: open.vaultId).contains(where: { $0.kind == .cloudkit }) else { return }
         let lock = syncStore.writeLock(for: open.vaultId), name = entry.name
-        let written = try? await offMain { () -> Vault? in
+        // On a copy, off the main actor: `setLabel` is a write (it catches this device's files up first, design §5.4), so it takes the
+        // vault's write lock like any other. `attempted`: the copy may have written something even when the label did not go in.
+        let result = try? await offMain { () -> (next: Vault?, attempted: Bool) in
             var copy = open
-            return try lock.withLock(timeout: 10) { copy.setLabelIfMissing(name) ? copy : nil }
+            let wrote = try lock.withLock(timeout: 10) { copy.setLabelIfMissing(name) }
+            return (wrote ? copy : nil, true)
         }
-        guard let next = written ?? nil else { return }
-        adoptLabeled(next)   // the open vault's manifest is the file's again (nothing reopens: only the label changed)
-        if demandRun { for session in syncCoordinator.sessions(of: next.vaultId) where session.kind == .cloudkit { session.demand() } }
+        if let next = result?.next {
+            // Only when the open vault is still the one copied: a write made meanwhile keeps its own state.
+            guard vault?.manifest == open.manifest else { await checkOpenVaultAgainstDisk(); return }
+            adoptLabeled(next)   // the open vault's manifest is the file's again (nothing reopens: only the label changed)
+            if demandRun { for session in syncCoordinator.sessions(of: next.vaultId) where session.kind == .cloudkit { session.demand() } }
+        } else {
+            // The label did not go in (read-only, locked, a lock timeout), but the attempt may have changed the file (a catch-up):
+            // the model's vault is checked against the disk, and reopened if it differs.
+            await checkOpenVaultAgainstDisk()
+        }
     }
 
     // MARK: The suggestion on another device (design §8, step 3)
@@ -214,13 +224,20 @@ extension AppModelCore {
     /// the vault's zone with everything in it (every other device that syncs through it stops), and this device's iCloud targets of
     /// the vault, if any. It needs no copy on this device, which is the point: a zone no device here has (a vault another device
     /// made and removed, a half-made one) is listed and can be deleted only this way. A vault with no copy here and none besides
-    /// iCloud is deleted only when the caller says the user was told so (`acknowledgingNoOtherCopy`: the confirmation names it).
+    /// iCloud is deleted only when the caller says the user was told so (`acknowledgingNoOtherCopy`: the confirmation names it). Unlike Vault Details' `deleteFromICloud`, which refuses a vault whose only other copy is the store's own (it needs another target or a backup), this accepts a store copy as the copy that stays, because the list also holds zones that no copy of is here at all and those must be deletable; the difference is stated in docs/design/1.4-cloudkit.md §16.
     /// Targets made with another Apple Account are not removed (the zone deleted is the signed-in account's).
     public func deleteICloudVault(_ vaultId: String, library: VaultLibrary, acknowledgingNoOtherCopy: Bool) async throws {
         guard let cloud = services.cloudKit, cloud.isAvailable() else { throw CloudKitTargetProblem.unavailable }
         guard let id = UUID(uuidString: vaultId) else { throw CloudKitTargetProblem.noSuchVault }
         let zone = CloudTargetRun.zone(vaultId: id)
         if iCloudDeletionImpact(vaultId, library: library).onlyICloud, !acknowledgingNoOtherCopy { throw CloudKitTargetProblem.noOtherCopy }
+        // This device's CloudKit targets of the vault stop first: a run that is going (or one that never synced) could make the zone
+        // again right after it is deleted. A failure puts them back (`syncTargetsChanged` makes the sessions again).
+        let mine = syncStore.targets.targets(of: id).filter { $0.kind == .cloudkit }
+        for target in mine {
+            syncCoordinator.sessions[target.id]?.interruptRun()   // a long run is cut between files, not waited for
+            await syncCoordinator.stop(target.id)?.value
+        }
         let user: String
         do {
             let account = try await offMain { try cloud.makeStore().account() }
@@ -228,14 +245,18 @@ extension AppModelCore {
             user = account.userHash ?? ""
             try await offMain { try cloud.makeStore().deleteZone(zone) }
         } catch let e as CloudKitTargetProblem {
+            syncTargetsChanged()
             throw e
         } catch {
+            syncTargetsChanged()
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
         // The zone is gone: this device's targets for it (made with this account) go too; they would only report "iCloud data gone".
-        for target in syncStore.targets.targets(of: id) where target.kind == .cloudkit && (target.cloudUser == nil || target.cloudUser == user) {
+        // One that cannot be removed leaves the rest; the caller lists the account again (the zone is gone, the list says so).
+        for target in mine where target.cloudUser == nil || target.cloudUser == user {
             try await removeSyncTarget(target.id, of: id)
         }
+        syncTargetsChanged()
     }
 
     /// True when the vault has a copy that is not CloudKit's: another target, or this vault's own backup folder (not the open
