@@ -170,7 +170,8 @@ def enclosing_types(text: str, func_line: int) -> list[str]:
     for number, line in enumerate(text.splitlines(), start=1):
         if number == func_line:
             return [name for _, name in stack]
-        code = re.sub(r'"(?:\\.|[^"\\])*"', '""', line.split("//")[0])
+        # Strings first: a `//` inside one (a URL) is not a comment, and cutting there dropped the line's closing brace.
+        code = re.sub(r'"(?:\\.|[^"\\])*"', '""', line).split("//")[0]
         if m := TYPE_DECL.match(code):
             stack.append((depth, m[1]))
         depth += code.count("{") - code.count("}")
@@ -429,6 +430,9 @@ def self_test() -> int:
     nested = "struct Outer {\n    @Suite struct Inner {\n        @Test func a() {}\n    }\n    @Test func b() {}\n}\n"
     if enclosing_types(nested, 3) != ["Outer", "Inner"] or enclosing_types(nested, 5) != ["Outer"]:
         problems.append(f"nesting {enclosing_types(nested, 3)} {enclosing_types(nested, 5)}")
+    url = 'struct A {\n    let t = { f("https://x.example/") }()\n}\nstruct B {\n    @Test func c() {}\n}\n'
+    if enclosing_types(url, 5) != ["B"]:
+        problems.append(f"a // in a string taken as a comment: {enclosing_types(url, 5)} (PR #90's rerun ran no test)")
     cmd = ["xcodebuild", "test", "-scheme", "S", "-only-testing:A/B", "-skip-testing:A/C", "-resultBundlePath", "x.xcresult",
            "-retry-tests-on-failure", "-test-iterations", "2", "CODE_SIGNING_ALLOWED=NO"]
     again = rerun_command(cmd, Failure("A/B/testX", "xctest"), "xcodebuild")

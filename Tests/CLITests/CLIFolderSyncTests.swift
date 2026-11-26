@@ -174,23 +174,36 @@ final class CLIFolderSyncTests: CLITestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: b + "/notes/\(id)/\(file)"))
     }
 
-    /// A FAT drive: no hard links (creates check and rename under the lock) and a 2 s clock.
+    /// A FAT drive: no hard links (creates check and rename under the lock) and a 2 s clock. Every sync's report is in its
+    /// failure message (`--json`), so a failure names its cause (docs/ci.md "Quarantine": one exit 1 on a runner, PR #90, came
+    /// with no message).
     func testSyncThroughAFATDrive() throws {
         let volume = try mountFATVolume(megabytes: 16)
         let (_, _, key) = try makeVault(named: "a.sempere")
         let a = path("a.sempere"), b = path("b.sempere"), folder = volume + "/Notes.sempere"
-        let up = try cli(["sync", "folder", folder, "--vault", a, "--identity", key])
-        XCTAssertEqual(up.status, 0, up.err)
-        let down = try cli(["sync", "folder", folder, "--vault", b, "--identity", key])
-        XCTAssertEqual(down.status, 0, down.err)
+        func sync(_ vault: String, _ step: String, file: StaticString = #filePath, line: UInt = #line) throws {
+            let r = try cli(["sync", "folder", folder, "--vault", vault, "--identity", key, "--json"])
+            XCTAssertEqual(r.status, 0, "\(step): \(r.out)\(r.err)", file: file, line: line)
+        }
+        func set(_ vault: String, _ name: String, _ value: String, file: StaticString = #filePath, line: UInt = #line) throws {
+            let r = try cli(["settings", "set", name, value, "--vault", vault, "--identity", key])
+            XCTAssertEqual(r.status, 0, r.err, file: file, line: line)
+        }
+        try sync(a, "first upload")
+        try sync(b, "first pull")
         XCTAssertEqual(noteFiles(b), noteFiles(a))
-        // Settings changed on both sides within one tick of FAT's clock still merge.
-        XCTAssertEqual(try cli(["settings", "set", "eraser.mode", "pixel", "--vault", a, "--identity", key]).status, 0)
-        XCTAssertEqual(try cli(["sync", "folder", folder, "--vault", a, "--identity", key]).status, 0)
-        XCTAssertEqual(try cli(["settings", "set", "photos.removeMetadata", "false", "--vault", b, "--identity", key]).status, 0)
-        let merge = try cli(["sync", "folder", folder, "--vault", b, "--identity", key, "--json"])
-        XCTAssertEqual(merge.status, 0, merge.err)
-        XCTAssertEqual(try cli(["sync", "folder", folder, "--vault", a, "--identity", key]).status, 0)
+        // Settings changed on both sides within one tick of FAT's clock still merge. The tick is made, not hoped for: the
+        // folder's settings.age gets back the modification time it had when A uploaded it, so its time says nothing changed
+        // (A takes the merge because a run reads and compares settings.age's bytes, `prefetchMutables`).
+        let settings = folder + "/" + SharedSettings.fileName
+        try set(a, "eraser.mode", "pixel")
+        try sync(a, "A's change up")
+        let tick = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: settings)[.modificationDate] as? Date)
+        try set(b, "photos.removeMetadata", "false")
+        try sync(b, "B merges")
+        try FileManager.default.setAttributes([.modificationDate: tick], ofItemAtPath: settings)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: settings)[.modificationDate] as? Date, tick)
+        try sync(a, "A takes the merge")
         let sa = try cli(["settings", "list", "--vault", a, "--identity", key, "--json"])
         XCTAssertTrue(sa.out.contains("pixel") && sa.out.contains("removeMetadata"), sa.out)
     }
