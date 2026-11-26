@@ -86,7 +86,8 @@ extension AppModelCore {
         } catch {
             // A partial copy with no iCloud target could never fill (the account changed since the download, or the target could not be
             // stored): the copy goes, as the CLI's `cloudkit open` removes its own (`CloudKitOpen`).
-            try? library.vaultStore.remove(entry.vaultId)
+            // From the library, not the store: `copyIn` already listed the entry in `storedVaults`.
+            try? await library.removeStored(entry)
             throw error
         }
         try await openVault(at: entry.url)

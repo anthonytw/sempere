@@ -93,6 +93,7 @@ extension AppModelSuites {
             await #expect(throws: (any Error).self) { try await phone.model.openCloudKitVault(id.uuidString.lowercased(), library: phone.library) }
             #expect(phone.library.vaultStore.entry(id: id) == nil, "no partial copy is left")
             #expect(phone.library.vaultStore.list().isEmpty)
+            #expect(!phone.library.storedVaults.contains { $0.vaultId == id }, "and no ghost row in the library's list")
             #expect(phone.model.vaultCopy == nil)
         }
 

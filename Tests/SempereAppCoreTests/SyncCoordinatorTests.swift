@@ -1136,6 +1136,53 @@ struct SyncSessionUploadContinuityTests {
         session.stop()
     }
 
+    /// Review of batch/120 (fix pass): the recount folds the run's uploads into the carried count and then awaits the staged and
+    /// provider counts while the run's own progress is still on the line: 30, then 50, then 30. The published count never goes down.
+    @Test func theCountIsMonotonicAcrossARecount() async throws {
+        let confirmed = Sync.Counter(), runs = Sync.Counter()
+        let doneSeen = Sync.Counter()   // the most the line said so far
+        let regressions = Sync.Counter()
+        final class Box: @unchecked Sendable { var session: SyncSession? }
+        let box = Box()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            guard runs.add(1) == 1 else { return SyncReport() }
+            var p = SyncProgress()
+            p.stage = .syncingNotes
+            p.uploaded = 30
+            _ = confirmed.add(30)
+            request.progress?(p)
+            for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
+            var report = SyncReport()
+            report.stopReason = .cancelled
+            return report
+        }, countUnconfirmed: { 100 - confirmed.value })
+        box.session = session
+        session.kind = .cloudkit
+        session.handoffHold = .seconds(30)
+        // The sample the recount's awaits give the main actor: after the fold, before the run's progress is cleared.
+        session.countStaged = {
+            await MainActor.run {
+                if case .uploading(let done, _)? = box.session?.status.movement {
+                    if done < doneSeen.value { _ = regressions.add(1) }
+                    if done > doneSeen.value { _ = doneSeen.add(done - doneSeen.value) }
+                }
+            }
+            return 0
+        }
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where runs.value == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<400 where session.runProgress == nil { try await Task.sleep(for: .milliseconds(5)) }
+        if case .uploading(let done, _)? = session.status.movement { _ = doneSeen.add(done) }
+        #expect(doneSeen.value == 30)
+        session.interruptRun()
+        _ = await long.value
+        #expect(doneSeen.value == 30, "the recount never showed more than the 30 sent: \(doneSeen.value)")
+        #expect(regressions.value == 0)
+        #expect(session.status.movement == .uploading(done: 30, of: 100))
+        session.stop()
+    }
+
     /// Finding 3: a file that never confirms must not leave every later run saying "Uploading 99 of 100".
     @Test func theCountEndsWithARunThatFinishedWholeEvenWithFilesUnconfirmed() async throws {
         let runs = Sync.Counter()

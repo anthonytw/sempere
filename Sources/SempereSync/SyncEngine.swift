@@ -1083,7 +1083,7 @@ public final class SyncEngine {
             // none in either direction: a label-less server copy (a zone kept after its target was removed)
             // never erases the name this side holds; it goes up instead, but only from a listed device whose list
             // checks (format.md §2); a keyless or unverified run accepts the server's copy.
-            if let vault, !keylessManifestHeld, case .verified = vault.listStatus,
+            if let vault, case .verified = vault.listStatus,
                VaultLabelText.peekLabel(local) != nil, VaultLabelText.peekLabel(remoteData) == nil {
                 try push(name, local, condition: .unconditional)
                 return try recordMutable(name, hash: FileDigest.sha256(local))

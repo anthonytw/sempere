@@ -641,7 +641,16 @@ public final class SyncSession {
             runUploadTotal = 0
             uploadDoneBefore = 0
         } else {
-            uploadDoneBefore = min(max(uploadDoneBefore, runUploadTotal - unconfirmed), runUploadTotal)
+            // What this run moved is folded in here, so the progress still on the line (the recount awaits more counts before
+            // the run's end clears it) must not add it again: the line never says 30, then 50, then 30.
+            var folded = max(uploadDoneBefore, runUploadTotal - unconfirmed)
+            if var held = runProgress {
+                if !runEndedWhole { folded = max(folded, doneAtRunStart + held.uploaded + held.adopted) }
+                held.uploaded = 0
+                held.adopted = 0
+                runProgress = held
+            }
+            uploadDoneBefore = min(folded, runUploadTotal)
         }
     }
 
@@ -649,7 +658,7 @@ public final class SyncSession {
     /// below what the line showed), so the line adds it once, not twice, and never goes back.
     private func holdSyncingForNextRun() {
         if var held = runProgress {
-            if !runEndedWhole { uploadDoneBefore = max(uploadDoneBefore, doneAtRunStart + held.uploaded + held.adopted) }
+            if !runEndedWhole { uploadDoneBefore = min(max(uploadDoneBefore, doneAtRunStart + held.uploaded + held.adopted), runUploadTotal) }
             held.uploaded = 0
             held.adopted = 0
             runProgress = held
