@@ -17563,6 +17563,19 @@
         }
       }
     },
+    "Opening “%@” from iCloud…" : {
+      "comment" : "Open from iCloud progress while the vault's small control files arrive: %@ is the vault's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abriendo «%@» desde iCloud…"
+          }
+        }
+      }
+    },
     "Opening…" : {
       "comment" : "Progress: a note is being opened",
       "extractionState" : "manual",

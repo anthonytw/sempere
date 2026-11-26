@@ -65,8 +65,15 @@ public struct CloudVaultListing: Codable, Hashable, Sendable, Identifiable {
 public enum CloudVaultsError: Error, Equatable, LocalizedError {
     /// The zone's `vault.json` is another vault's (or unreadable): nothing was imported.
     case zoneHoldsAnotherVault
+    /// A run that reported no problem left a partial copy that cannot be opened (its note list is not complete).
+    case metadataIncomplete
 
-    public var errorDescription: String? { "this iCloud zone does not hold the vault its name says; nothing was copied" }
+    public var errorDescription: String? {
+        switch self {
+        case .zoneHoldsAnotherVault: return "this iCloud zone does not hold the vault its name says; nothing was copied"
+        case .metadataIncomplete: return "the vault's note list was not downloaded completely; try again"
+        }
+    }
 }
 
 public enum CloudVaults {
@@ -177,6 +184,29 @@ public enum CloudVaults {
         // account) must not be imported, or given a target, as this one.
         guard report.errors.isEmpty, report.stoppedEarly == nil else { return report }
         guard (try? Vault.open(at: folder).vaultId) == vaultId else { throw CloudVaultsError.zoneHoldsAnotherVault }
+        return report
+    }
+
+    /// Copies only what opening the vault `vaultId` needs out of the account's database into `folder`: a partial copy
+    /// (format.md §1.2, `LocalCopy.downloadMetadata`, the machinery WebDAV's Open uses): the root files (`vault.json`, `epochs/`,
+    /// `joins/`, `keys/`, notebook records, settings), the sealed summaries when the zone has them and one marked, empty folder per
+    /// note. No revision and no blob is downloaded (before a join they would be ciphertext this device cannot read; after, the
+    /// target's runs and the on-demand fetches bring them). The target's state goes beside it in `stateURL`'s folder, and holds the
+    /// zone's mirror and change token, so the target's first run reads only what changed since.
+    ///
+    /// - Throws: `CloudRecordError`, the engine's errors, or `CloudVaultsError.zoneHoldsAnotherVault`.
+    @discardableResult
+    public static func downloadMetadata(vaultId: UUID, store: any CloudRecordStore, into folder: URL, stateURL: URL,
+                                        expectedUser: String? = nil, options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        let remote = CloudTargetRun.remote(store: store, vaultId: vaultId, stateURL: stateURL, expectedUser: expectedUser)
+        try FileIO.createPrivateDirectory(stateURL.deletingLastPathComponent())
+        let copy = LocalCopy(folder: folder, stateDirectory: stateURL.deletingLastPathComponent())
+        var o = options
+        o.quarantineDirectory = o.quarantineDirectory ?? stateURL.deletingPathExtension().appendingPathExtension("quarantine")
+        let report = try copy.downloadMetadata(remote: remote, options: o)
+        guard report.errors.isEmpty, report.stoppedEarly == nil else { return report }
+        guard (try? Vault.open(at: folder).vaultId) == vaultId else { throw CloudVaultsError.zoneHoldsAnotherVault }
+        guard copy.isUsable else { throw CloudVaultsError.metadataIncomplete }
         return report
     }
 }
