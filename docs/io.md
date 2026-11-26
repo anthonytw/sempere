@@ -1360,6 +1360,15 @@ account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, i
    but the account (the closest this seat gets to two devices: C0 saw no push between them, so nothing waits for one). The driver
    links no UIKit, so a Catalyst binary is simply started (LaunchServices refuses its bundle, -10670); output reaches the script
    through `CKL_OUT`, since a simulator process has no terminal.
+   **The simulator's sign-in expires** about daily (cloudd logs `AuthTokenError 2011`; the driver's `account` scenario then says
+   `temporarilyUnavailable`, and Settings shows an "Apple Account Verification" alert). Before it makes the clone, the simulator leg
+   checks the base simulator's account (`run.sh sim-account`) and, when it fails, signs in again (`scripts/app.sh cloudkit-sim-signin`,
+   `run.sh sim-signin`; `tools/cloudkit-live/signin/sim-signin.sh`) and checks once more: the UI test `CloudKitSimSignInUITests`
+   drives Settings (alert, then the "Apple Account Password" sheet), with the Apple ID and password read from the login keychain
+   (items `sempere-test-apple-id-email` and `sempere-test-apple-id`, account `sempere-test`) and passed to the test runner by
+   environment only; the run keeps no result bundle and no log. It never answers a verification code (two-factor): that run
+   exits 3, "needs a code sent to the account's trusted device", and the simulator stays signed out. `SEMPERE_CKL_NO_SIGNIN=1`
+   turns the automatic sign-in off.
 4. **Two stores through the CLI bundle** (`cli-scenarios.sh`; it replaces `tools/cloudkit-spike/cli-smoke.sh`): device A creates
    a vault with notes, an image and a setting; device B (its own state folder, so its own keys) **joins through CloudKit alone**
    (`device init`, `devices approve`, `device confirm`, the files carried by the zone); then convergence, a conflict (both change
