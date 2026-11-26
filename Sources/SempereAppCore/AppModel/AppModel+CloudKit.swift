@@ -120,6 +120,9 @@ extension AppModelCore {
                         // A join run (design §6.2): the request goes out, home's approval comes in, keyless.
                         var joinOptions = options
                         joinOptions.firstPullIdentities = [join]
+                        // A partial copy (Open from iCloud) holds no note yet: before approval each would be ciphertext, so the run
+                        // carries the request and the approval and nothing else; the notes come after the unlock.
+                        joinOptions.controlFilesOnly = PartialCopy.isPartial(entry.url)
                         return try CloudTargetRun.run(vaultFolder: entry.url, remote: remote, vault: nil, stateURL: stateURL,
                                                       twoWay: true, options: joinOptions)
                     }

@@ -40,8 +40,15 @@ public enum NearbyJoinStatus: Equatable, Sendable {
     case unavailable
     /// Looking for a device that manages devices nearby.
     case looking
+    /// Nothing found for a good while (`nearbyNotSeenAfter`): the device that manages devices must have Add Device open,
+    /// and Local Network allowed.
+    case notSeen
     /// A device advertises nearby; connecting.
     case found
+    /// A device nearby was found but connecting keeps failing (`nearbyUnreachedFailures` in a row, or `nearbyUnreachedAfter`
+    /// without ever being connected): the request comes with the next sync instead; the join screen keeps trying in the
+    /// background, slower after each failure. Cleared when a device connects, the approval arrives, or a new device shows.
+    case unreached
     /// A device nearby that knows the vault has the request (not proven to be home: design L1).
     case connected
     /// Its approval arrived over the link: the reply words are next.
@@ -93,6 +100,12 @@ final class NearbyJoinRuntime {
     var browsing: (any NearbyActivity)?
     var joinTask: Task<Void, Never>?
     var peers: [NearbyPeer] = []
+    /// Consecutive failed attempts per device found, and when the first of a streak began (`nearbyJoinLoop`).
+    var joinFailures: [NearbyPeer: Int] = [:]
+    /// Clears Add Device's "link dropped" line after a while.
+    var droppedNoticeClear: Task<Void, Never>?
+    /// When a dropped connection of each remote address was last logged (`nearbyLinkDropped`): one line per address per minute.
+    var droppedLogged: [String: Date] = [:]
 
     /// At most this many requests that came nearby are kept for Add Device (the oldest goes first).
     static let requestLimit = 4
@@ -161,9 +174,9 @@ final class NearbyJoinRuntime {
 
     /// The wait before a side starts again after its `failures`-th failure since it last came up: `base`, doubled with
     /// each failure after the first, at most a minute (or `base`, if longer).
-    static func restartDelay(base: Duration, failures: Int) -> Duration {
+    static func restartDelay(base: Duration, failures: Int, cap: Duration = .seconds(60)) -> Duration {
         let doubled = base * (1 << min(max(failures - 1, 0), 10))
-        return min(doubled, max(base, .seconds(60)))
+        return min(doubled, max(base, cap))
     }
 }
 
@@ -220,6 +233,12 @@ extension AppModelCore {
         }
     }
 
+    func clearLinkDroppedNotice() {
+        nearby.droppedNoticeClear?.cancel()
+        nearby.droppedNoticeClear = nil
+        nearbyLinkDroppedNotice = false
+    }
+
     func stopAdvertising() {
         nearby.advertisement?.stop()
         nearby.advertisement = nil
@@ -245,12 +264,16 @@ extension AppModelCore {
         }
         let token = UUID(), vaultId = current.vaultId, timeouts = nearbyTimeouts
         let task = Task { [weak self] in
-            _ = try? await NearbyApprover.run(on: connection, vaultId: vaultId, timeouts: timeouts,
-                                              received: { [weak self] request, _, nonce in
-                await self?.nearbyReceived(request, nonce: nonce, token: token, connection: connection) ?? .refuse(.closed)
-            }, outcome: { [weak self] in
-                await self?.nearbyOutcome(token: token) ?? .refuse(.closed)
-            })
+            do {
+                _ = try await NearbyApprover.run(on: connection, vaultId: vaultId, timeouts: timeouts,
+                                                 received: { [weak self] request, _, nonce in
+                    await self?.nearbyReceived(request, nonce: nonce, token: token, connection: connection) ?? .refuse(.closed)
+                }, outcome: { [weak self] in
+                    await self?.nearbyOutcome(token: token) ?? .refuse(.closed)
+                })
+            } catch {
+                if !Task.isCancelled { self?.nearbyLinkDropped(error, host: host) }
+            }
             self?.nearbyConnectionEnded(token)
         }
         nearby.handshakes[token] = (task, connection, host)
@@ -277,9 +300,32 @@ extension AppModelCore {
         nearby.decision = nil
         nearby.pending = (request, nonce)
         nearbyApproving = .connected
+        clearLinkDroppedNotice()
         keepNearbyRequest(request)
         nearbyArrivals += 1
         return .wait
+    }
+
+    /// A nearby connection failed before (or while) it got a request: timed out, dropped, or sent garbage. Add Device says so
+    /// for a while (`nearbyLinkDroppedFor`), so the person on home sees that something tried, not an empty screen.
+    /// The log line is made once per address per minute (`logEvery`): anything on the network can connect and send garbage; the
+    /// notice is not limited.
+    func nearbyLinkDropped(_ error: Error, host: String? = nil, now: Date = Date(), logEvery: TimeInterval = 60) {
+        let key = host ?? ""
+        if nearby.droppedLogged[key].map({ now.timeIntervalSince($0) >= logEvery || now < $0 }) ?? true {
+            if nearby.droppedLogged.count >= 64 { nearby.droppedLogged = nearby.droppedLogged.filter { now.timeIntervalSince($0.value) < logEvery } }
+            nearby.droppedLogged[key] = now
+            services.perf.log(.error, "nearby", "approve: a connection from a device nearby failed before its request was in: \(LogSafe.describe(error))")
+        }
+        guard nearby.advertisement != nil else { return }
+        nearbyLinkDroppedNotice = true
+        nearby.droppedNoticeClear?.cancel()
+        let wait = nearbyLinkDroppedFor
+        nearby.droppedNoticeClear = Task { [weak self] in
+            try? await Task.sleep(for: wait)
+            guard !Task.isCancelled else { return }
+            self?.nearbyLinkDroppedNotice = false
+        }
     }
 
     /// Keeps `request` for Add Device while it shows: one per commitment, the newest last, at most `requestLimit`.
@@ -447,6 +493,7 @@ extension AppModelCore {
         nearby.browserRestart?.cancel()
         nearby.browserRestart = nil
         nearbyJoining = .off
+        nearbyJoinError = nil
     }
 
     func startJoinLoop() {
@@ -483,9 +530,9 @@ extension AppModelCore {
     func nearbyPeersChanged(_ peers: [NearbyPeer]) {
         guard nearby.browsing != nil else { return }
         nearby.peers = peers
-        if nearbyJoining == .looking, !peers.isEmpty {
+        if (nearbyJoining == .looking || nearbyJoining == .notSeen), !peers.isEmpty {
             nearbyJoining = .found
-        } else if nearbyJoining == .found, peers.isEmpty {
+        } else if (nearbyJoining == .found || nearbyJoining == .unreached), peers.isEmpty {
             nearbyJoining = .looking
         }
     }
@@ -494,6 +541,8 @@ extension AppModelCore {
     /// vault, "declined"), and after it held a session to the end of its time without answering (design L5).
     nonisolated static var nearbyRefusedRest: Duration { .seconds(60) }
     nonisolated static var nearbyStalledRest: Duration { .seconds(300) }
+    /// The longest wait between attempts at a device that keeps failing (`NearbyJoinRuntime.restartDelay`'s doubling stops here).
+    nonisolated static var nearbyFailureRestCap: Duration { .seconds(30) }
 
     /// One session at a time, with a device found chosen at random among those not resting, those never tried first
     /// but at most `newPeersPerMinute` of them a minute (names are the advertisers' to choose: none sorts its way
@@ -504,8 +553,31 @@ extension AppModelCore {
         var resting: [NearbyPeer: ContinuousClock.Instant] = [:]
         var tried: Set<NearbyPeer> = []
         var firstTries: [ContinuousClock.Instant] = []
+        // When the screen began to look, and when a device was first found without a connection since.
+        var lookingSince: ContinuousClock.Instant?
+        var foundSince: ContinuousClock.Instant?
+        nearby.joinFailures = [:]
+        nearbyJoinError = nil
         while !Task.isCancelled, gen == generation, phase == .locked {
             let now = ContinuousClock.now
+            if nearbyJoining == .looking || nearbyJoining == .notSeen {
+                lookingSince = lookingSince ?? now
+                if nearbyJoining == .looking, now - (lookingSince ?? now) >= nearbyNotSeenAfter { nearbyJoining = .notSeen }
+            } else {
+                lookingSince = nil
+            }
+            if !nearby.peers.isEmpty { foundSince = foundSince ?? now } else { foundSince = nil }
+            /// The line after an attempt that did not get anywhere: `.unreached` once the device failed enough times
+            /// in a row, or was found for long and never connected; else back to looking or found.
+            func settle(_ peer: NearbyPeer) {
+                let failures = nearby.joinFailures[peer] ?? 0
+                let long = foundSince.map { ContinuousClock.now - $0 >= nearbyUnreachedAfter } ?? false
+                if failures >= nearbyUnreachedFailures || (failures > 0 && long) {
+                    nearbyJoining = nearby.peers.isEmpty ? .looking : .unreached
+                } else {
+                    nearbyJoining = nearby.peers.isEmpty ? .looking : .found
+                }
+            }
             let ready = nearby.peers.filter { (resting[$0] ?? now) <= now }
             firstTries.removeAll { now - $0 >= .seconds(60) }
             guard let peer = Self.nearbyPick(ready: ready, tried: tried, newThisMinute: firstTries.count), let identity = joinIdentity,
@@ -513,7 +585,14 @@ extension AppModelCore {
                 try? await Task.sleep(for: nearbyRetry)
                 continue
             }
-            if tried.insert(peer).inserted { firstTries.append(now) }
+            if tried.insert(peer).inserted {
+                firstTries.append(now)
+                // A new device: the last one's failures say nothing of it.
+                nearby.joinFailures = [:]
+                nearbyJoinError = nil
+                foundSince = now
+                if nearbyJoining == .unreached { nearbyJoining = .found }
+            }
             let requestURL = url.appendingPathComponent("joins").appendingPathComponent(file)
             // The request as written: its bytes are what the targets hold.
             guard let raw = try? await offMain({ try BoundedRead.contents(of: requestURL, maxBytes: JoinRequest.maxBytes) }),
@@ -534,14 +613,29 @@ extension AppModelCore {
             } catch {
                 guard gen == generation, !Task.isCancelled else { return }
                 switch error {
-                case NearbyJoinError.notThisVault: resting[peer] = .now + Self.nearbyRefusedRest
-                case NearbyJoinError.timedOut where waited.isSet: resting[peer] = .now + Self.nearbyStalledRest
-                default: resting[peer] = .now + nearbyRetry
+                case NearbyJoinError.notThisVault:
+                    resting[peer] = .now + Self.nearbyRefusedRest
+                    services.perf.log(.notice, "nearby", "join: \(peer.id) is another vault's device")
+                case NearbyJoinError.timedOut where waited.isSet:
+                    resting[peer] = .now + Self.nearbyStalledRest
+                    services.perf.log(.notice, "nearby", "join: \(peer.id) held the session until its time ran out")
+                default:
+                    // The link failed before home had the request (connect failed or timed out, dropped, garbled):
+                    // counted, and the next attempt waits longer after each in a row.
+                    let n = (nearby.joinFailures[peer] ?? 0) + 1
+                    nearby.joinFailures[peer] = n
+                    nearbyJoinError = LogSafe.describe(error)
+                    services.perf.log(.error, "nearby", "join: attempt \(n) at \(peer.id) failed: \(LogSafe.describe(error))")
+                    resting[peer] = .now + NearbyJoinRuntime.restartDelay(base: nearbyRetry, failures: n, cap: Self.nearbyFailureRestCap)
                 }
-                nearbyJoining = nearby.peers.isEmpty ? .looking : .found
+                settle(peer)
                 continue
             }
             guard gen == generation, !Task.isCancelled else { return }
+            // Home answered: the link works, whatever it said.
+            nearby.joinFailures[peer] = nil
+            nearbyJoinError = nil
+            foundSince = nil
             switch outcome {
             case .reply(let reply):
                 if (try? await takeNearbyReply(reply, nonce: nonce, commitment: commitment)) != nil {
@@ -580,6 +674,8 @@ extension AppModelCore {
 
     func nearbyConnected(generation gen: Int) {
         guard gen == generation, nearby.joinTask != nil else { return }
+        nearby.joinFailures = [:]
+        nearbyJoinError = nil
         nearbyJoining = .connected
     }
 

@@ -36,12 +36,12 @@ extension SyncStatus {
                               comment: "Sync status while a run goes: %1$lld files done, %2$lld in all, %3$@ where from (iCloud, the folder, the server)")
             case nil: break
             }
-            if cloudKit { return String(localized: "Syncing with iCloud…", comment: "Sync status of an iCloud (CloudKit) target while a run goes") }
+            if cloudKit { return String(localized: "Syncing with iCloud…", comment: "Sync status of an iCloud target while a run goes") }
             return folder ? String(localized: "Syncing with the folder…") : String(localized: "Syncing with the server…")
         case .offline:
             if cloudKit {
                 return String(localized: "Offline. Changes are kept on this device and sync with iCloud when it can be reached.",
-                              comment: "Sync status of an iCloud (CloudKit) target with no connection")
+                              comment: "Sync status of an iCloud target with no connection")
             }
             if folder {
                 return String(localized: "The folder cannot be reached now. Changes are kept on this device and sync when it is back. If it is on a share, Sync Now connects it.")
@@ -84,10 +84,10 @@ extension SyncStatus {
         case .synced:
             if cloudKit {
                 // "A write the server accepted is synced": never "waiting for iCloud to upload" (design §9).
-                guard let lastSuccess else { return String(localized: "Synced with iCloud", comment: "Sync status of an iCloud (CloudKit) target") }
+                guard let lastSuccess else { return String(localized: "Synced with iCloud", comment: "Sync status of an iCloud target") }
                 let when = lastSuccess.formatted(.relative(presentation: .named))
                 return String(localized: "Synced with iCloud · \(when)",
-                              comment: "Sync status of an iCloud (CloudKit) target; %@ is when, e.g. “2 min. ago”")
+                              comment: "Sync status of an iCloud target; %@ is when, e.g. “2 min. ago”")
             }
             return arriving > 0
                 ? String(localized: "Synced. \(arriving) files are still on their way.", comment: "Sync status; a count of files")
@@ -97,7 +97,7 @@ extension SyncStatus {
 
     /// Where the run's files go to or come from, in the line of a run that moves some.
     private var destination: String {
-        cloudKit ? String(localized: "iCloud", comment: "Sync status: the iCloud (CloudKit) target, after “to” or “from”")
+        cloudKit ? String(localized: "iCloud", comment: "Sync status: the iCloud target, after “to” or “from”")
             : folder ? String(localized: "the folder", comment: "Sync status: a folder target, after “to” or “from”")
             : String(localized: "the server", comment: "Sync status: a WebDAV target, after “to” or “from”")
     }

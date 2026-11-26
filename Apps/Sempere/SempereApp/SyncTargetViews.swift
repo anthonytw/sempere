@@ -48,7 +48,7 @@ struct SyncTargetsSheet: View {
                     if suggesting {
                         // Another device put this vault in iCloud (CloudKit): suggested once, never added by itself (design §8).
                         Section {
-                            Text("This vault is in iCloud (CloudKit). Sync with it here too?",
+                            Text("This vault is in iCloud. Sync with it here too?",
                                  comment: "Sync Targets: the vault's iCloud zone exists (another device made it) and this device has no target for it")
                             Button("Sync with iCloud", systemImage: "icloud", action: addICloud)
                                 .accessibilityIdentifier("syncTargetsSuggestionAccept")
@@ -63,7 +63,7 @@ struct SyncTargetsSheet: View {
                     Section {
                         // iCloud (CloudKit) first on Apple devices, then a folder, then a server (design §9).
                         if model.services.cloudKit != nil {
-                            AddTargetRow(title: "Add iCloud (CloudKit)", systemImage: "icloud",
+                            AddTargetRow(title: "Add iCloud", systemImage: "icloud",
                                          subtitle: "Syncs this vault through your Apple Account. Apple devices only.",
                                          action: addICloud)
                                 .accessibilityIdentifier("syncTargetsAddCloudKit")
@@ -84,7 +84,7 @@ struct SyncTargetsSheet: View {
                         // CloudKit holds records, not files: the stock-CLI recovery path cannot read it (design §7).
                         Section {
                             Text("iCloud keeps your vault on Apple's servers. To open it without Sempere (with the recovery kit and age), keep a backup or a folder copy too.",
-                                 comment: "Sync Targets: shown under a vault whose only copy besides this device is iCloud (CloudKit); age is the encryption tool's name")
+                                 comment: "Sync Targets: shown under a vault whose only copy besides this device is iCloud; age is the encryption tool's name")
                                 .foregroundStyle(.secondary)
                             Button("Set Up Backup", systemImage: "externaldrive.badge.plus") { settingUpBackup = true }
                                 .accessibilityIdentifier("syncTargetsSetUpBackup")

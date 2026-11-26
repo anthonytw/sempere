@@ -36,8 +36,10 @@ extension AppModelCore {
     /// as it is), adds the CloudKit target to the copy and opens it. A keyless copy opens locked, as after Open Vault from a
     /// folder: Join This Device (the words or the code) takes it from there.
     ///
-    /// The copy is downloaded whole before it opens (the progress shows in `vaultCopy`); a partial copy that opens first, as for
-    /// WebDAV, is not done for CloudKit (design §8 says "a partial copy first"; recorded in §15).
+    /// What is downloaded first is a partial copy (format.md §1.2, `CloudVaults.downloadMetadata`, as WebDAV's Open does): the
+    /// control files a join needs (`vault.json`, `epochs/`, `joins/`, `keys/`, settings), the sealed summaries and one marked, empty
+    /// folder per note, never a revision or blob. Before the join every note would be ciphertext this device cannot read. The
+    /// target's runs (two-way once unlocked) and the on-demand fetches (`joinFetch`) then bring the notes.
     public func openCloudKitVault(_ vaultId: String, library: VaultLibrary) async throws {
         guard let cloud = services.cloudKit, cloud.isAvailable() else { throw CloudKitTargetProblem.unavailable }
         guard let id = UUID(uuidString: vaultId) else { throw CloudKitTargetProblem.noSuchVault }
@@ -53,27 +55,23 @@ extension AppModelCore {
         guard account.status == .available else { throw CloudKitTargetProblem.account(account.status) }
         let listing = try await offMain { try CloudVaults.list(store: store) }.first { $0.vaultId == id.uuidString.lowercased() }
         guard let listing else { throw CloudKitTargetProblem.noSuchVault }
-        vaultCopy = VaultCopyProgress(name: listing.name, stage: .downloading(done: 0, total: 0))
+        vaultCopy = VaultCopyProgress(name: listing.name, stage: .openingFromICloud)
         defer { vaultCopy = nil }
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("icloud-copy-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: work) }
         let folder = work.appendingPathComponent("vault.sempere", isDirectory: true)
         let state = work.appendingPathComponent("state", isDirectory: true).appendingPathComponent("sync-state.json")
         let entry: VaultStore.Entry
-        // The download shows how far it is (files of the listing), so a large vault does not sit at "0 of 0".
-        let relay = WebDAVProgressRelay { [weak self] p in
-            if case .downloading? = self?.vaultCopy?.stage { self?.vaultCopy?.stage = .downloading(done: p.filesDone, total: p.filesTotal) }
-        }
-        defer { relay.close() }
-        var downloadOptions = SyncOptions()
-        downloadOptions.progress = { relay.send($0) }
         do {
-            try await offMain { [downloadOptions] in
-                try CloudVaults.download(vaultId: id, store: store, into: folder, stateURL: state, expectedUser: account.userHash,
-                                         options: downloadOptions).requireComplete()
+            // A few requests whatever the zone holds, so there is no count to show (`VaultCopyProgress` says "Opening…").
+            try await offMain {
+                try CloudVaults.downloadMetadata(vaultId: id, store: store, into: folder, stateURL: state,
+                                                 expectedUser: account.userHash).requireComplete()
             }
             vaultCopy?.stage = .copying(done: 0, total: 0)
-            entry = try await library.copyIn(folder, coordinated: false, files: services.files) { [weak self] done, total in
+            // Named as the listing is, so the open screen shows one name (the folder's), not "vault" with the label beneath it.
+            let storeName = Self.storeName(forICloudName: listing.name, taken: Set(library.vaultStore.list().map(\.name)))
+            entry = try await library.copyIn(folder, coordinated: false, name: storeName, files: services.files, allowPartial: true) { [weak self] done, total in
                 Task { @MainActor in self?.vaultCopy?.stage = .copying(done: done, total: total) }
             }
         } catch let e as VaultStoreError {
@@ -83,9 +81,35 @@ extension AppModelCore {
         } catch {
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
-        _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state, seedUser: account.userHash)   // `work` is removed when this returns
+        do {
+            _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state, seedUser: account.userHash)   // `work` is removed when this returns
+        } catch {
+            // A partial copy with no iCloud target could never fill (the account changed since the download, or the target could not be
+            // stored): the copy goes, as the CLI's `cloudkit open` removes its own (`CloudKitOpen`).
+            // From the library, not the store: `copyIn` already listed the entry in `storedVaults`.
+            try? await library.removeStored(entry)
+            throw error
+        }
         try await openVault(at: entry.url)
         remember(in: library)
+    }
+
+    /// The store name (folder name without `.sempere`) for a vault listed in iCloud as `name`: the name with anything a folder
+    /// cannot carry replaced, and " 2", " 3", … when another store vault has it. Nil when nothing usable is left (the folder's
+    /// own name is used then).
+    nonisolated static func storeName(forICloudName name: String, taken: Set<String>) -> String? {
+        var clean = String(name.unicodeScalars.map { u -> Character in
+            CharacterSet.controlCharacters.contains(u) || "/:\\".unicodeScalars.contains(u) ? "-" : Character(u)
+        }).trimmingCharacters(in: .whitespacesAndNewlines)
+        while clean.hasPrefix(".") { clean.removeFirst() }
+        if clean.lowercased().hasSuffix(".sempere") { clean = String(clean.dropLast(".sempere".count)) }
+        clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        while (clean + " 99.sempere").utf8.count > 255 { clean.removeLast() }
+        guard (try? VaultStore.folderName(for: clean)) != nil else { return nil }
+        let lowered = Set(taken.map { $0.lowercased() })
+        var candidate = clean, n = 1
+        while lowered.contains(candidate.lowercased()) { n += 1; candidate = "\(clean) \(n)" }
+        return candidate
     }
 
     // MARK: The vault's name in iCloud

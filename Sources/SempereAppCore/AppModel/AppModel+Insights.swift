@@ -104,6 +104,12 @@ public struct InsightsModelState: Equatable, Sendable {
     /// Why the last pass on this device made nothing (shown under "Process Now"); nil when it made something or none ran.
     public var passOutcome: InsightsPassOutcome?
     public var problem: InsightsProblem?
+    /// A "Process Now" pass is working (the screen stays awake until it ends: `IdleTimerKeeper`).
+    public var isProcessingNow = false
+    /// Notes done of the notes to process, while a "Process Now" pass works (nil when it has nothing to count).
+    public var progress: InsightsPassProgress?
+    /// Why the last pass on this device stopped; nil before one ran and while one runs.
+    public var lastStop: InsightsStopReason?
     /// The offer card was answered (or dismissed) for this vault on this device.
     public var offerAnswered = false
     /// Topic summaries being made now on this device by "Regenerate" (`TopicScopes.name` of each scope).
@@ -182,6 +188,12 @@ final class InsightsRuntime {
     var slotIsRegeneration = false
     var passID = 0
     var loop: Task<Void, Never>?
+    /// The running pass is "Process Now" (`insightsEnteredBackground` marks it to continue when the app returns).
+    var passIsForced = false
+    /// A "Process Now" pass was cut off by the app leaving the screen: it starts again when the app is active.
+    var resumeForced = false
+    /// Why the running pass was asked to stop (`cancelInsightsPass`, the background, a Regenerate); nil: another task.
+    var cancelReason: InsightsStopReason?
     /// Bumped by every change to the vault's insights files seen here (a pass, a sync arrival).
     var filesRevision = 0
     var model: (any ModelProvider)?
@@ -198,10 +210,10 @@ final class InsightsRuntime {
 extension AppModelCore {
     /// Generations per updater run in the foreground: each run saves what it made, so a run cut off loses at most these.
     static var insightsForegroundBatch: Int { 4 }
-    /// In the background each note is saved before the next one starts (design §3.7: stops cleanly on expiration).
-    static var insightsBackgroundBatch: Int { 1 }
     /// How often the foreground looks for work while the vault is open and the device on power.
     static var insightsLoopInterval: Duration { .seconds(15 * 60) }
+    /// In the background each note is saved before the next one starts (design §3.7: stops cleanly on expiration).
+    static var insightsBackgroundBatch: Int { 1 }
     /// Reads caused by arrivals and note edits come at most this often (each reads every sidecar and builds the graph).
     static var insightsRefreshInterval: Duration { .seconds(30) }
 
@@ -265,11 +277,17 @@ extension AppModelCore {
         runtime.start?.cancel(); runtime.start = nil
         runtime.refresh?.cancel(); runtime.refresh = nil
         // The pass in either slot, foreground or the background task's (`runInsightsInBackground` waits on it).
+        let hadPass = runtime.pass != nil
         runtime.pass?.cancel(); runtime.pass = nil; runtime.slotIsRegeneration = false
         runtime.loop?.cancel(); runtime.loop = nil
         runtime.dueNotes = []
+        runtime.resumeForced = false
+        runtime.passIsForced = false
+        runtime.cancelReason = nil
         insightsIndex = InsightsIndex()
         insights = InsightsModelState()
+        if hadPass { insights.lastStop = .vaultLocked }
+        idleTimer?.update()   // a "Process Now" pass that was keeping the screen on is gone
         stopAsk()
     }
 
@@ -485,8 +503,13 @@ extension AppModelCore {
         defer { if generation == gen { insights.regeneratingTopics.remove(name) } }
         let runtime = insightsRuntime
         // Take the slot: wait out another regeneration, stop a pass. Re-checked after every wait (the loop may start one).
+        var supersededForced = false
         while let running = runtime.pass {
-            if !runtime.slotIsRegeneration { running.cancel() }
+            if !runtime.slotIsRegeneration {
+                if runtime.passIsForced { supersededForced = true }
+                if runtime.cancelReason == nil { runtime.cancelReason = .superseded }
+                running.cancel()
+            }
             _ = await running.value
             guard generation == gen else { return }
         }
@@ -497,8 +520,9 @@ extension AppModelCore {
         }
         _ = await task.value
         guard generation == gen else { return }
-        // Continue the pass this one may have stopped (in the power window only, as every look for work).
-        if !services.lifecycle.isInBackground { requestInsightsPass(force: false) }
+        // Continue the pass this one may have stopped: a "Process Now" pass again as forced (power window and screen-on
+        // hold included), an automatic one in the power window only, as every look for work.
+        if !services.lifecycle.isInBackground { requestInsightsPass(force: supersededForced) }
     }
 
     /// The regeneration itself, inside the slot's task (so its cancellation reaches the model call and the write).
@@ -721,9 +745,11 @@ extension AppModelCore {
     }
 
     /// Stops the running pass, if any, and waits until it has ended.
-    func cancelInsightsPass() async {
+    func cancelInsightsPass(reason: InsightsStopReason = .superseded) async {
         // Until the slot is empty: a pass that ends may have started a queued note's pass (`startDueNoteInsights`).
         while let running = insightsRuntime.pass {
+            // A reason already set stays (the first cause is the true one; a pass still ending keeps it).
+            if insightsRuntime.cancelReason == nil { insightsRuntime.cancelReason = reason }
             running.cancel()
             _ = await running.value
             if insightsRuntime.pass == running { break }
@@ -757,7 +783,7 @@ extension AppModelCore {
     /// cancels it between notes (each note is saved before the next starts). Returns whether work remains.
     @discardableResult
     public func runInsightsInBackground() async -> Bool {
-        await cancelInsightsPass()
+        await cancelInsightsPass(reason: .backgrounded(resumes: false))
         // The task asked for external power: the system's window is the power window.
         let task = startInsightsPass(batch: Self.insightsBackgroundBatch, ignorePower: true)
         return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
@@ -766,8 +792,29 @@ extension AppModelCore {
     /// The app leaves the screen (iOS): a running pass stops (background time is short); the processing task, which
     /// asks for external power, continues it.
     func insightsEnteredBackground() {
-        insightsRuntime.pass?.cancel()
+        let runtime = insightsRuntime
+        if runtime.pass != nil {
+            // "Process Now" goes on by itself when the app is active again (`enterForeground`).
+            if runtime.passIsForced { runtime.resumeForced = true }
+            // Never over a reason already given (a lock's, a Regenerate's): the pass may still be ending.
+            if runtime.cancelReason == nil { runtime.cancelReason = .backgrounded(resumes: runtime.passIsForced) }
+            runtime.pass?.cancel()
+        }
         if insightsHasRole { syncScheduler.schedule(.insights) }
+    }
+
+    /// The app is on screen again: a "Process Now" pass that leaving the screen cut off starts again (once the slot is
+    /// free: the cut-off pass is still ending, or a queued note's pass runs), so the owner need not press it again.
+    func resumeForcedInsightsPass() {
+        let runtime = insightsRuntime
+        guard runtime.resumeForced else { return }
+        runtime.resumeForced = false
+        let gen = generation
+        Task { @MainActor [weak self] in
+            while let running = runtime.pass { _ = await running.value }
+            guard let self, self.generation == gen, !self.services.lifecycle.isInBackground, self.insights.mode == .on else { return }
+            self.requestInsightsPass(force: true)
+        }
     }
 
     /// Runs updater passes of `batch` generations each until nothing is left, the task is cancelled, the power window
@@ -801,18 +848,62 @@ extension AppModelCore {
             insights.passOutcome = forced ? .cannotWrite(services.describeError(error)) : nil
             return ([], false)
         }
+        let manual = forced && note == nil   // "Process Now" itself, not a note's own pass
+        runtime.cancelReason = nil
+        if note == nil { insights.lastStop = nil }
         insights.isWorking = true
-        defer { insights.isWorking = false; insights.lastPass = Date() }
+        if manual {
+            runtime.passIsForced = true
+            insights.isProcessingNow = true
+            idleTimer?.update()   // the screen stays on until it ends (every way out passes the defer)
+        }
+        defer {
+            // Only while this pass's vault is still the model's: `stopInsights` cancels without waiting, so after a lock
+            // and an unlock a newer pass (a new "Process Now") owns this state, and the old one's end must not clear it.
+            if generation == gen {
+                insights.isWorking = false; insights.lastPass = Date()
+                if manual {
+                    runtime.passIsForced = false
+                    insights.isProcessingNow = false
+                    insights.progress = nil
+                    idleTimer?.update()
+                }
+            }
+        }
         var reports: [InsightsUpdateReport] = []
         var remains = false
         var failed = false
+        var windowClosed = false
         let started = insightsNow()
         let updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
                                       app: services.appName)
+        if manual {
+            // The notes this pass will process, counted by a dry run of the same rules (it writes and asks the model nothing).
+            var d = InsightsUpdateOptions()
+            d.now = insightsNow()
+            d.openNotes = Set([editor?.noteID].compactMap { $0 } + Array(windowEditors.keys))
+            d.failureMemo = insightsFailureMemoURL
+            d.platform = insightsServices.platform
+            d.deviceType = settingsDeviceType
+            d.ignoreSettle = true
+            d.ignoreBackoffBefore = started
+            d.topics = false
+            d.titles = false
+            d.dryRun = true
+            d.planOnly = true
+            let summaries = insightsSummaries
+            let inputs = await Self.insightsOffMain { InsightsNotes.inputs(vault, summaries: summaries) }
+            let counter = InsightsUpdater(vault: vault, model: runtime.model, embedder: nil, deviceState: deviceStateURL,
+                                          app: services.appName)
+            if let counted = try? await counter.run(d, notes: inputs), generation == gen, !Task.isCancelled,
+               !counted.generated.isEmpty {
+                insights.progress = InsightsPassProgress(total: counted.generated.count, started: started)
+            }
+        }
         while true {
             guard !Task.isCancelled else { remains = true; break }
             guard generation == gen else { break }
-            guard ignorePower || insightsServices.powerWindow() else { remains = true; break }
+            guard ignorePower || insightsServices.powerWindow() else { remains = true; windowClosed = true; break }
             var o = InsightsUpdateOptions()
             o.now = insightsNow()
             o.limit = batch
@@ -851,6 +942,7 @@ extension AppModelCore {
             }
             guard generation == gen else { break }
             reports.append(report)
+            insights.progress?.advance(by: report.generated.count)
             insights.lastReport = report
             insights.problem = nil
             // Read again once the pass pauses (each refresh reads every sidecar; not after every run of a long pass).
@@ -864,6 +956,19 @@ extension AppModelCore {
             if note != nil && redo { break }
         }
         if generation == gen {
+            if note == nil {
+                if failed {
+                    insights.lastStop = .failed
+                } else if remains, windowClosed, reports.isEmpty {
+                    // An automatic pass that found its window shut ran no batch: nothing stopped, so nothing is said.
+                    insights.lastStop = nil
+                } else if remains {
+                    insights.lastStop = windowClosed ? .powerWindowClosed : (runtime.cancelReason ?? (services.lifecycle.isInBackground ? .backgrounded(resumes: false) : .superseded))
+                } else {
+                    insights.lastStop = availability?.isAvailable == true ? .finished : .modelUnavailable
+                }
+            }
+            runtime.cancelReason = nil
             // Said only for a pass that ran to its end; one that failed (its problem shows), ran nothing or was cut off
             // clears what an earlier pass said.
             insights.passOutcome = !reports.isEmpty && !remains && !failed ? InsightsPassOutcome.of(reports, availability: availability) : nil

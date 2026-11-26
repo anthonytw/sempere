@@ -67,6 +67,33 @@ enum InsightsText {
         }
     }
 
+    /// Why the last pass on this device stopped (`InsightsStopReason`), under "Process Now": a reason and what to do,
+    /// never the internals.
+    static func stop(_ r: InsightsStopReason) -> String {
+        switch r {
+        case .backgrounded(let resumes):
+            return resumes
+                ? String(localized: "Paused when the app left the screen or the screen locked. It picks up when you return.",
+                         comment: "Note Insights: why a Process Now pass stopped")
+                : String(localized: "Paused when the app left the screen or the screen locked. Processing continues while you use the app.",
+                         comment: "Note Insights: why an automatic pass stopped")
+        case .powerWindowClosed:
+            return String(localized: "Paused because the device is not charging, Low Power Mode is on or the device is warm. Automatic processing continues when that passes, or tap Process Now.",
+                          comment: "Note Insights: why an automatic pass stopped")
+        case .modelUnavailable:
+            return String(localized: "Apple Intelligence is not available or not ready on this device, so summaries cannot be made.",
+                          comment: "Note Insights: why a pass stopped")
+        case .failed:
+            return String(localized: "Stopped after an error. Process Now tries again.", comment: "Note Insights: why a pass stopped")
+        case .vaultLocked:
+            return String(localized: "Stopped when the vault was locked. Unlock it and tap Process Now.", comment: "Note Insights: why a pass stopped")
+        case .superseded:
+            return String(localized: "Paused while a topic summary was made. Processing continues by itself.", comment: "Note Insights: why a pass stopped")
+        case .finished:
+            return String(localized: "Finished. Everything this device can process is done.", comment: "Note Insights: why a pass stopped")
+        }
+    }
+
     /// How this device stands to the shared map (`MapCompatibility.rawValue`).
     static func compatibility(_ raw: String) -> String {
         switch MapCompatibility(rawValue: raw) {
@@ -184,6 +211,16 @@ struct InsightsSettingsSection: View {
     private var on: Bool { state.mode == .on }
     private var writable: Bool { model.phase == .unlocked && !model.isVaultReadOnly }
 
+    /// Whether the stop reason adds to what the screen already says: a pass that made nothing explains itself
+    /// (`passOutcome`), and a failure shows its error.
+    private func shows(_ stop: InsightsStopReason) -> Bool {
+        switch stop {
+        case .finished: return state.passOutcome == nil
+        case .modelUnavailable: return false   // `modelReason` and `passOutcome` say it, with the way to turn it on
+        default: return true
+        }
+    }
+
     var body: some View {
         Section {
             Toggle("Note Insights", isOn: Binding(get: { on }, set: { new in
@@ -245,6 +282,12 @@ struct InsightsSettingsSection: View {
             }
             if state.isWorking {
                 Label("Processing notes on this device…", systemImage: "gearshape.2").foregroundStyle(.secondary)
+                if let progress = state.progress { InsightsProgressView(progress: progress, now: model.insightsNow) }
+                if state.isProcessingNow {
+                    Text("The screen stays on until processing finishes.", comment: "Note Insights: Process Now keeps the screen awake")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("insights.screenStaysOn")
+                }
             } else if model.insightsBusy {
                 Label("Making a topic summary…", systemImage: "text.quote").foregroundStyle(.secondary)
             }
@@ -259,6 +302,10 @@ struct InsightsSettingsSection: View {
             } else if !state.capability.generates {
                 // Said beside the button and the counts: this device adds related notes and the map at most.
                 Text(InsightsText.modelReason(state.capability.model)).font(.footnote).foregroundStyle(.secondary)
+            }
+            if let stop = state.lastStop, !model.insightsBusy, !state.isWorking, shows(stop) {
+                Text(InsightsText.stop(stop)).font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("insights.stopReason")
             }
             if case .modelUnavailable? = state.passOutcome { AppleIntelligenceHelpButton(availability: state.capability.model) }
             NavigationLink {
@@ -599,5 +646,37 @@ struct NoteInsightsSheet: View {
                 Text("In the group “\(cluster.joined(separator: ", "))”.", comment: "%@ is a group's label words")
             }
         }
+    }
+}
+
+/// "Process Now" progress under the Insights settings: a bar of notes done of notes to process, the time elapsed and, after a few
+/// notes, an estimate of the time left. The math is `InsightsPassProgress`'s; this only draws it once a second.
+struct InsightsProgressView: View {
+    let progress: InsightsPassProgress
+    /// The model's clock (the same one that stamped the pass's start).
+    let now: () -> Date
+
+    private func text(_ seconds: TimeInterval) -> String {
+        Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                .accessibilityIdentifier("insights.progressBar")
+            Text("Notes: \(progress.done) of \(progress.total)", comment: "Note Insights: Process Now progress, notes done of notes to process [not-plural]")
+                .font(.footnote).foregroundStyle(.secondary)
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let at = now()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(text(progress.elapsed(at: at))) elapsed", comment: "Note Insights: Process Now time elapsed, %@ is a duration")
+                    if let left = progress.estimatedRemaining(at: at) {
+                        Text("About \(text(InsightsPassProgress.rounded(left))) left", comment: "Note Insights: Process Now estimated time left, %@ is a duration")
+                    }
+                }
+                .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityIdentifier("insights.progress")
     }
 }

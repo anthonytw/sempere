@@ -62,6 +62,8 @@ public struct VaultCopyProgress: Equatable, Sendable {
     public enum Stage: Equatable, Sendable {
         /// Asking iCloud Drive (or the provider) for files not on this device yet.
         case downloading(done: Int, total: Int)
+        /// Open from iCloud: the vault's small control files arrive (a partial copy), so there is no count to show.
+        case openingFromICloud
         /// Copying and checking files (`VaultStore.importVault`).
         case copying(done: Int, total: Int)
     }
@@ -79,6 +81,8 @@ public struct VaultCopyProgress: Equatable, Sendable {
         switch stage {
         case .downloading(let done, let total), .copying(let done, let total):
             return total > 0 ? Double(done) / Double(total) : nil
+        case .openingFromICloud:
+            return nil
         }
     }
 }

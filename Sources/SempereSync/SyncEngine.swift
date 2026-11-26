@@ -146,6 +146,11 @@ public struct SyncOptions: Sendable {
     /// run's own bound is only `limits.maxDuration` (the caller's safety bound). Not for background tasks (`isCancelled` is theirs).
     public var softCancel: (@Sendable () -> Bool)?
     public var joinCheckWindow: TimeInterval?
+    /// Stop after the control files (above) and the notebook records: the notes, blobs, inbox, device summaries and insights are not
+    /// listed or transferred. A device joining on a partial copy (format.md §1.2) sends its request and takes the approval this way:
+    /// before it has a key, every note it fetched would be ciphertext it cannot read. The notes come with the run that follows the
+    /// unlock (`PartialCopy`).
+    public var controlFilesOnly = false
 
     /// Files a provider lists but has not downloaded yet (`Arrivals.swift`):
     /// the longest one run waits, in all, for the ones it asked for to arrive.
@@ -686,19 +691,20 @@ public final class SyncEngine {
         // summaries file (titles and `synced` for other devices) and the inbox (quick voice notes), so a window
         // that ends in the notes has still moved them. Remote inbox deletions wait for the pass after the notes
         // (an adopted note reaches the target before its capture goes). Problems are reported by that pass.
-        if stoppedBefore == nil, !options.dryRun {
+        if stoppedBefore == nil, !options.dryRun, !options.controlFilesOnly {
             do { try syncInbox(remoteRoot: remoteRoot, deferringRemoteDeletions: true) } catch {
                 if let e = error as? SyncError, e.isRunLimit { stoppedBefore = e }
             }
         }
-        if stoppedBefore == nil, !options.dryRun, let me = options.deviceID {
+        if stoppedBefore == nil, !options.dryRun, !options.controlFilesOnly, let me = options.deviceID {
             do { try syncDeviceSummaries(remoteRoot: remoteRoot, only: [PublishedSummaries.deviceFileName(me)]) } catch {
                 if let e = error as? SyncError, e.isRunLimit { stoppedBefore = e }
             }
         }
 
-        do {
+        notes: do {
             if let stoppedBefore { throw stoppedBefore }
+            if options.controlFilesOnly { break notes }
             recordedFiles = state.fileNamesByNote()
             thinnedFiles = SyncState.namesByNote(state.thinned?.keys.map { $0 } ?? [])
             // Note folders a provider listed before their `att/` are left out until they arrive (`Arrivals.swift`).
@@ -742,7 +748,7 @@ public final class SyncEngine {
                 report.errors.append(.init(path: Vault.notesName, message: Self.describe(e)))
             }
         }
-        if report.stoppedEarly == nil {
+        if report.stoppedEarly == nil, !options.controlFilesOnly {
             // After the notes: an adopted note reaches each side before its inbox files go (`InboxSync.swift`).
             do { try syncInbox(remoteRoot: remoteRoot) } catch {
                 if let e = error as? SyncError, e.isRunLimit {
@@ -753,14 +759,14 @@ public final class SyncEngine {
         }
         // A complete two-way run: this device's `synced` time in its own summaries file (design §5.5).
         if report.stoppedEarly == nil, notesListed { recordOwnSynced() }
-        if report.stoppedEarly == nil {
+        if report.stoppedEarly == nil, !options.controlFilesOnly {
             do { try syncDeviceSummaries(remoteRoot: remoteRoot) } catch {
                 if let e = error as? SyncError, e.isRunLimit { report.stoppedEarly = Self.describe(e) }
                 report.errors.append(.init(path: PublishedSummaries.deviceFolderName, message: Self.describe(error)))
             }
         }
         // Note insights (format.md §16): unlocked runs only, after the notes (hints, rewritten by their devices).
-        if report.stoppedEarly == nil {
+        if report.stoppedEarly == nil, !options.controlFilesOnly {
             do { try syncInsights(remoteRoot: remoteRoot) } catch {
                 if let e = error as? SyncError, e.isRunLimit { report.stoppedEarly = Self.describe(e) }
                 report.errors.append(.init(path: Vault.insightsName, message: Self.describe(error)))
@@ -1073,7 +1079,15 @@ public final class SyncEngine {
                              record: SyncState.MutableRecord?) throws {
         if name == Vault.manifestName && EpochManifest.sameExceptLabel(local, remoteData) {
             // Only the display label differs: the same vault (format.md §1.3). The server's copy is
-            // the one every device shares, so it stays, as iCloud Drive's current version does.
+            // the one every device shares, so it stays, as iCloud Drive's current version does. A name beats
+            // none in either direction: a label-less server copy (a zone kept after its target was removed)
+            // never erases the name this side holds; it goes up instead, but only from a listed device whose list
+            // checks (format.md §2); a keyless or unverified run accepts the server's copy.
+            if let vault, case .verified = vault.listStatus,
+               VaultLabelText.peekLabel(local) != nil, VaultLabelText.peekLabel(remoteData) == nil {
+                try push(name, local, condition: .unconditional)
+                return try recordMutable(name, hash: FileDigest.sha256(local))
+            }
             return try accept(name, remoteData, stamp: stamp)
         }
         if name == Vault.manifestName, let vault {
@@ -1648,18 +1662,21 @@ public final class SyncEngine {
                 if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
             }
         }
+        var adopted = 0
         for n in shared {
             let k = key(id, n)
             // The target's version tag when both sides were last known equal: moved on only when this run
             // established that (a comparison or a replacement); a first sighting takes the listing's.
             let (rewritten, placed) = locked { (remoteRewritten.contains(k), placedShas[k]) }
             let old = state.files[k]
+            if old == nil, placed == nil { adopted += 1 }
             let stamp = rewritten ? nil : (placed != nil ? entries[n]?.stamp : (old?.stamp ?? entries[n]?.stamp))
             state.files[k] = SyncState.FileRecord(included: coverage[n] ?? old?.included, sha256: placed ?? old?.sha256,
                                                   stamp: stamp)
             // In step on both sides again: no longer a settled deletion.
             state.thinned?[k] = nil
         }
+        if adopted > 0 { updateProgress { $0.adopted += adopted } }
         for n in S where !L.contains(n) && !R.contains(n) {
             state.files[key(id, n)] = nil
             state.sizelessChecked?[key(id, n)] = nil

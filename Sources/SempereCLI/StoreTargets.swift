@@ -53,7 +53,7 @@ struct StoreTargetList: ParsableCommand {
 struct StoreTargetAdd: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "add",
-        abstract: "Add a folder, WebDAV or iCloud (CloudKit) sync target to a store vault.",
+        abstract: "Add a folder, WebDAV or iCloud sync target to a store vault.",
         discussion: """
             --folder PATH: where the vault's copy goes, by the app's rule (Add Folder…): a PATH holding this vault \
             (any name) or named ….sempere-vault or ….sempere is the copy itself; any other folder gets it in a folder \
@@ -90,7 +90,7 @@ struct StoreTargetAdd: ParsableCommand {
             help: ArgumentHelp("With --check: the environment variable holding the WebDAV password.", valueName: "var"))
     var passwordEnv: String?
 
-    @Flag(name: .long, help: "An iCloud (CloudKit) target: this vault's zone in the signed-in Apple Account's private database.")
+    @Flag(name: .long, help: "An iCloud target: this vault's zone in the signed-in Apple Account's private database.")
     var cloudkit = false
 
     @Option(name: .long, help: ArgumentHelp("The target's display name (default: the folder's name or the host).",

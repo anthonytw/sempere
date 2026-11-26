@@ -16,6 +16,8 @@ struct VaultStoreAppTests {
         #expect(progress.text.contains("3 of 12"))
         #expect(progress.text.contains("“Notes”"))
         #expect(VaultCopyProgress(name: "Notes", stage: .downloading(done: 1, total: 4)).text.contains("1 of 4"))
+        #expect(VaultCopyProgress(name: "Notes", stage: .downloading(done: 0, total: 0)).text.contains("0 of 0"), "an iCloud Drive copy-in's early progress is not Open from iCloud")
+        #expect(VaultCopyProgress(name: "Notes", stage: .openingFromICloud).text.contains("from iCloud"))
         #expect(AppModel.describe(VaultStoreProblem(error: .alreadyInStore(vaultId: UUID(), name: "Notes"))).contains("“Notes”"))
         #expect(AppModel.describe(VaultStoreProblem(error: .inUse(UUID()))) == "That vault is open. Close it first.")
         #expect(AppModel.describe(InvalidVaultName()).contains("slashes"))

@@ -139,8 +139,22 @@ public final class SyncSession {
     /// How far the run that is going has got (uploads, downloads; nil between runs): the status line says it, so a first upload
     /// of a large vault is seen to move.
     public private(set) var runProgress: SyncProgress?
-    /// The files the target had not confirmed when the run started: the "of M" of an upload (a first upload has no other total).
+    /// The files the target had not confirmed when the upload began: the "of M" of an upload (a first upload has no other total).
+    /// It holds across the runs of one upload (a join check stops a run every few seconds and the next goes on), until the target has
+    /// confirmed every file; more only when notes were written meanwhile.
     @ObservationIgnored private var runUploadTotal = 0
+    /// How many of `runUploadTotal` the runs before the one going have confirmed (uploaded, or found on the target already). The
+    /// "done" of the status line is this plus what the run going moved (`SyncStatus.movement`).
+    @ObservationIgnored private var uploadDoneBefore = 0
+    /// `uploadDoneBefore` as the run going began, and whether that run ended whole (not cut short): see `endUploadStep`.
+    @ObservationIgnored private var doneAtRunStart = 0
+    @ObservationIgnored private var runEndedWhole = false
+    /// A run was stopped to make way for the next one (a join check) and the status stays "syncing" until that one starts (or
+    /// `handoffHold` passes): the bar never says "continuing" or "not synced yet" for the moment between them.
+    private(set) var syncHandoff = false
+    @ObservationIgnored private var handoffGeneration = 0
+    /// How long the status keeps saying "syncing" for a run that has to follow one (it normally starts within milliseconds).
+    @ObservationIgnored var handoffHold: Duration = .seconds(2)
     /// Files of the local copy the target has not confirmed (recounted after each run and write).
     private(set) var unconfirmed = 0
     /// When a run last finished without problems.
@@ -479,18 +493,29 @@ public final class SyncSession {
             await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
             isSyncing = true
+            syncHandoff = false
             runStartedAt = now()
             runsStarted += 1
             schedule.started(at: now())
             // The "of M" of an upload: the count must be in before the run starts (a new target's first run starts before it).
             if let startCount { await startCount.value } else if !counted { unconfirmed = await countUnconfirmed(); counted = true }
-            runUploadTotal = unconfirmed
+            beginUploadRun()
+            runEndedWhole = false
+            // The status may stay "syncing" for the next run only after a normal stop or our own interrupt, never after a failure
+            // (an offline upload must show its failure, not "syncing" for the hold).
+            var mayHandOff = false
             let relay = WebDAVProgressRelay { [weak self] in self?.runProgress = $0 }
             var request = request
             request.progress = { relay.send($0) }
             defer {
                 relay.close()
-                runProgress = nil
+                // Another run follows at once when this one was stopped for it, or was a join check with files left: the status
+                // stays "syncing", and the last progress stays until that run publishes its own.
+                if mayHandOff, interruptedByUs(own, cancel) || (joinWindow != nil && (unconfirmed > 0 || continuing)) {
+                    holdSyncingForNextRun()
+                } else {
+                    runProgress = nil
+                }
                 if runCancel === own { runCancel = nil; runHardCancel = nil }
                 if mode == .twoWay { afterTwoWayRun() }
                 isSyncing = false
@@ -536,6 +561,8 @@ public final class SyncSession {
                     onSuccess(lastSuccess ?? now())
                 }
                 if mode == .twoWay, let changes = report.changed, !changes.isEmpty { onChanges(changes) }
+                runEndedWhole = !assessed.cutShort
+                mayHandOff = assessed.problems.isEmpty
                 await recount()
                 return report
             } catch is CancellationError {
@@ -545,6 +572,7 @@ public final class SyncSession {
                 // Thrown rather than reported: the same neutral stop (`interruptRun`).
                 continuing = true
                 schedule.finished(at: now(), success: true, changed: true)
+                mayHandOff = true
                 await recount()
                 return nil
             } catch let e as any DeviceUnlockWaiting where e.waitsForDeviceUnlock {
@@ -597,8 +625,58 @@ public final class SyncSession {
         SyncRunAssessment.progressedCutShort(report)
     }
 
+    /// The count of an upload when a run starts: a new upload takes what is unconfirmed as its total; one going on keeps its total
+    /// and what it has done (more files only raise the total).
+    private func beginUploadRun() {
+        doneAtRunStart = uploadDoneBefore
+        runUploadTotal = max(runUploadTotal, uploadDoneBefore + unconfirmed)
+    }
+
+    /// After a run: what the target confirmed is what the copy no longer counts as unconfirmed. At zero the upload is over; so it
+    /// is after a run that ended whole (not cut short, `runEndedWhole`) with files still unconfirmed: those never confirm in this
+    /// run (an epoch hold, a full account, a refused file), and every later run would show "Uploading 99 of 100". The count is
+    /// carried only across runs that were cut short.
+    private func endUploadStep() {
+        if unconfirmed == 0 || runEndedWhole {
+            runUploadTotal = 0
+            uploadDoneBefore = 0
+        } else {
+            // What this run moved is folded in here, so the progress still on the line (the recount awaits more counts before
+            // the run's end clears it) must not add it again: the line never says 30, then 50, then 30.
+            var folded = max(uploadDoneBefore, runUploadTotal - unconfirmed)
+            if var held = runProgress {
+                if !runEndedWhole { folded = max(folded, doneAtRunStart + held.uploaded + held.adopted) }
+                held.uploaded = 0
+                held.adopted = 0
+                runProgress = held
+            }
+            uploadDoneBefore = min(folded, runUploadTotal)
+        }
+    }
+
+    /// The run's progress stays on the status line through the handoff, but what it moved is folded into `uploadDoneBefore` (never
+    /// below what the line showed), so the line adds it once, not twice, and never goes back.
+    private func holdSyncingForNextRun() {
+        if var held = runProgress {
+            if !runEndedWhole { uploadDoneBefore = min(max(uploadDoneBefore, doneAtRunStart + held.uploaded + held.adopted), runUploadTotal) }
+            held.uploaded = 0
+            held.adopted = 0
+            runProgress = held
+        }
+        syncHandoff = true
+        handoffGeneration += 1
+        let generation = handoffGeneration, hold = handoffHold
+        Task { [weak self] in
+            try? await Task.sleep(for: hold)
+            guard let self, self.handoffGeneration == generation, self.syncHandoff else { return }
+            self.syncHandoff = false
+            if !self.isSyncing { self.runProgress = nil }
+        }
+    }
+
     private func recount() async {
         unconfirmed = await countUnconfirmed()
+        endUploadStep()
         counted = true
         if let countStaged { staged = await countStaged() }
         if let providerSummary { apply(await providerSummary()) }
@@ -667,12 +745,12 @@ public final class SyncSession {
 
     /// The status model (docs/design/device-first-sync.md §8.3).
     public var status: SyncStatus {
-        SyncStatus(syncing: isSyncing, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
+        SyncStatus(syncing: isSyncing || syncHandoff, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
                    staged: staged, networkDown: networkDown && kind.usesNetwork, continuing: continuing,
                    providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
                    targetName: targetName, added: neverSyncedSince, now: now(), cloudKit: kind == .cloudkit,
-                   progress: runProgress, uploadTotal: runUploadTotal, lastFailure: quietFailure)
+                   progress: runProgress, uploadTotal: runUploadTotal, uploadDoneBefore: uploadDoneBefore, lastFailure: quietFailure)
     }
 
     /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
@@ -737,6 +815,8 @@ public struct SyncStatus: Equatable, Sendable {
     /// How far the run that is going has got, and the files the target lacked when it started (`SyncSession.runProgress`).
     public var progress: SyncProgress?
     public var uploadTotal = 0
+    /// Files of `uploadTotal` that earlier runs of this upload confirmed (`SyncSession.uploadDoneBefore`).
+    public var uploadDoneBefore = 0
     /// A failure of the last run that the status does not call a problem (an iCloud run that may heal by itself): shown beside
     /// "N changes not synced yet", so a stalled first upload is not silent.
     public var lastFailure: SyncSession.QuietFailure?
@@ -750,9 +830,10 @@ public struct SyncStatus: Equatable, Sendable {
                 continuing: Bool = false, providerPending: Int = 0, viaICloud: Bool = false,
                 providerError: ProviderUploads.State? = nil, targetName: String = "", added: Date? = nil,
                 now: Date = Date(), cloudKit: Bool = false, progress: SyncProgress? = nil, uploadTotal: Int = 0,
-                lastFailure: SyncSession.QuietFailure? = nil) {
+                uploadDoneBefore: Int = 0, lastFailure: SyncSession.QuietFailure? = nil) {
         self.progress = progress
         self.uploadTotal = uploadTotal
+        self.uploadDoneBefore = uploadDoneBefore
         self.lastFailure = lastFailure
         self.cloudKit = cloudKit
         self.syncing = syncing
@@ -792,7 +873,15 @@ public struct SyncStatus: Equatable, Sendable {
 
     public var movement: Movement? {
         guard syncing, let p = progress else { return nil }
-        if p.uploaded > 0 { return .uploading(done: p.uploaded, of: uploadTotal >= p.uploaded ? uploadTotal : nil) }
+        // This run's uploads and the files it found on the target already, after those earlier runs of the upload confirmed.
+        let moved = p.uploaded + p.adopted
+        let downloading = p.filesTotal > 0 && p.filesDone < p.filesTotal
+        if moved > 0 || (uploadDoneBefore > 0 && !downloading) {
+            let done = uploadDoneBefore + moved
+            // More went up than were counted as waiting (notes written meanwhile): no total, never "X of M" with X over M.
+            if uploadTotal >= done, uploadTotal > 0 { return .uploading(done: done, of: uploadTotal) }
+            if done > 0 { return .uploading(done: done, of: nil) }
+        }
         if p.filesTotal > 0, p.filesDone < p.filesTotal { return .downloading(done: p.filesDone, of: p.filesTotal) }
         return nil
     }

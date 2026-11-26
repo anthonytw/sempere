@@ -149,6 +149,8 @@ extension AppModelSuites {
             // Forget All (the warning's choice) forgets the removal marker: the vault reopens listed until a sync meets
             // the change again.
             #expect(!model.sightingRows.isEmpty)
+            // No run in flight: one that met the removal again would record its sighting after the forget (a flake under load).
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.syncSessions.allSatisfy { !$0.isSyncing } })
             try await model.forgetSightings(anchoredToo: true)
             #expect(model.vault?.unlistedNotice == nil)
             #expect(model.sightingRows.isEmpty)

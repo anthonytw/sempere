@@ -109,6 +109,8 @@ public struct InsightsUpdateOptions: Sendable {
     public var limit: Int?
     public var embeddingsOnly = false
     public var dryRun = false
+    /// With `dryRun`: only list what would be summarized in `generated`, without asking the model (the app counts a pass's notes with it).
+    public var planOnly = false
     public var rebuildMap = false
     public var topics = true
     public var titles = true
@@ -305,6 +307,7 @@ public struct InsightsUpdater: Sendable {
                 guard let note = byId[id], let model = usable else { continue }
                 if let limit = o.limit, generations >= limit { continue }
                 generations += 1
+                if o.dryRun && o.planOnly { report.generated.append(id.uuidString.lowercased()); continue }
                 do {
                     let isVoice = !note.transcript.isEmpty
                     let gen = try await InsightsGenerator.generate(text: note.text, hash: note.hash, language: note.language,

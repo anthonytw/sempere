@@ -166,7 +166,7 @@ extension CloudKitTargetProblem {
     var text: String {
         switch self {
         case .unavailable:
-            return String(localized: "iCloud (CloudKit) is not available in this build of Sempere.")
+            return String(localized: "iCloud is not available in this build of Sempere.")
         case .account(let status):
             switch status {
             case .restricted, .managedAccountRestricted:
@@ -186,7 +186,7 @@ extension CloudKitTargetProblem {
         case .otherAccount:
             return CloudProblem.otherAccount.text
         case .notACloudKitTarget:
-            return String(localized: "That is not an iCloud (CloudKit) target of this vault.")
+            return String(localized: "That is not an iCloud target of this vault.")
         case .noSuchVault:
             return String(localized: "This vault is no longer in your iCloud.", comment: "Open from iCloud: the vault's data is gone")
         case .other(let message):

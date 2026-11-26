@@ -15,13 +15,13 @@ enum CloudKitCLI {
     static var unavailable: String? {
         #if canImport(SempereCloudKit)
         if CloudKitDatabase.availability() != .available {
-            return "iCloud (CloudKit) is not available in this build of sempere: it is not signed for the iCloud container "
+            return "iCloud is not available in this build of sempere: it is not signed for the iCloud container "
                 + "(a source build has no provisioning profile). Use the released sempere (the Homebrew install carries "
                 + "the signed sempere.app), or sync this vault through a folder or WebDAV target."
         }
         return nil
         #else
-        return "iCloud (CloudKit) is only available in sempere for macOS (the released, signed build); this build has no CloudKit."
+        return "iCloud is only available in sempere for macOS (the released, signed build); this build has no CloudKit."
         #endif
     }
 
@@ -50,7 +50,7 @@ enum CloudKitCLI {
         return CloudTargetRun.remote(store: CloudKitDatabase(), vaultId: vaultId, stateURL: stateDirectory.appendingPathComponent("sync-state.json"),
                                      expectedUser: t.cloudUser)
         #else
-        throw CLIError.failure(unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(unavailable ?? "iCloud is not available")
         #endif
     }
 }
@@ -60,7 +60,7 @@ enum CloudKitCLI {
 struct CloudKitCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "cloudkit",
-        abstract: "Find, open and delete the vaults in your iCloud (CloudKit) account.",
+        abstract: "Find, open and delete the vaults in your iCloud account.",
         discussion: """
             What the app's Open Vault ▸ From iCloud, its suggestion on another device and Delete from iCloud do. macOS only, \
             in the released sempere (signed for the iCloud container; a source build says so and exits 1). A vault's target \
@@ -130,7 +130,7 @@ struct CloudKitList: ParsableCommand {
         }
         print(Format.table(table))
         #else
-        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud is not available")
         #endif
     }
 }
@@ -140,10 +140,13 @@ struct CloudKitOpen: ParsableCommand {
         commandName: "open",
         abstract: "Copy a vault from your iCloud into the store and sync it with iCloud.",
         discussion: """
-            VAULT is a vault id (or a unique id prefix) from `sempere cloudkit list`. The vault is downloaded whole into a \
-            temporary folder, checked and copied into the store as a vault of its own (no key is needed), and gets an iCloud \
-            target whose first sync finds nothing to do. A vault the store holds already just gets the target (if it has none). \
-            Join this device afterwards (`sempere keys` / `sempere device`) to read it. Exit codes: 0, 1 on any failure \
+            VAULT is a vault id (or a unique id prefix) from `sempere cloudkit list`. What is downloaded into a temporary folder \
+            is a partial copy (format.md §1.2, as `sync webdav --metadata-only` makes): the control files a join needs \
+            (vault.json, epochs, joins, keys), the sealed summaries and one empty marked folder per note, never a revision or a \
+            blob. It is checked and copied into the store as a vault of its own (no key is needed) and gets an iCloud target. \
+            Join this device (`sempere keys` / `sempere device`); once it is unlocked, `sempere store sync` fetches the notes \
+            (a partial copy is completed by an ordinary two-way run). A vault the store holds already just gets the target \
+            (if it has none). Exit codes: 0, 1 on any failure \
             (a copy made by this command is removed again when its iCloud target cannot be added).
             """
     )
@@ -179,15 +182,17 @@ struct CloudKitOpen: ParsableCommand {
             defer { try? FileManager.default.removeItem(at: work) }
             let folder = work.appendingPathComponent("vault.sempere", isDirectory: true)
             let options = SyncOptions(deviceLabel: "cli")
-            let report = try CloudVaults.download(vaultId: id, store: db, into: folder,
-                                                  stateURL: work.appendingPathComponent("state/sync-state.json"), expectedUser: user, options: options)
+            let report = try CloudVaults.downloadMetadata(vaultId: id, store: db, into: folder,
+                                                          stateURL: work.appendingPathComponent("state/sync-state.json"), expectedUser: user, options: options)
             guard report.errors.isEmpty, report.stoppedEarly == nil else {
                 throw CLIError.failure("the download did not finish: \(report.errors.first.map { "\($0.path): \($0.message)" } ?? "stopped early")")
             }
-            // The label names the folder; one the store refuses as a name (a `/` or `:`) is not worth failing after a full download for.
+            // The label names the folder; one the store refuses as a name (a `/` or `:`) is not worth failing after a download for.
             var chosen = name ?? (found.named ? found.name : nil)
             if name == nil, let label = chosen, (try? VaultStore.folderName(for: label)) == nil { chosen = nil }
-            entry = try store.importVault(from: folder, options: VaultStore.ImportOptions(name: chosen))
+            var importOptions = VaultStore.ImportOptions(name: chosen)
+            importOptions.allowPartial = true   // the copy is partial until the notes are fetched
+            entry = try store.importVault(from: folder, options: importOptions)
             imported = true
             let state = work.appendingPathComponent("state", isDirectory: true)
             if (try? FileManager.default.copyItem(at: state, to: keep)) != nil { seed = keep.appendingPathComponent("sync-state.json") }
@@ -205,7 +210,7 @@ struct CloudKitOpen: ParsableCommand {
         output.info("Copied into the store as “\(entry.name)” (\(entry.vaultId.uuidString.lowercased())) and synced with iCloud")
         if output.quiet { print(entry.url.path) } else { output.info("Path: \(entry.url.path)") }
         #else
-        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud is not available")
         #endif
     }
 }
@@ -261,7 +266,7 @@ struct CloudKitDelete: ParsableCommand {
         if output.json { return try output.emitJSON(["deleted": found.vaultId]) }
         output.info("Deleted “\(found.name)” from iCloud")
         #else
-        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud is not available")
         #endif
     }
 }

@@ -151,6 +151,24 @@ struct SystemFileCoordinator: FileCoordinating {
 
 // MARK: - PlatformServices
 
+#if targetEnvironment(macCatalyst)
+/// The process activity held while the idle timer is disabled or a "Process Now" pass works (`AppPlatform`).
+@MainActor private enum KeepAwakeActivity {
+    static var token: NSObjectProtocol?
+    static var screenHeld = false
+    static var processing = false
+    /// Begins or ends the one activity: held while either reason holds.
+    static func apply() {
+        if screenHeld || processing, token == nil {
+            token = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Sempere keeps the screen on")
+        } else if !screenHeld, !processing, let activity = token {
+            ProcessInfo.processInfo.endActivity(activity)
+            token = nil
+        }
+    }
+}
+#endif
+
 /// The device the app runs on: `Platform`'s flags, UIKit's idle timer and feedback generators.
 struct AppPlatform: PlatformServices {
     var isMac: Bool { Platform.isMac }
@@ -158,7 +176,22 @@ struct AppPlatform: PlatformServices {
     @MainActor var deviceKind: String { ThisDevice.kind }
     @MainActor var deviceName: String { ThisDevice.name }
 
-    @MainActor func setIdleTimerDisabled(_ disabled: Bool) { UIApplication.shared.isIdleTimerDisabled = disabled }
+    @MainActor func setIdleTimerDisabled(_ disabled: Bool) {
+        UIApplication.shared.isIdleTimerDisabled = disabled
+        #if targetEnvironment(macCatalyst)
+        // A Mac also naps its idle processes and sleeps: an activity assertion lives as long as the screen is held
+        // awake (the editor's Keep Screen On), and ends with it; a "Process Now" pass holds its own (`setProcessActivity`).
+        KeepAwakeActivity.screenHeld = disabled
+        KeepAwakeActivity.apply()
+        #endif
+    }
+
+    @MainActor func setProcessActivity(_ held: Bool) {
+        #if targetEnvironment(macCatalyst)
+        KeepAwakeActivity.processing = held
+        KeepAwakeActivity.apply()
+        #endif
+    }
 
     @MainActor func play(_ feedback: HapticFeedback) {
         guard !isMac else { return }

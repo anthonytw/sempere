@@ -140,7 +140,7 @@ struct NewVaultView: View {
             if model.services.cloudKit != nil {
                 Toggle(isOn: $syncWithICloud) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("iCloud (CloudKit)", systemImage: "icloud")
+                        Label("iCloud", systemImage: "icloud")
                         Text("Syncs this vault through your Apple Account. Apple devices only.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -161,9 +161,9 @@ struct NewVaultView: View {
             if let copyFolder, model.services.cloudKit != nil, FolderLocation.classify(copyFolder) == .iCloudDrive {
                 // A folder in iCloud Drive: iCloud (CloudKit) syncs more reliably, one tap to switch (owner decision 2, design §12).
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("iCloud (CloudKit) syncs more reliably than a folder in iCloud Drive.")
+                    Text("iCloud syncs more reliably than a folder in iCloud Drive.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Use iCloud (CloudKit) Instead") {
+                    Button("Use iCloud Instead") {
                         self.copyFolder = nil
                         syncWithICloud = true
                     }
@@ -415,7 +415,7 @@ struct NewVaultView: View {
                         CloudKitLive.activate()
                     } catch CloudKitTargetProblem.account(.noAccount) {
                         // The vault exists; Sync Targets offers iCloud again once someone is signed in.
-                        model.alert = .worded(String(localized: "The vault was created, but it does not sync with iCloud yet: sign in to iCloud in Settings, then add iCloud (CloudKit) in Sync Targets."))
+                        model.alert = .worded(String(localized: "The vault was created, but it does not sync with iCloud yet: sign in to iCloud in Settings, then add iCloud in Sync Targets."))
                     } catch {
                         model.alert = .error(error)
                     }

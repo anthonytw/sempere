@@ -114,8 +114,14 @@ extension NearbyJoinStatus {
         case .looking:
             return String(localized: "Looking for the device that manages devices nearby. Only that device can approve this request.",
                           comment: "Join screen: the direct link to the other device")
+        case .notSeen:
+            return String(localized: "No device nearby yet. The device that manages devices must have Add Device open, with Local Network allowed.",
+                          comment: "Join screen: nothing found nearby for a while")
         case .found:
             return String(localized: "Found a device nearby. Connecting…", comment: "Join screen: the direct link")
+        case .unreached:
+            return String(localized: "Couldn't connect to your device nearby. Still waiting for the request to arrive through sync.",
+                          comment: "Join screen: the direct link keeps failing; the sync target is the way now")
         case .connected:
             return String(localized: "A device nearby has this request. If it is the device that manages devices, approve it there.",
                           comment: "Join screen: the direct link")
@@ -168,7 +174,11 @@ extension NearbyLinkProblem {
 
 extension NearbyApproverStatus {
     /// Add Device's line for the nearby link; nil when there is nothing to say.
-    func text(homeName: String?) -> String? {
+    func text(homeName: String?, linkDropped: Bool = false) -> String? {
+        if linkDropped, self == .advertising {
+            return String(localized: "A device nearby tried to connect, but the link dropped. It will try again.",
+                          comment: "Add Device: a nearby connection failed before its request arrived")
+        }
         switch self {
         case .off, .unavailable:
             return nil

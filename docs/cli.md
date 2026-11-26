@@ -730,7 +730,7 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   slashes, backslashes, colons, leading dots, control characters or line breaks (U+2028 and U+2029 too), not
   ending in `.sempere`, at most 255 bytes with it (exit 2). It is the app's rule for a vault's name
   (`VaultStore.folderName`), for `import --name` and `restore --name` too. Names need not be unique; ids are. Unless `--vault-label`
-  is given, the vault's `label` (its display name in `vault.json`) is `NAME`: iCloud (CloudKit) lists a vault by its label.
+  is given, the vault's `label` (its display name in `vault.json`) is `NAME`: iCloud lists a vault by its label.
 - `copy SOURCE NAME` makes a copy of a vault, a read-only one too, as a new vault of your own in the store (the app's
   File > Make a Copy…; [Make a Copy](io.md#make-a-copy-app-and-cli)). The new vault takes `create`'s options
   (`--recovery-out` or `--recovery-key` are required, even with `--dry-run`; `--name`, `--vault-label`,
@@ -822,13 +822,13 @@ a unique id prefix (4 characters or more), its name, path or URL.
   is refused (exit 1): it must be empty, missing (the first sync creates it) or hold this vault
   (`WebDAVConnection.checkTargetFolder`, which the app's Add WebDAV Server… runs too). `--no-check` adds it
   without contacting the server.
-- `--cloudkit` adds an iCloud (CloudKit) target: the vault's zone (`sempere-<vault id>`) in the private CloudKit database of
+- `--cloudkit` adds an iCloud target: the vault's zone (`sempere-<vault id>`) in the private CloudKit database of
   the Apple Account signed in on this Mac, with the account's hash recorded so that a run in another account pauses (exit 1)
   instead of uploading into it (docs/design/1.4-cloudkit.md §4). It needs the **released** `sempere`, the signed bundle
   `sempere.app` the Homebrew install links `bin/sempere` to (CloudKit is a restricted entitlement that macOS grants only to a
   program in a bundle with a provisioning profile). A build from source (`swift build`), any build on Linux, and a Mac with no
   iCloud account each say so plainly (exit 1), before anything is contacted, and add nothing. A registry written by another
-  device may hold such a target: it is listed (`target list`, `store info`: place "iCloud (CloudKit)") and `store sync` reports
+  device may hold such a target: it is listed (`target list`, `store info`: place "iCloud") and `store sync` reports
   it unavailable for that target alone. `store sync` runs it like the others (no password; the first run uploads the vault or
   makes a union with the zone another device made; nothing is deleted); its mirror of the zone's metadata is in the target's
   state folder (`cloudkit/`).
@@ -868,7 +868,7 @@ a unique id prefix (4 characters or more), its name, path or URL.
 
 #### CloudKit and the CLI bundle
 
-`store target add VAULT --cloudkit` and `store sync` use iCloud (CloudKit) only in the **released macOS build**
+`store target add VAULT --cloudkit` and `store sync` use iCloud only in the **released macOS build**
 (docs/design/1.4-cloudkit.md §6.5). CloudKit is a restricted entitlement, and macOS honors it only for a program that runs
 from a bundle carrying a provisioning profile, so the macOS release ships `sempere` as `sempere.app/Contents/MacOS/sempere`
 (`LSUIElement`, no UI; the bundle also holds `Resources/fonts`) and Homebrew links `bin/sempere` to that executable. The
@@ -3502,7 +3502,7 @@ sempere cloudkit open VAULT [--name NAME] [--store DIR] [--json]
 sempere cloudkit delete VAULT --yes [--force] [--store DIR]
 ```
 
-The vaults in the iCloud (CloudKit) account signed in on this Mac: what the app's Open Vault ▸ From iCloud, its suggestion
+The vaults in the iCloud account signed in on this Mac: what the app's Open Vault ▸ From iCloud, its suggestion
 on a device that lacks a target, and Delete from iCloud do (docs/design/1.4-cloudkit.md §8, §9). They need the released,
 signed `sempere` (as `store target add --cloudkit`); any other build says so and exits 1.
 `list` asks for the account's `sempere-<vault id>` zones and reads each vault's label from its `vault.json` record (an
@@ -3512,9 +3512,10 @@ vault's `vault.json` was last saved in iCloud, which tells two vaults of one nam
 half-made one that only `delete --force` clears). `--json`: an array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget, modified, hasVault, manifest}` (`manifest`: `present`, `absent` for an empty zone, or `unreadable` when the vault.json could not be read now: it may be a real vault).
 The name is the vault's `label`: `store create` writes the store name as it (`--vault-label` overrides), and `store sync` gives a vault that
 has none (made before) its store name when it has an iCloud target and the run has the vault's key; a label that is there is never replaced
-(`sempere vault label` changes it, and the next sync takes it to iCloud). `open` takes a vault id or a unique prefix: it downloads the
-vault whole into a temporary folder (a keyless run, which uploads nothing), checks it as `store import` does, copies it into the
-store (`--name` or its label) and adds the iCloud target, whose first sync finds nothing to do; a vault the store holds already
+(`sempere vault label` changes it, and the next sync takes it to iCloud). `open` takes a vault id or a unique prefix: it downloads a partial copy (format.md §1.2) into a temporary folder: the control files a join needs
+(`vault.json`, `epochs/`, `joins/`, `keys/`), the sealed summaries and an empty marked folder per note, no revision and no blob (a keyless run, which uploads nothing),
+checks it as `store import` does, copies it into the store (`--name` or its label) and adds the iCloud target, which keeps the pull's state; once
+the vault is joined and unlocked, `store sync` fetches the notes (an ordinary two-way run completes a partial copy). A vault the store holds already
 only gets the target (a label the store cannot use as a name, with `/` or `:`, is dropped: pass `--name`; a copy this command made is removed again if its target cannot be added). Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
 and the iCloud targets of that vault in this store (the zone first, so a failure leaves the targets in place), nothing else: refused (exit 1) when
 the vault here has no other target, and when the vault is not in this store at all, unless `--force` (the way to delete a zone that `list` shows and no

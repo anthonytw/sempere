@@ -23,9 +23,12 @@ public enum KeepScreenOn {
     ///   - active: the scene is active (not in the background or app switcher).
     ///   - debugLaunch: a DEBUG build started from launch environment
     ///     variables, kept awake for scripted device runs.
-    static func idleTimerDisabled(enabled: Bool, noteOpen: Bool, active: Bool, debugLaunch: Bool = false) -> Bool {
+    ///   - processing: a "Process Now" pass of Note Insights is working (kept awake whichever screen shows, and with
+    ///     the toggle off, until it ends).
+    static func idleTimerDisabled(enabled: Bool, noteOpen: Bool, active: Bool, debugLaunch: Bool = false,
+                                  processing: Bool = false) -> Bool {
         guard active else { return false }
-        return debugLaunch || (enabled && noteOpen)
+        return debugLaunch || processing || (enabled && noteOpen)
     }
 }
 
@@ -35,7 +38,9 @@ public enum KeepScreenOn {
 /// stayed set and the screen never locked. This follows the application instead (`AppLifecycle`: became active,
 /// resigned, entered the background; any change of the settings) and counts every open editor (the model calls
 /// `update` when they change, `AppModelCore.keepScreenOn`), and it sets the flag back whenever any input says no. The
-/// flag goes to `PlatformServices.setIdleTimerDisabled`.
+/// flag goes to `PlatformServices.setIdleTimerDisabled`. The reasons are ORed: the toggle with an open note, a debug
+/// launch, and a "Process Now" pass working (`InsightsModelState.isProcessingNow`); each ends on its own and the
+/// screen may lock once none holds.
 @MainActor
 public final class IdleTimerKeeper {
     private let settings: any KeyValueStore
@@ -43,17 +48,22 @@ public final class IdleTimerKeeper {
     private let lifecycle: any AppLifecycle
     private let noteOpen: @MainActor () -> Bool
     private let debugLaunch: Bool
+    private let processing: @MainActor () -> Bool
     private var observation: AppLifecycleObservation?
     private var settingChanges: KeyValueObservation?
     /// What was applied last (nil before the first `update`).
     public private(set) var disabled: Bool?
+    /// Whether the process activity was last asked held (nil before the first `update`).
+    public private(set) var activityHeld: Bool?
 
     public init(settings: any KeyValueStore, platform: any PlatformServices, lifecycle: any AppLifecycle,
-                debugLaunch: Bool = false, noteOpen: @escaping @MainActor () -> Bool) {
+                debugLaunch: Bool = false, processing: @escaping @MainActor () -> Bool = { false },
+                noteOpen: @escaping @MainActor () -> Bool) {
         self.settings = settings
         self.platform = platform
         self.lifecycle = lifecycle
         self.debugLaunch = debugLaunch
+        self.processing = processing
         self.noteOpen = noteOpen
     }
 
@@ -86,7 +96,12 @@ public final class IdleTimerKeeper {
     /// background (its state may still read active then), so the timer comes back on.
     func update(leaving: Bool = false) {
         let value = KeepScreenOn.idleTimerDisabled(enabled: KeepScreenOn.isOn(settings), noteOpen: noteOpen(),
-                                                   active: !leaving && lifecycle.isActive, debugLaunch: debugLaunch)
+                                                   active: !leaving && lifecycle.isActive, debugLaunch: debugLaunch,
+                                                   processing: processing())
+        // The process activity follows the pass alone: not the scene (a Mac resigns active on every app switch, and the pass
+        // must go on while another app has the focus).
+        let held = processing()
+        if held != activityHeld { activityHeld = held; platform.setProcessActivity(held) }
         guard value != disabled else { return }
         disabled = value
         platform.setIdleTimerDisabled(value)
@@ -103,6 +118,7 @@ extension AppModelCore {
         guard idleTimer == nil else { return }
         let keeper = IdleTimerKeeper(settings: services.settings, platform: services.platform,
                                      lifecycle: lifecycle ?? services.lifecycle, debugLaunch: debugLaunch,
+                                     processing: { [weak self] in self?.insights.isProcessingNow ?? false },
                                      noteOpen: { [weak self] in self.map { $0.editor != nil || !$0.windowEditors.isEmpty } ?? false })
         idleTimer = keeper
         keeper.start()

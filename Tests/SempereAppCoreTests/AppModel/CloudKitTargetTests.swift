@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 @testable import Sempere
 @testable import SempereAppCore
@@ -201,6 +202,7 @@ extension AppModelSuites {
             try await b.model.openCloudKitVault(listed[0].vaultId, library: b.library)
             #expect(b.library.vaultStore.entry(id: a.vaultID) != nil)
             #expect(b.model.openVaultTargets.map(\.kind) == [.cloudkit])
+            #expect(b.library.vaultStore.entry(id: a.vaultID)?.name == listed[0].name, "one name: the listing's, not the folder 'vault'")
             try await b.model.unlock(identityText: key)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { b.model.notes.contains { $0.id == note } })
             // Opening a vault already here adds nothing twice.
@@ -269,6 +271,53 @@ extension AppModelSuites {
             try open.setLabel("Chosen label")
             #expect(open.setLabelIfMissing("Folder name") == false)
             #expect(open.label == "Chosen label")
+        }
+
+        @Test func aVaultOpenedFromICloudIsNamedAsListedWithASuffixOnACollision() {
+            #expect(AppModel.storeName(forICloudName: "Lecture notes", taken: []) == "Lecture notes")
+            #expect(AppModel.storeName(forICloudName: "Lecture notes", taken: ["lecture notes", "Lecture notes 2"]) == "Lecture notes 3")
+            #expect(AppModel.storeName(forICloudName: "a/b: c\\d", taken: []) == "a-b- c-d")
+            #expect(AppModel.storeName(forICloudName: ".hidden.sempere", taken: []) == "hidden")
+            #expect(AppModel.storeName(forICloudName: "  ", taken: []) == nil)
+            let long = String(repeating: "é", count: 300)
+            let made = AppModel.storeName(forICloudName: long, taken: [])
+            #expect(made != nil && (try? VaultStore.folderName(for: made ?? "")) != nil)
+        }
+
+        /// The name stayed "Vault 3f2a9c1b" after the iCloud target was removed and added again: the zone kept an old `vault.json`
+        /// with no label, the new target had no state, and the server's copy won the label-only difference. A name beats none in
+        /// either direction.
+        @Test func aTargetAddedAgainOverALabelLessZoneKeepsTheName() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let db = MemoryCloudDatabase()
+            let a = Self.device(db), b = Self.device(db)
+            defer { a.model.close(); b.model.close() }
+            try await Self.opened(a, vault: vault, key: key)
+            let first = try await a.model.addCloudKitTarget(to: a.vaultID)
+            await a.model.syncAllTargetsNow()
+            let name = try #require(a.library.vaultStore.entry(id: a.vaultID)).name
+            #expect(try await b.model.cloudKitVaults().first?.name == name)
+
+            // Remove the target; the zone stays, and holds a manifest with no label (an older upload).
+            try await a.model.removeSyncTarget(first.id, of: a.vaultID)
+            let zone = CloudTargetRun.zone(vaultId: a.vaultID)
+            let recordName = CloudRecordNaming.fileName([Vault.manifestName])
+            var record = try #require(db.rawRecord(zone: zone, recordName))
+            let was = try #require(record.fields.bytes)
+            var obj = try #require(try JSONSerialization.jsonObject(with: was) as? [String: Any])
+            obj["label"] = nil
+            let bare = try JSONSerialization.data(withJSONObject: obj)
+            record.fields.bytes = bare
+            record.fields.size = Int64(bare.count)
+            record.fields.sha256 = Data(SHA256.hash(data: bare))
+            db.putRaw(zone: zone, record)
+            #expect(try await b.model.cloudKitVaults().first?.named == false, "the zone holds no name now")
+
+            _ = try await a.model.addCloudKitTarget(to: a.vaultID)
+            await a.model.syncAllTargetsNow()
+            #expect(try Vault.open(at: try #require(a.model.vaultURL)).label == name, "the local name is kept")
+            #expect(try await b.model.cloudKitVaults().first?.name == name, "and goes back up")
         }
 
         /// k2: "how are you supposed to delete vaults from iCloud?": any listed vault can be deleted, one no device here has included
