@@ -9,7 +9,7 @@ import SempereSync
 extension VaultCopyProgress {
     var text: String {
         switch stage {
-        case .downloading(_, 0):
+        case .openingFromICloud:
             // Open from iCloud fetches the vault's control files only (a partial copy): no count to show before the join.
             return String(localized: "Opening “\(name)” from iCloud…",
                           comment: "Open from iCloud progress while the vault's small control files arrive: %@ is the vault's name")

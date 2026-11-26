@@ -540,6 +540,24 @@ extension AppModelSuites {
             #expect(NearbyJoinRuntime.restartDelay(base: .seconds(90), failures: 3) == .seconds(90))
         }
 
+        /// Review of batch/120, finding 8: a connection that sends garbage over and over logs one error line per address a minute.
+        @Test func droppedConnectionsAreLoggedOncePerAddressPerMinute() async throws {
+            var services = AppModelServices.headless()
+            let perf = MemoryPerfSink()
+            services.perf = perf
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), services: services)
+            defer { model.close() }
+            struct Garbage: Error {}
+            func lines() -> Int { perf.records.filter { if case .log(.error, "nearby", _) = $0 { true } else { false } }.count }
+            let t0 = Date()
+            for i in 0..<50 { model.nearbyLinkDropped(Garbage(), host: "192.168.0.9", now: t0.addingTimeInterval(Double(i) * 0.1)) }
+            #expect(lines() == 1, "50 drops from one address, one line")
+            model.nearbyLinkDropped(Garbage(), host: "192.168.0.10", now: t0)
+            #expect(lines() == 2, "another address has its own")
+            model.nearbyLinkDropped(Garbage(), host: "192.168.0.9", now: t0.addingTimeInterval(61))
+            #expect(lines() == 3, "and the first again after a minute")
+        }
+
         /// 2026-11-26: over a slow link home's request limit ended every session before the request was in, and the join
         /// screen dialed again and again without ever saying nearby had failed (it only came through iCloud). Now it
         /// counts the failures, keeps the last error, says so after a few, and keeps trying with a longer wait each time.

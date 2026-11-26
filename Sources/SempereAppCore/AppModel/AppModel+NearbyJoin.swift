@@ -104,6 +104,8 @@ final class NearbyJoinRuntime {
     var joinFailures: [NearbyPeer: Int] = [:]
     /// Clears Add Device's "link dropped" line after a while.
     var droppedNoticeClear: Task<Void, Never>?
+    /// When a dropped connection of each remote address was last logged (`nearbyLinkDropped`): one line per address per minute.
+    var droppedLogged: [String: Date] = [:]
 
     /// At most this many requests that came nearby are kept for Add Device (the oldest goes first).
     static let requestLimit = 4
@@ -270,7 +272,7 @@ extension AppModelCore {
                     await self?.nearbyOutcome(token: token) ?? .refuse(.closed)
                 })
             } catch {
-                if !Task.isCancelled { self?.nearbyLinkDropped(error) }
+                if !Task.isCancelled { self?.nearbyLinkDropped(error, host: host) }
             }
             self?.nearbyConnectionEnded(token)
         }
@@ -306,8 +308,15 @@ extension AppModelCore {
 
     /// A nearby connection failed before (or while) it got a request: timed out, dropped, or sent garbage. Add Device says so
     /// for a while (`nearbyLinkDroppedFor`), so the person on home sees that something tried, not an empty screen.
-    func nearbyLinkDropped(_ error: Error) {
-        services.perf.log(.error, "nearby", "approve: a connection from a device nearby failed before its request was in: \(LogSafe.describe(error))")
+    /// The log line is made once per address per minute (`logEvery`): anything on the network can connect and send garbage; the
+    /// notice is not limited.
+    func nearbyLinkDropped(_ error: Error, host: String? = nil, now: Date = Date(), logEvery: TimeInterval = 60) {
+        let key = host ?? ""
+        if nearby.droppedLogged[key].map({ now.timeIntervalSince($0) >= logEvery || now < $0 }) ?? true {
+            if nearby.droppedLogged.count >= 64 { nearby.droppedLogged = nearby.droppedLogged.filter { now.timeIntervalSince($0.value) < logEvery } }
+            nearby.droppedLogged[key] = now
+            services.perf.log(.error, "nearby", "approve: a connection from a device nearby failed before its request was in: \(LogSafe.describe(error))")
+        }
         guard nearby.advertisement != nil else { return }
         nearbyLinkDroppedNotice = true
         nearby.droppedNoticeClear?.cancel()

@@ -55,7 +55,7 @@ extension AppModelCore {
         guard account.status == .available else { throw CloudKitTargetProblem.account(account.status) }
         let listing = try await offMain { try CloudVaults.list(store: store) }.first { $0.vaultId == id.uuidString.lowercased() }
         guard let listing else { throw CloudKitTargetProblem.noSuchVault }
-        vaultCopy = VaultCopyProgress(name: listing.name, stage: .downloading(done: 0, total: 0))
+        vaultCopy = VaultCopyProgress(name: listing.name, stage: .openingFromICloud)
         defer { vaultCopy = nil }
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("icloud-copy-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: work) }
