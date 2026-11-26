@@ -8,10 +8,11 @@ import Sempere
 // whole vault, a big pull) used to leave a request or an approval written meanwhile for the next run. Now the run looks at
 // them again between its transfers, at most every `SyncOptions.controlCheckInterval`:
 //
-// - the notes loop, the batches of the concurrent upload and download passes (a pool is never running while the pass
-//   does: the pass runs on the run's own thread between batches), the large uploads and the batched listing call
-//   `controlPassIfDue`;
-// - the pass refreshes the target's listing (a CloudKit mirror reads its change feed first, `prepareRun`), then runs the
+// - the notes loop, the concurrent upload and download passes, the large uploads and the batched listing call
+//   `controlPassIfDue`; a pool stops handing out items only when a pass is due (`TransferPool.run(until:)`), lets the ones
+//   running finish, and runs again after the pass, so a pass never runs beside a transfer and no batch is cut otherwise;
+// - the pass refreshes the target's listing (`SyncRemote.refreshListing`: a CloudKit mirror reads its change feed, nothing of
+//   `prepareRun`'s run-start work), then runs the
 //   same steps the start of the run did, for the files that can matter within seconds: `epochs/` (a record goes before the
 //   `vault.json` that names it), this device's `vault.json` change (an approval) pushed, a joining device's approval taken,
 //   `joins/` both ways and `keys/`;
@@ -27,66 +28,83 @@ import Sempere
 // attachment), the large blobs last (`LargeUploads.swift`).
 
 extension SyncEngine {
-    /// Runs `groups` through the pool in batches of about two passes of the pool's width, the control files looked at
-    /// between them when due. One batch: the whole thing, as before, while the pass is not due.
+    /// Runs `groups` through the pool, which pauses only when the control files are due: the pass runs, then the rest goes on.
     func runInBatches<Item: Sendable>(_ groups: [TransferGroup<Item>], _ body: @escaping @Sendable (Item) throws -> Void) throws {
-        let size = max(pool.width * 2, 8)
-        var batch: [TransferGroup<Item>] = []
-        var items = 0
-        for g in groups {
-            batch.append(g)
-            items += g.first.count + g.then.count
-            if items >= size {
-                try pool.run(batch, body)
-                batch = []
-                items = 0
-                try controlPassIfDue()
-            }
+        var rest = groups
+        while !rest.isEmpty {
+            let eligible = controlPassEligible, last = lastControlPass, interval = options.controlCheckInterval
+            rest = try pool.run(rest, until: { eligible && Date().timeIntervalSince(last) >= interval }, body)
+            if !rest.isEmpty { try controlPassIfDue() }
         }
-        if !batch.isEmpty { try pool.run(batch, body) }
+    }
+
+    /// A pass may run in this run at all (not dry, push-only, held for an epoch, or after a later epoch was taken).
+    var controlPassEligible: Bool {
+        !options.dryRun && !options.pushOnly && !midRunControl && !epochTaken && epochHold == nil
     }
 
     /// Looks at the control files again if the last look was `controlCheckInterval` ago. Only on the run's own thread, with
-    /// no transfer running. A failure of its own is reported (as at the start of the run); a run bound is thrown.
+    /// no transfer running. A failure of its own is reported once (as at the start of the run); a run bound, an error that is not
+    /// transient (the account changed, the zone or base is gone) or a cancellation stops the run.
     func controlPassIfDue() throws {
-        guard !options.dryRun, !options.pushOnly, !midRunControl, !epochTaken, epochHold == nil,
-              Date().timeIntervalSince(lastControlPass) >= options.controlCheckInterval else { return }
+        guard controlPassEligible, Date().timeIntervalSince(lastControlPass) >= options.controlCheckInterval else { return }
         lastControlPass = Date()
         try checkCancelled()
         midRunControl = true
         defer { midRunControl = false }
-        do {
-            // A mirror reads its change feed (others do nothing); then the root as it is now.
-            try transport.prepareRun()
-            guard let entries = try transport.list([]) else { return }
-            let root = Dictionary(entries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
-            // The server's `vault.json`, read only when something may have moved: this device's copy differs from the
-            // recorded one, or the server's version tag does.
-            fetchedManifest = nil
-            let local = try? localMutable(Vault.manifestName)
-            let record = state.mutable[Vault.manifestName]
-            let manifestMoved = local.map { FileDigest.sha256($0) != record?.hash } ?? false
-                || root[Vault.manifestName].map { $0.stamp != record?.stamp || record == nil } ?? (local != nil)
-            if manifestMoved, root[Vault.manifestName] != nil {
-                fetchedManifest = try? transport.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
-            }
-            do { try syncEpochRecords(remoteRoot: root) } catch {
-                try rethrowRunLimit(error)
-                report.errors.append(.init(path: Vault.epochsName, message: Self.describe(error)))
-            }
-            if manifestMoved { syncMutableFiles(root, settleVersions: false, only: [Vault.manifestName]) }
-            fetchedManifest = nil
-            do { try syncJoinRequests(remoteRoot: root) } catch {
-                try rethrowRunLimit(error)
-                report.errors.append(.init(path: Vault.joinsName, message: Self.describe(error)))
-            }
-            do { try syncPassphraseCopies(remoteRoot: root) } catch {
-                try rethrowRunLimit(error)
-                report.errors.append(.init(path: Vault.keysName, message: Self.describe(error)))
-            }
-        } catch {
+        let marks = (errors: report.errors.count, skipped: report.skipped.count, ignored: report.ignored.count)
+        defer { dedupe(since: marks) }
+        // The target's listing as it is now: a mirror reads its feed (only what it lacks); a failure that is transient is
+        // reported, anything else ends the run.
+        do { try transport.refreshListing() } catch {
             try rethrowRunLimit(error)
+            guard (error as? any TransientRemoteError)?.isTransient == true else { throw error }
             report.skipped.append(.init(path: Vault.manifestName, message: "control files not looked at again: \(Self.describe(error))"))
+            return
         }
+        let listed: [RemoteEntry]?
+        do { listed = try transport.list([]) } catch {
+            try rethrowRunLimit(error)
+            guard (error as? any TransientRemoteError)?.isTransient == true else { throw error }
+            report.skipped.append(.init(path: Vault.manifestName, message: "control files not looked at again: \(Self.describe(error))"))
+            return
+        }
+        // The base is gone (a deleted zone, a folder removed): nothing here may go on.
+        guard let entries = listed else { throw transport.missingCollectionError([]) }
+        let root = Dictionary(entries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        // The server's `vault.json`, read only when something may have moved: this device's copy differs from the
+        // recorded one, or the server's version tag does.
+        fetchedManifest = nil
+        let local = try? localMutable(Vault.manifestName)
+        let record = state.mutable[Vault.manifestName]
+        let manifestMoved = local.map { FileDigest.sha256($0) != record?.hash } ?? false
+            || root[Vault.manifestName].map { $0.stamp != record?.stamp || record == nil } ?? (local != nil)
+        if manifestMoved, root[Vault.manifestName] != nil {
+            fetchedManifest = try? transport.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
+        }
+        func step(_ path: String, _ body: () throws -> Void) throws {
+            do { try body() } catch {
+                try rethrowRunLimit(error)
+                report.errors.append(.init(path: path, message: Self.describe(error)))
+            }
+        }
+        try step(Vault.epochsName) { try syncEpochRecords(remoteRoot: root) }
+        if manifestMoved { syncMutableFiles(root, settleVersions: false, only: [Vault.manifestName]) }
+        fetchedManifest = nil
+        try step(Vault.joinsName) { try syncJoinRequests(remoteRoot: root) }
+        try step(Vault.keysName) { try syncPassphraseCopies(remoteRoot: root) }
+    }
+
+    /// Entries a pass added that an earlier one (or the start of the run) already made are dropped: a failing file is said once.
+    private func dedupe(since marks: (errors: Int, skipped: Int, ignored: Int)) {
+        func unique<T: Equatable>(_ all: inout [T], from mark: Int) {
+            guard all.count > mark else { return }
+            var kept = Array(all[..<mark])
+            for e in all[mark...] where !kept.contains(e) { kept.append(e) }
+            all = kept
+        }
+        unique(&report.errors, from: marks.errors)
+        unique(&report.skipped, from: marks.skipped)
+        unique(&report.ignored, from: marks.ignored)
     }
 }

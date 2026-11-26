@@ -788,6 +788,7 @@ struct SwitchedRemote: SyncRemote {
         set { plain.interrupt = newValue; faulty.interrupt = newValue }
     }
     func prepareRun() throws { try now.prepareRun() }
+    func refreshListing() throws { try now.refreshListing() }
     func list(_ path: [String]) throws -> [RemoteEntry]? { try now.list(path) }
     func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { try now.listTree(path, maxBytes: maxBytes) }
     func stat(_ path: [String]) throws -> RemoteEntry? { try now.stat(path) }

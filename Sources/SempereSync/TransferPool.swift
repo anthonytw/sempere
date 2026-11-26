@@ -38,22 +38,41 @@ public struct TransferPool: Sendable {
 
     /// Runs `body` for every item, at most `width` at once.
     public func run<Item: Sendable>(_ items: [Item], _ body: @escaping @Sendable (Item) throws -> Void) throws {
-        try run(items.map { TransferGroup(first: [$0]) }, body)
+        try run(items.map { TransferGroup(first: [$0]) }, until: nil, body)
     }
 
     /// Runs `body` for every item of `groups`, at most `width` at once, a
     /// group's `then` items after its `first` ones.
-    public func run<Item: Sendable>(_ groups: [TransferGroup<Item>], _ body: @escaping @Sendable (Item) throws -> Void) throws {
+    ///
+    /// `until`: asked before each item is handed out, after the first one of this call; once it answers true no item starts, the
+    /// ones running finish, and what never started is returned as groups (to run again after whatever `until` asked for: the
+    /// control files, `ControlPass.swift`). The pool is drained only then, never otherwise.
+    @discardableResult
+    public func run<Item: Sendable>(_ groups: [TransferGroup<Item>], until pause: (@Sendable () -> Bool)? = nil,
+                                    _ body: @escaping @Sendable (Item) throws -> Void) throws -> [TransferGroup<Item>] {
         let count = groups.reduce(0) { $0 + $1.first.count + $1.then.count }
-        guard count > 0 else { return }
+        guard count > 0 else { return [] }
         if width == 1 || count == 1 {
-            for g in groups {
-                for item in g.first { try body(item) }
-                for item in g.then { try body(item) }
+            var started = false
+            for (gi, g) in groups.enumerated() {
+                for (ii, item) in g.first.enumerated() {
+                    if started, pause?() == true {
+                        return [TransferGroup(first: Array(g.first[ii...]), then: g.then)] + Array(groups[(gi + 1)...])
+                    }
+                    started = true
+                    try body(item)
+                }
+                for (ii, item) in g.then.enumerated() {
+                    if started, pause?() == true {
+                        return [TransferGroup(first: [], then: Array(g.then[ii...]))] + Array(groups[(gi + 1)...])
+                    }
+                    started = true
+                    try body(item)
+                }
             }
-            return
+            return []
         }
-        let queue = Scheduler(groups)
+        let queue = Scheduler(groups, pause: pause)
         let work: @Sendable () -> Void = {
             while let next = queue.next() {
                 var failure: Error?
@@ -76,6 +95,7 @@ public struct TransferPool: Sendable {
         work()
         done.wait()
         if let error = queue.failure { throw error }
+        return queue.remainder()
     }
 
     /// The queue the threads take items from.
@@ -87,8 +107,12 @@ public struct TransferPool: Sendable {
         private var pendingFirst: [Int]
         private var running = 0
         private var error: Error?
+        private let pause: (@Sendable () -> Bool)?
+        private var handedOut = 0
+        private var paused = false
 
-        init(_ groups: [TransferGroup<Item>]) {
+        init(_ groups: [TransferGroup<Item>], pause: (@Sendable () -> Bool)?) {
+            self.pause = pause
             self.groups = groups
             pendingFirst = groups.map(\.first.count)
             for (i, g) in groups.enumerated() {
@@ -109,10 +133,16 @@ public struct TransferPool: Sendable {
         func next() -> (item: Item, group: Int, first: Bool)? {
             condition.lock(); defer { condition.unlock() }
             while true {
-                if error != nil { return nil }
+                if error != nil || paused { return nil }
                 if head < ready.count {
+                    if handedOut > 0, pause?() == true {
+                        paused = true
+                        condition.broadcast()
+                        return nil
+                    }
                     let item = ready[head]
                     head += 1
+                    handedOut += 1
                     running += 1
                     return item
                 }
@@ -120,6 +150,21 @@ public struct TransferPool: Sendable {
                 // A running item may release its group's `then` items.
                 condition.wait()
             }
+        }
+
+        /// What never started (after a pause), as groups in the original order; call after every item finished.
+        func remainder() -> [TransferGroup<Item>] {
+            condition.lock(); defer { condition.unlock() }
+            guard paused else { return [] }
+            var out: [TransferGroup<Item>] = []
+            for (g, group) in groups.enumerated() {
+                let firsts = ready[head...].filter { $0.group == g && $0.first }.map(\.item)
+                var thens = ready[head...].filter { $0.group == g && !$0.first }.map(\.item)
+                if !firsts.isEmpty { thens = group.then }   // not released yet: all of them wait
+                if firsts.isEmpty && thens.isEmpty { continue }
+                out.append(TransferGroup(first: firsts, then: thens))
+            }
+            return out
         }
 
         func finished(group: Int, first: Bool, error failure: Error?) {

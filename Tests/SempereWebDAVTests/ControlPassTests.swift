@@ -8,25 +8,39 @@ import XCTest
 /// N x `delay` however many transfer threads the engine uses) and calls `onNoteWrite` with the count of those uploads so far.
 /// A first upload of a large vault, as the tests need it to be long.
 final class SlowNotesRemote: SyncRemote, @unchecked Sendable {
-    let base: any SyncRemote
+    private var inner: any SyncRemote
+    var base: any SyncRemote { inner }
     let delay: TimeInterval
     let onNoteWrite: @Sendable (Int) -> Void
     private let gate = NSLock(), lock = NSLock()
     private var count = 0
     init(_ base: any SyncRemote, delay: TimeInterval, onNoteWrite: @escaping @Sendable (Int) -> Void) {
-        self.base = base; self.delay = delay; self.onNoteWrite = onNoteWrite
+        self.inner = base; self.delay = delay; self.onNoteWrite = onNoteWrite
     }
     var location: String { base.location }
     var capabilities: RemoteCapabilities { base.capabilities }
-    var interrupt: (@Sendable () -> (any Error)?)? { get { base.interrupt } set { var b = base; b.interrupt = newValue } }
+    var interrupt: (@Sendable () -> (any Error)?)? { get { inner.interrupt } set { inner.interrupt = newValue } }
     func list(_ path: [String]) throws -> [RemoteEntry]? { try base.list(path) }
     func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { try base.listTree(path, maxBytes: maxBytes) }
     func missingCollectionError(_ path: [String]) -> any Error { base.missingCollectionError(path) }
     func stat(_ path: [String]) throws -> RemoteEntry? { try base.stat(path) }
-    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) { try base.read(path, maxBytes: maxBytes) }
+    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) {
+        let got = try base.read(path, maxBytes: maxBytes)
+        noteDownloaded(path)
+        return got
+    }
+    private func noteDownloaded(_ path: [String]) {
+        guard countsDownloads, path.first == Vault.notesName, path.count > 2 else { return }
+        gate.withLock { Thread.sleep(forTimeInterval: delay) }
+        let n = lock.withLock { count += 1; return count }
+        onNoteWrite(n)
+    }
+    /// Count and slow the downloads of note files, as the uploads (a long pull).
+    var countsDownloads = false
     func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int, segmentBytes: Int,
                   progress: ((Int) throws -> Void)?) throws -> DownloadResult {
-        try base.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes, segmentBytes: segmentBytes, progress: progress)
+        defer { noteDownloaded(path) }
+        return try base.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes, segmentBytes: segmentBytes, progress: progress)
     }
     func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
         let isNote = path.first == Vault.notesName && path.count > 2
@@ -43,6 +57,14 @@ final class SlowNotesRemote: SyncRemote, @unchecked Sendable {
     func createBase() throws { try base.createBase() }
     func delete(_ path: [String], ifETag: String?) throws -> Bool { try base.delete(path, ifETag: ifETag) }
     func prepareRun() throws { try base.prepareRun() }
+    /// Calls so far, and an error to throw at a call (the number of the call, from 1).
+    private(set) var refreshes = 0
+    var refreshFailure: (@Sendable (Int) -> (any Error)?)?
+    func refreshListing() throws {
+        let n = lock.withLock { refreshes += 1; return refreshes }
+        if let error = refreshFailure?(n) { throw error }
+        try base.refreshListing()
+    }
     func checkAbsentBase(syncedBefore: Bool) throws { try base.checkAbsentBase(syncedBefore: syncedBefore) }
 }
 
@@ -135,5 +157,72 @@ final class ControlPassTests: TempDirTestCase {
             return m.devices.count == 2
         })
         XCTAssertFalse(seen)
+    }
+
+    // MARK: A server copy that moved on, a joiner's own long run, the mirror, a failing refresh
+
+    /// A `vault.json` that someone else changed on the target mid-run (a label here; a later epoch or a home-side version change
+    /// is judged the same way) is neither taken nor overwritten by the pass: the next run judges it, before the notes.
+    private func foreignManifestIsLeftAlone(_ make: () throws -> TransportUnderTest) throws {
+        let original = Locked<Data?>(nil), foreign = Locked<Data?>(nil)
+        let (violated, report) = try scenario(make, mid: { w, target, _ in
+            let local = try Data(contentsOf: w["A"].folder.appendingPathComponent(Vault.manifestName))
+            original.value = local
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: local) as? [String: Any])
+            json["label"] = "Changed on another device"
+            let changed = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+            foreign.value = changed
+            target.put(Vault.manifestName, changed)
+        }, after: { w, target, _ in
+            let local = try? Data(contentsOf: w["A"].folder.appendingPathComponent(Vault.manifestName))
+            return local != original.value || target.file(Vault.manifestName) != foreign.value
+        })
+        XCTAssertFalse(violated, "the pass left both copies as they were: \(report)")
+        XCTAssertNotNil(foreign.value)
+    }
+
+    func testAForeignManifestIsLeftAloneOnMemory() throws { try foreignManifestIsLeftAlone { .memory() } }
+    func testAForeignManifestIsLeftAloneOnCloudKit() throws { try foreignManifestIsLeftAlone { .cloud() } }
+    func testAForeignManifestIsLeftAloneOnAFolder() throws { try foreignManifestIsLeftAlone { [tmp] in .folder(tmp.appendingPathComponent("target")) } }
+
+    /// An interval of 0 (a pass due at every look) never starves the run: the pool hands out one item before each pause.
+    func testAnIntervalOfZeroStillFinishesTheRun() throws {
+        let (seen, report) = try scenario({ .memory() }, interval: 0, mid: { _, target, request in
+            target.put("joins/\(request.fileName)", try JSONEncoder().encode(request))
+        }, after: { w, _, request in
+            FileManager.default.fileExists(atPath: w["A"].folder.appendingPathComponent("joins/\(request.fileName)").path)
+        })
+        XCTAssertTrue(seen)
+        XCTAssertEqual(report.uploaded.filter { $0.hasPrefix("notes/") }.count, Self.notes, "\(report.errors)")
+    }
+
+    /// A mid-run refresh that fails: a transient error is reported once and the run goes on; an error that is not transient (the
+    /// account changed) stops it.
+    private func runWithFailingRefresh(_ error: any Error) throws -> SyncReport {
+        let t = TransportUnderTest.memory()
+        let target = EpochTarget.over(t, name: "T1", seed: 1, faults: { 0 })
+        let w = try EpochSyncWorld(in: tmp, names: ["A"], made: [target])
+        for i in 0..<Self.notes { try w["A"].write("note \(i)") }
+        let inner = target.reach
+        target.reach = { device in
+            let base = inner?(device) ?? MemoryRemote(store: target.store)
+            let slow = SlowNotesRemote(base, delay: 0.02) { _ in }
+            slow.refreshFailure = { n in n >= 2 ? error : nil }
+            return slow
+        }
+        return try w["A"].sync(target) { $0.controlCheckInterval = 0.05 }
+    }
+
+    func testATransientRefreshFailureIsReportedOnceAndTheRunGoesOn() throws {
+        let report = try runWithFailingRefresh(CloudRecordError.throttled(until: Date().addingTimeInterval(1)))
+        let said = report.skipped.filter { $0.message.contains("control files not looked at again") }
+        XCTAssertEqual(said.count, 1, "\(report.skipped)")
+        XCTAssertTrue(report.uploaded.filter { $0.hasPrefix("notes/") }.count >= Self.notes, "the run finished its uploads")
+    }
+
+    func testAnAccountErrorInARefreshStopsTheRun() throws {
+        XCTAssertThrowsError(try runWithFailingRefresh(CloudRecordError.otherAccount)) { error in
+            XCTAssertEqual(error as? CloudRecordError, .otherAccount)
+        }
     }
 }

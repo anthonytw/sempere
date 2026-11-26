@@ -381,6 +381,7 @@ struct FaultyRemote: SyncRemote {
     func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws { try inner.resolveConflicts(path, versions) }
     func changes() -> AsyncStream<RemoteChange>? { inner.changes() }
     func prepareRun() throws { try inner.prepareRun() }
+    func refreshListing() throws { try inner.refreshListing() }
 }
 
 /// A thread-safe counter.
