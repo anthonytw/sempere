@@ -5438,6 +5438,19 @@
         }
       }
     },
+    "Apple Intelligence is not available or not ready on this device, so summaries cannot be made." : {
+      "comment" : "Note Insights: why a pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence no está disponible o no está listo en este dispositivo, así que no se pueden crear resúmenes."
+          }
+        }
+      }
+    },
     "Apple Intelligence is not ready on %@." : {
       "comment" : "Ask banner; the argument is “this iPad”, “this iPhone” or “this Mac”",
       "extractionState" : "manual",
@@ -10721,6 +10734,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bolígrafo rojo fino"
+          }
+        }
+      }
+    },
+    "Finished. Everything this device can process is done." : {
+      "comment" : "Note Insights: why a pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminado. Todo lo que este dispositivo puede procesar está hecho."
           }
         }
       }
@@ -18432,6 +18458,58 @@
         }
       }
     },
+    "Paused because the battery is low, Low Power Mode is on or the device is warm. Automatic processing continues when that passes, or tap Process Now." : {
+      "comment" : "Note Insights: why an automatic pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa porque la batería está baja, el modo de bajo consumo está activado o el dispositivo está caliente. El procesamiento automático continúa cuando eso pase, o toca Procesar ahora."
+          }
+        }
+      }
+    },
+    "Paused when the app left the screen or the phone locked. It picks up when you return." : {
+      "comment" : "Note Insights: why a Process Now pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa al salir de la app o bloquear el teléfono. Continúa cuando vuelvas."
+          }
+        }
+      }
+    },
+    "Paused when the app left the screen or the phone locked. Processing continues while you use the app." : {
+      "comment" : "Note Insights: why an automatic pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa al salir de la app o bloquear el teléfono. El procesamiento continúa mientras usas la app."
+          }
+        }
+      }
+    },
+    "Paused while a topic summary was made. Processing continues by itself." : {
+      "comment" : "Note Insights: why a pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa mientras se creaba un resumen de tema. El procesamiento continúa solo."
+          }
+        }
+      }
+    },
     "Paused: another app is using the audio" : {
       "comment" : "Recording bar status",
       "extractionState" : "manual",
@@ -18931,6 +19009,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Con problemas, %@"
+          }
+        }
+      }
+    },
+    "Process Insights on Battery" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Procesar ideas con batería"
           }
         }
       }
@@ -24095,6 +24185,19 @@
         }
       }
     },
+    "Stopped after an error. Process Now tries again." : {
+      "comment" : "Note Insights: why a pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se detuvo por un error. Procesar ahora lo intenta de nuevo."
+          }
+        }
+      }
+    },
     "Stopped early" : {
       "comment" : "Recognize All was stopped before the end",
       "extractionState" : "manual",
@@ -24104,6 +24207,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detenido antes de acabar"
+          }
+        }
+      }
+    },
+    "Stopped when the vault was locked. Unlock it and tap Process Now." : {
+      "comment" : "Note Insights: why a pass stopped",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se detuvo al bloquear la bóveda. Desbloquéala y toca Procesar ahora."
           }
         }
       }
@@ -26939,6 +27055,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La huella raíz son 16 grupos de 4 letras y cifras (0–9, a–f)."
+          }
+        }
+      }
+    },
+    "The screen stays on until processing finishes." : {
+      "comment" : "Note Insights: Process Now keeps the screen awake",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La pantalla permanece encendida hasta que termine el procesamiento."
           }
         }
       }
@@ -31542,6 +31671,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dónde"
+          }
+        }
+      }
+    },
+    "While Sempere is open, notes are also processed when unplugged, with at least 30% battery and a cool device. Off: only while charging." : {
+      "comment" : "Note Insights: the on-battery switch's explanation",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mientras Sempere está abierto, las notas también se procesan sin enchufar, con al menos un 30 % de batería y el dispositivo fresco. Desactivado: solo mientras se carga."
           }
         }
       }

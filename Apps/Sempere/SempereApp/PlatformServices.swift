@@ -151,6 +151,11 @@ struct SystemFileCoordinator: FileCoordinating {
 
 // MARK: - PlatformServices
 
+#if targetEnvironment(macCatalyst)
+/// The process activity held while the idle timer is disabled (`AppPlatform.setIdleTimerDisabled`).
+@MainActor private enum KeepAwakeActivity { static var token: NSObjectProtocol? }
+#endif
+
 /// The device the app runs on: `Platform`'s flags, UIKit's idle timer and feedback generators.
 struct AppPlatform: PlatformServices {
     var isMac: Bool { Platform.isMac }
@@ -158,7 +163,19 @@ struct AppPlatform: PlatformServices {
     @MainActor var deviceKind: String { ThisDevice.kind }
     @MainActor var deviceName: String { ThisDevice.name }
 
-    @MainActor func setIdleTimerDisabled(_ disabled: Bool) { UIApplication.shared.isIdleTimerDisabled = disabled }
+    @MainActor func setIdleTimerDisabled(_ disabled: Bool) {
+        UIApplication.shared.isIdleTimerDisabled = disabled
+        #if targetEnvironment(macCatalyst)
+        // A Mac also naps its idle processes and sleeps: an activity assertion lives as long as the screen is held
+        // awake (a "Process Now" pass, or the editor's Keep Screen On), and ends with it.
+        if disabled, KeepAwakeActivity.token == nil {
+            KeepAwakeActivity.token = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Sempere keeps the screen on")
+        } else if !disabled, let activity = KeepAwakeActivity.token {
+            ProcessInfo.processInfo.endActivity(activity)
+            KeepAwakeActivity.token = nil
+        }
+        #endif
+    }
 
     @MainActor func play(_ feedback: HapticFeedback) {
         guard !isMac else { return }
