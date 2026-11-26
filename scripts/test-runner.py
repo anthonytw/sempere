@@ -155,7 +155,7 @@ class Watch:
             return Failure(f"?/{name}", "swift-testing")
         target, path = found
         return Failure(f"{target}/{'/'.join(path)}/{name}" if self.kind == "xcodebuild"
-                       else f"{target}.{'.'.join(path)}/{name}", "swift-testing")
+                       else f"{target}.{'/'.join(path)}/{name}", "swift-testing")
 
 
 TEST_DIRS = [ROOT / "Apps" / "Sempere", ROOT / "Tests"]
@@ -423,6 +423,15 @@ def self_test() -> int:
         problems.append("Swift Testing failure not seen")
     elif st.failures[-1].ident != "SempereAppTests/OfflineModeTests/outboundConnectionsAreRefused()":
         problems.append(f"Swift Testing id {st.failures[-1].ident}")
+    # SwiftPM names a nested suite Module.Outer/Inner/func() (`swift test list`); joined with "." the rerun's filter
+    # matched nothing, so every nested-suite failure said "rerun ran no test".
+    sn = Watch(kind="swiftpm")
+    sn.feed("✘ Test anUnlistedDeviceSuspendsVoiceNotesSealsWhatItHoldsAndResumesWhenListed() recorded an issue at "
+            "UnlistedOverSyncTests.swift:154:13: Expectation failed: model.sightingRows.isEmpty")
+    sn.feed("✘ Test anUnlistedDeviceSuspendsVoiceNotesSealsWhatItHoldsAndResumesWhenListed() failed after 2.9 seconds with 1 issue.")
+    want = "SempereAppCoreTests.AppModelSuites/UnlistedOverSyncTests/anUnlistedDeviceSuspendsVoiceNotesSealsWhatItHoldsAndResumesWhenListed()"
+    if not sn.failures or sn.failures[-1].ident != want:
+        problems.append(f"nested swiftpm id {sn.failures[-1].ident if sn.failures else None}, not {want}")
     if not st.feed("✘ Test screenFits(_:in:) with 21 test cases failed after 62.4 seconds with 1 issue."):
         problems.append("parameterized Swift Testing failure not seen")
     elif st.failures[-1].ident != "SempereAppTests/PseudoLanguageLayoutTests/screenFits(_:in:)":
