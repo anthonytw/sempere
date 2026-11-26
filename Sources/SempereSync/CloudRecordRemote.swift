@@ -290,6 +290,7 @@ public struct CloudRecordRemote: SyncRemote {
         // is a valid snapshot "as of its token"; nothing is judged from it until the feed has finished (`prepared`, set below, is
         // per process and run), and `feedIncomplete` marks the file so that no reader outside a run takes it for the zone.
         var lastSaved = Date()
+        var saveInterval = Self.feedSaveInterval
         var finished = false
         defer { if !finished, core.with({ $0.token != nil }) { persistMirror(partial: true) } }
         fetching: while true {
@@ -353,7 +354,14 @@ public struct CloudRecordRemote: SyncRemote {
             }
             if !skips.isEmpty { core.locked { for (k, v) in skips { core.diagnostics.skipped[k, default: 0] += v } } }
             if !page.moreComing { break }
-            if Date().timeIntervalSince(lastSaved) >= Self.feedSaveInterval { persistMirror(partial: true); lastSaved = Date() }
+            if Date().timeIntervalSince(lastSaved) >= saveInterval {
+                let began = Date()
+                persistMirror(partial: true)
+                lastSaved = Date()
+                // Encoding is linear in the mirror: the interval grows with what a save costs (at least 20 times its own duration), so
+                // a large first feed spends about 5% of its time saving, never more, whatever the device.
+                saveInterval = max(Self.feedSaveInterval, 20 * lastSaved.timeIntervalSince(began))
+            }
         }
         finished = true
         core.locked {

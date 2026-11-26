@@ -46,7 +46,7 @@ extension AppModelCore {
     /// private database. The first run uploads the vault, or makes a union with the zone another device made; nothing is deleted.
     /// The account is recorded (hashed) so that a run in another account pauses instead of uploading into it.
     @discardableResult
-    public func addCloudKitTarget(to vaultID: UUID, seedState: URL? = nil) async throws -> SyncTarget {
+    public func addCloudKitTarget(to vaultID: UUID, seedState: URL? = nil, seedUser: String? = nil) async throws -> SyncTarget {
         guard let cloud = services.cloudKit, cloud.isAvailable() else { throw CloudKitTargetProblem.unavailable }
         guard syncStore.entry(id: vaultID) != nil else { throw CloudKitTargetProblem.notAStoreVault }
         let account = try await offMain { try cloud.makeStore().account() }
@@ -66,7 +66,9 @@ extension AppModelCore {
         // The state of the download that made this copy (`CloudVaults.download`: its sync state and the mirror of the zone, with the
         // change token) becomes the target's own, before its first run: the run then fetches only what changed since, instead of the
         // whole feed of a large zone (which a short join-check run never finishes) and a comparison of every file.
-        if let seedState { CloudVaults.seed(store.targets.stateURL(target.id, of: vaultID), from: seedState) }
+        // Only for the account the download was made with: another account's token means nothing in this one's zone (it would read as
+        // "iCloud data gone").
+        if let seedState, let seedUser, seedUser == account.userHash { CloudVaults.seed(store.targets.stateURL(target.id, of: vaultID), from: seedState) }
         syncTargetsChanged()
         syncCoordinator.sessions[target.id]?.demand()
         return target

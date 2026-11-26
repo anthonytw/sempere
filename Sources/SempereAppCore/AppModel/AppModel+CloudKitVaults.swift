@@ -83,7 +83,7 @@ extension AppModelCore {
         } catch {
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
-        _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state)   // `work` is removed when this returns
+        _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state, seedUser: account.userHash)   // `work` is removed when this returns
         try await openVault(at: entry.url)
         remember(in: library)
     }
@@ -235,7 +235,7 @@ extension AppModelCore {
         // again right after it is deleted. A failure puts them back (`syncTargetsChanged` makes the sessions again).
         let mine = syncStore.targets.targets(of: id).filter { $0.kind == .cloudkit }
         for target in mine {
-            syncCoordinator.sessions[target.id]?.interruptRun()   // a long run is cut between files, not waited for
+            syncCoordinator.sessions[target.id]?.interruptRun(hard: true)   // stopped at once in any phase (a large first feed too), not waited for
             await syncCoordinator.stop(target.id)?.value
         }
         let user: String

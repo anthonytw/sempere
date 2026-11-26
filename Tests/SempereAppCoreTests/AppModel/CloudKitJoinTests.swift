@@ -183,6 +183,33 @@ extension AppModelSuites {
             #expect(session.problems.isEmpty && session.quietFailure == nil, "the interrupts left no failure")
         }
 
+        /// Delete from iCloud while a run is still reading a large zone's first feed (no control files done yet) stops that run at once: the
+        /// sheet does not hang for the feed.
+        @Test func deletingAVaultDoesNotWaitForALargeFirstFeed() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let db = MemoryCloudDatabase()
+            db.limits.pageSize = 8
+            let slow = SlowCloudStore(db)
+            let home = CloudKitJoinTests.device(db, trust: false, store: slow)
+            defer { home.model.close() }
+            try await CloudKitTargetTests.opened(home, vault: vault, key: key)
+            for i in 0..<30 { _ = try await home.model.createNote(title: "Note \(i)", paper: .ruled, notebook: nil) }
+            let target = try await home.model.addCloudKitTarget(to: home.vaultID)
+            await home.model.syncAllTargetsNow()
+            let state = home.model.syncStore.targets.stateDirectory(target.id, of: home.vaultID)
+            try? FileManager.default.removeItem(at: state.appendingPathComponent("cloudkit"))   // the mirror is lost: a full feed next
+            slow.feedDelay = 0.8                                                                // 100+ records in pages of 8: 10 s or more
+            let session = try #require(home.model.syncSessions.first)
+            session.demand()
+            #expect(await TS.waitUntil(timeout: .seconds(20)) { session.isSyncing })
+            let began = ContinuousClock.now
+            try await home.model.deleteICloudVault(home.vaultID.uuidString, library: home.library, acknowledgingNoOtherCopy: false)
+            let took = ContinuousClock.now - began
+            #expect(took < .seconds(3), "the delete did not wait for the feed: \(took)")
+            #expect(try db.zones().isEmpty)
+        }
+
         /// k5, a joiner on a vault whose zone is large: with no mirror its first run reads the whole change feed, which takes longer than a
         /// join-check run's window. The feed is saved as it goes and the window starts after the control files, and a stop waits for them,
         /// so the run gets to `joins/` however many times it is asked: the request reaches the zone and the approval comes back.

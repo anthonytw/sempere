@@ -257,6 +257,8 @@ public final class SyncSession {
     @ObservationIgnored private var runStartedAt: Date?
     /// The cancel flag of the run going (`interruptRun`).
     @ObservationIgnored private var runCancel: SyncRunCancel?
+    /// The hard flag of the run going (`interruptRun(hard:)`), one of its `cancels`.
+    @ObservationIgnored private var runHardCancel: SyncRunCancel?
     /// The run going now, if any (the copy must not be replaced or removed until it has ended).
     var currentRun: Task<SyncReport?, Never>? { running }
 
@@ -388,7 +390,13 @@ public final class SyncSession {
 
     /// Stops the run going between files (it ends as a run cut short after it moved files: progress, no problem, and the next run
     /// continues). Nothing when no run goes.
-    func interruptRun() { runCancel?.cancel() }
+    /// With `hard` the stop is honored at once, in any phase (a first feed, a wait for a folder's files, a back-off): for a caller that
+    /// is going to remove what the run works on (Delete from iCloud). Without it, only once the run's control files are done
+    /// (`SyncOptions.softCancel`).
+    func interruptRun(hard: Bool = false) {
+        runCancel?.cancel()
+        if hard { runHardCancel?.cancel() }
+    }
 
     /// A run for a join check (Add Device looking for a request, approving): a request is picked up early in a run and the approval is
     /// sent early in the next, so a long run already going (a first upload of a large vault, hours at worst) would keep both devices
@@ -451,6 +459,9 @@ public final class SyncSession {
         runCancel = own
         var request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, appCancel()].compactMap { $0 })
         request.soft = own
+        let hardStop = SyncRunCancel()
+        runHardCancel = hardStop
+        request.cancels.append(hardStop)
         request.joinWindow = joinWindow
         request.interactive = interactive
         request.largeBlobs = interactive || full ? .now : .auto
@@ -476,7 +487,7 @@ public final class SyncSession {
             defer {
                 relay.close()
                 runProgress = nil
-                if runCancel === own { runCancel = nil }
+                if runCancel === own { runCancel = nil; runHardCancel = nil }
                 if mode == .twoWay { afterTwoWayRun() }
                 isSyncing = false
                 running = nil   // cleared by the run itself, so a waiter never takes a finished run for a current one
