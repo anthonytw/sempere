@@ -54,23 +54,14 @@ extension SyncEngine {
         defer { midRunControl = false }
         let marks = (errors: report.errors.count, skipped: report.skipped.count, ignored: report.ignored.count)
         defer { dedupe(since: marks) }
-        // The target's listing as it is now: a mirror reads its feed (only what it lacks); a failure that is transient is
-        // reported, anything else ends the run.
-        do { try transport.refreshListing() } catch {
-            try rethrowRunLimit(error)
-            guard (error as? any TransientRemoteError)?.isTransient == true else { throw error }
-            report.skipped.append(.init(path: Vault.manifestName, message: "control files not looked at again: \(Self.describe(error))"))
-            return
-        }
+        // The target's listing as it is now: a mirror reads its feed (only what it lacks). A failure is reported once and the run goes
+        // on, unless it means the target is no longer this vault's (the account changed, the zone or base is gone): that stops the
+        // run as a bound does, with its report and state kept.
+        do { try transport.refreshListing() } catch { return try passFailed(error) }
         let listed: [RemoteEntry]?
-        do { listed = try transport.list([]) } catch {
-            try rethrowRunLimit(error)
-            guard (error as? any TransientRemoteError)?.isTransient == true else { throw error }
-            report.skipped.append(.init(path: Vault.manifestName, message: "control files not looked at again: \(Self.describe(error))"))
-            return
-        }
+        do { listed = try transport.list([]) } catch { return try passFailed(error) }
         // The base is gone (a deleted zone, a folder removed): nothing here may go on.
-        guard let entries = listed else { throw transport.missingCollectionError([]) }
+        guard let entries = listed else { throw SyncError.stopped("the target no longer holds this vault (its base is gone)") }
         let root = Dictionary(entries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
         // The server's `vault.json`, read only when something may have moved: this device's copy differs from the
         // recorded one, or the server's version tag does.
@@ -93,6 +84,19 @@ extension SyncEngine {
         fetchedManifest = nil
         try step(Vault.joinsName) { try syncJoinRequests(remoteRoot: root) }
         try step(Vault.keysName) { try syncPassphraseCopies(remoteRoot: root) }
+    }
+
+    /// A failure of the pass's own requests: a run bound stops the run; an error that says the target is not this vault's any more
+    /// ends it as `stopped`; any other is reported (once) and the run carries on.
+    private func passFailed(_ error: any Error) throws {
+        try rethrowRunLimit(error)
+        if let e = error as? CloudRecordError {
+            switch e {
+            case .zoneGone, .otherAccount, .account: throw SyncError.stopped(Self.describe(error))
+            default: break
+            }
+        }
+        report.skipped.append(.init(path: Vault.manifestName, message: "control files not looked at again: \(Self.describe(error))"))
     }
 
     /// Entries a pass added that an earlier one (or the start of the run) already made are dropped: a failing file is said once.

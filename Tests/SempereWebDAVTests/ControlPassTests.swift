@@ -183,6 +183,7 @@ final class ControlPassTests: TempDirTestCase {
 
     func testAForeignManifestIsLeftAloneOnMemory() throws { try foreignManifestIsLeftAlone { .memory() } }
     func testAForeignManifestIsLeftAloneOnCloudKit() throws { try foreignManifestIsLeftAlone { .cloud() } }
+    func testAForeignManifestIsLeftAloneOnWebDAV() throws { try foreignManifestIsLeftAlone { try .mockDAV() } }
     func testAForeignManifestIsLeftAloneOnAFolder() throws { try foreignManifestIsLeftAlone { [tmp] in .folder(tmp.appendingPathComponent("target")) } }
 
     /// An interval of 0 (a pass due at every look) never starves the run: the pool hands out one item before each pause.
@@ -198,7 +199,7 @@ final class ControlPassTests: TempDirTestCase {
 
     /// A mid-run refresh that fails: a transient error is reported once and the run goes on; an error that is not transient (the
     /// account changed) stops it.
-    private func runWithFailingRefresh(_ error: any Error) throws -> SyncReport {
+    private func runWithFailingRefresh(_ error: any Error) throws -> (report: SyncReport, state: URL) {
         let t = TransportUnderTest.memory()
         let target = EpochTarget.over(t, name: "T1", seed: 1, faults: { 0 })
         let w = try EpochSyncWorld(in: tmp, names: ["A"], made: [target])
@@ -210,19 +211,33 @@ final class ControlPassTests: TempDirTestCase {
             slow.refreshFailure = { n in n >= 2 ? error : nil }
             return slow
         }
-        return try w["A"].sync(target) { $0.controlCheckInterval = 0.05 }
+        let report = try w["A"].sync(target) { $0.controlCheckInterval = 0.05 }
+        return (report, w["A"].stateURL(target))
     }
 
     func testATransientRefreshFailureIsReportedOnceAndTheRunGoesOn() throws {
-        let report = try runWithFailingRefresh(CloudRecordError.throttled(until: Date().addingTimeInterval(1)))
+        let (report, _) = try runWithFailingRefresh(CloudRecordError.throttled(until: Date().addingTimeInterval(1)))
         let said = report.skipped.filter { $0.message.contains("control files not looked at again") }
         XCTAssertEqual(said.count, 1, "\(report.skipped)")
         XCTAssertTrue(report.uploaded.filter { $0.hasPrefix("notes/") }.count >= Self.notes, "the run finished its uploads")
     }
 
-    func testAnAccountErrorInARefreshStopsTheRun() throws {
-        XCTAssertThrowsError(try runWithFailingRefresh(CloudRecordError.otherAccount)) { error in
-            XCTAssertEqual(error as? CloudRecordError, .otherAccount)
-        }
+    /// An error that means the target is not this vault's any more (the account changed) stops the run as a bound does: the report
+    /// says so and the sync state is kept.
+    func testAnAccountErrorInARefreshStopsTheRunAndKeepsItsState() throws {
+        let (report, state) = try runWithFailingRefresh(CloudRecordError.otherAccount)
+        XCTAssertNotNil(report.stoppedEarly, "\(report)")
+        XCTAssertTrue(report.uploaded.filter { $0.hasPrefix("notes/") }.count < Self.notes, "it stopped before the end")
+        XCTAssertNotNil(try SyncState.load(state), "the state was saved")
+    }
+
+    /// Any other error of the refresh (a proxy's 502, a server refusing one request) is reported once; the run goes on, finishes
+    /// its uploads and saves its state: one bad request must not throw away hours of progress.
+    func testAnotherNonTransientRefreshErrorIsReportedOnceAndTheRunGoesOn() throws {
+        let (report, state) = try runWithFailingRefresh(CloudRecordError.corrupt(path: "zone feed", reason: "502 from a proxy"))
+        XCTAssertNil(report.stoppedEarly, "\(report)")
+        XCTAssertEqual(report.skipped.filter { $0.message.contains("control files not looked at again") }.count, 1)
+        XCTAssertEqual(report.uploaded.filter { $0.hasPrefix("notes/") }.count, Self.notes)
+        XCTAssertNotNil(try SyncState.load(state), "the state was saved")
     }
 }

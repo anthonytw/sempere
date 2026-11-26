@@ -28,13 +28,16 @@ public enum SyncError: Error, Hashable, Sendable {
     /// taken as gone and the run stops there, as a run bound does, instead of trying every remaining file
     /// (`LinkBreaker`, offline audit P8). What was done is kept; the next run continues.
     case connectionLost(String)
+    /// The target is no longer this vault's to sync (the account changed, the zone or base is gone): the run stops there, as a
+    /// run bound does, so its report and state are kept (`ControlPass.swift`).
+    case stopped(String)
 }
 
 extension SyncError {
     /// True for a bound of the whole run, or a cancellation: it stops the run, not one file.
     public var isRunLimit: Bool {
         switch self {
-        case .limitExceeded, .cancelled, .connectionLost: return true
+        case .limitExceeded, .cancelled, .connectionLost, .stopped: return true
         default: return false
         }
     }
@@ -55,6 +58,7 @@ extension SyncError: LocalizedError {
             return "\(SyncReport.printable(p)) is not downloaded from the provider yet (asked for it); nothing was synced, run again"
         case .connectionLost(let m):
             return "sync run stopped: the connection was lost (\(SyncReport.printable(m))); the next run continues"
+        case .stopped(let m): return "sync run stopped: \(SyncReport.printable(m))"
         }
     }
 }
