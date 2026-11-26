@@ -87,6 +87,7 @@ extension SyncEngine {
             // Every note of the batch, those whose listing failed too: they are not synced, but the cursor must see
             // them (review of #97, S3).
             for id in batch {
+                try controlPassIfDue()
                 if members.contains(id) { try syncNoteOfLoop(id, remoteEntries: remoteNotes[id]) }
                 guard restSet.contains(id), !held else { continue }
                 // A note whose listing or transfers met the dying link (its downloads, made ahead, failed; the loop then

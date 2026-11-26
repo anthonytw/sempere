@@ -24,6 +24,12 @@ public enum NearbyApproverStatus: Equatable, Sendable {
     case advertising
     /// A device nearby is connected (one session at a time).
     case connected
+    /// This device is not the vault's home: only the home device can approve (the sheet names it, `nearbyHomeName`).
+    case notHome
+    /// The vault is read-only here (a newer format): nothing can be approved.
+    case readOnly
+    /// The link failed or waits for a permission; being started again (the screen says why).
+    case problem(NearbyLinkProblem)
 }
 
 /// The join screen's side of the nearby link.
@@ -42,6 +48,8 @@ public enum NearbyJoinStatus: Equatable, Sendable {
     case received
     /// A device nearby said it declined the request; the join screen keeps looking (it may not have been home).
     case declined
+    /// The link failed or waits for a permission; being started again (the screen says why).
+    case problem(NearbyLinkProblem)
 }
 
 /// What ends home's wait for the user in a nearby session.
@@ -184,7 +192,10 @@ extension AppModelCore {
     func startAdvertising() {
         guard nearby.wantsApproving, !nearby.suspended, nearby.advertisement == nil else { return }
         guard let transport = nearbyTransport else { nearbyApproving = .off; return }
-        guard phase == .unlocked, vault?.isHome == true, !isVaultReadOnly else { nearbyApproving = .unavailable; return }
+        nearbyHomeName = vault?.manifest.homeEntry.map { DeviceName.display($0.name) }
+        guard phase == .unlocked else { nearbyApproving = .unavailable; return }
+        guard vault?.isHome == true else { nearbyApproving = .notHome; return }
+        guard !isVaultReadOnly else { nearbyApproving = .readOnly; return }
         do {
             nearby.advertisement = try transport.advertise(accept: { [weak self] connection in
                 Task { @MainActor in
@@ -193,11 +204,15 @@ extension AppModelCore {
                 }
             }, onReady: { [weak self] in
                 // Up: the failures counted toward the wait start from zero again.
-                Task { @MainActor in self?.nearby.listenerFailures = 0 }
+                Task { @MainActor in
+                    self?.nearby.listenerFailures = 0
+                    if case .problem? = self?.nearbyApproving { self?.nearbyApproving = .advertising }
+                }
             }, onFailure: { [weak self] in
                 Task { @MainActor in self?.nearbyListenerFailed() }
             })
-            nearbyApproving = .advertising
+            // A problem stays on the screen until the listener is up again (no flicker between restarts).
+            if case .problem = nearbyApproving {} else { nearbyApproving = .advertising }
         } catch {
             nearbyApproving = .unavailable
             nearby.listenerFailures += 1
@@ -329,8 +344,9 @@ extension AppModelCore {
     /// (`restartDelay`) while Add Device shows. The browser, if any, is not touched.
     func nearbyListenerFailed() {
         guard nearby.advertisement != nil else { return }
+        let problem = nearbyTransport?.linkProblem ?? .other
         stopAdvertising()
-        if nearby.wantsApproving { nearbyApproving = .unavailable }
+        if nearby.wantsApproving { nearbyApproving = .problem(problem) }
         nearby.listenerFailures += 1
         scheduleListenerRestart()
     }
@@ -339,8 +355,9 @@ extension AppModelCore {
     /// `nearbyListenerFailed`, for the join screen.
     func nearbyBrowserFailed() {
         guard nearby.browsing != nil || nearby.joinTask != nil else { return }
+        let problem = nearbyTransport?.linkProblem ?? .other
         stopJoinLoop()
-        if nearby.wantsJoining { nearbyJoining = .unavailable }
+        if nearby.wantsJoining { nearbyJoining = .problem(problem) }
         nearby.browserFailures += 1
         scheduleBrowserRestart()
     }
@@ -420,12 +437,15 @@ extension AppModelCore {
             nearbyJoining = .unavailable
             return
         }
-        nearbyJoining = .looking
+        if case .problem = nearbyJoining {} else { nearbyJoining = .looking }
         nearby.peers = []
         nearby.browsing = transport.browse(found: { [weak self] peers in
             Task { @MainActor in self?.nearbyPeersChanged(peers) }
         }, onReady: { [weak self] in
-            Task { @MainActor in self?.nearby.browserFailures = 0 }
+            Task { @MainActor in
+                self?.nearby.browserFailures = 0
+                if case .problem? = self?.nearbyJoining { self?.nearbyJoining = .looking }
+            }
         }, onFailure: { [weak self] in
             Task { @MainActor in self?.nearbyBrowserFailed() }
         })

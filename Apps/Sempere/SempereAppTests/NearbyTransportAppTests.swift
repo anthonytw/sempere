@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Sempere
 import SempereAppCore
 import Testing
@@ -158,5 +159,15 @@ struct NearbyTransportAppTests {
         #expect(NearbyJoinStatus.declined.text?.contains("Ask to Join") == true)
         #expect(NearbyApproverStatus.advertising.text?.contains("nearby") == true)
         #expect(NearbyApproverStatus.unavailable.text == nil)
+    }
+
+    /// What a waiting or failed listener or browser means (the join screens' lines): a refused or unanswered Local Network
+    /// permission is `kDNSServiceErr_PolicyDenied`, a network that is down a POSIX error, anything else is left to the interfaces.
+    @Test func linkErrorsAreClassified() {
+        #expect(NWNearbyTransport.problem(of: .dns(NearbyLinkProblem.policyDeniedCode)) == .localNetworkDenied)
+        #expect(NWNearbyTransport.problem(of: .posix(.ENETDOWN)) == .wifiOff)
+        #expect(NWNearbyTransport.problem(of: .posix(.EHOSTUNREACH)) == .wifiOff)
+        #expect(NWNearbyTransport.problem(of: .posix(.ECONNREFUSED)) == nil)
+        #expect(NWNearbyTransport.problem(of: .dns(-65537)) == nil)
     }
 }

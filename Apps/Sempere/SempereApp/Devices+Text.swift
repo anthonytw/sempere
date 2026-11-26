@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereAppCore
+import UIKit
 
 // The words of the device list, the device notices, joins and takeovers (the logic is SempereAppCore's: `AppModel+Devices`,
 // `+DeviceNotices`, `+JoinDevice`, `+Keys`). The device-change sheets' messages are `DeviceChangeText` (DevicesView.swift).
@@ -108,8 +109,10 @@ extension NearbyJoinStatus {
         switch self {
         case .off, .unavailable:
             return nil
+        case .problem(let problem):
+            return problem.text
         case .looking:
-            return String(localized: "Looking for the device that manages devices nearby…",
+            return String(localized: "Looking for the device that manages devices nearby. Only that device can approve this request.",
                           comment: "Join screen: the direct link to the other device")
         case .found:
             return String(localized: "Found a device nearby. Connecting…", comment: "Join screen: the direct link")
@@ -125,12 +128,62 @@ extension NearbyJoinStatus {
     }
 }
 
+extension NearbyLinkProblem {
+    /// One plain sentence for the join screen and Add Device.
+    var text: String {
+        switch self {
+        case .localNetworkDenied:
+            return String(localized: "Sempere needs the Local Network permission to find the other device nearby. Allow it in Settings; until then the approval comes with the next sync.",
+                          comment: "Join screen and Add Device: the direct link is blocked by the Local Network permission")
+        case .wifiOff:
+            return String(localized: "Wi-Fi is off, so the other device cannot be found nearby. Turn it on, or the approval comes with the next sync.",
+                          comment: "Join screen and Add Device: the direct link needs Wi-Fi")
+        case .other:
+            return String(localized: "The direct link to a device nearby failed. Sempere keeps trying; the approval still comes with the next sync.",
+                          comment: "Join screen and Add Device: the direct link failed")
+        }
+    }
+
+    /// The button's title, for the problem Settings can fix.
+    var settingsTitle: String? {
+        guard self == .localNetworkDenied else { return nil }
+        #if targetEnvironment(macCatalyst)
+        return String(localized: "Open Local Network Settings", comment: "Button: opens System Settings, Privacy & Security, Local Network")
+        #else
+        return String(localized: "Open Settings", comment: "Button: opens this app's page in Settings, where Local Network is")
+        #endif
+    }
+
+    /// Opens the place where the permission is: this app's page in Settings (iOS), Privacy & Security ▸ Local Network
+    /// (Mac; the pane's anchor, `Privacy_LocalNetwork`).
+    @MainActor static func openSettings() {
+        #if targetEnvironment(macCatalyst)
+        let text = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork"
+        #else
+        let text = UIApplication.openSettingsURLString
+        #endif
+        if let url = URL(string: text) { UIApplication.shared.open(url) }
+    }
+}
+
 extension NearbyApproverStatus {
     /// Add Device's line for the nearby link; nil when there is nothing to say.
-    var text: String? {
+    func text(homeName: String?) -> String? {
         switch self {
         case .off, .unavailable:
             return nil
+        case .problem(let problem):
+            return problem.text
+        case .notHome:
+            if let home = homeName {
+                return String(localized: "Only “\(home)” can approve new devices. Open Add Device there.",
+                              comment: "Add Device on a device that is not the home device; the value is the home device's name")
+            }
+            return String(localized: "Only the device that manages devices can approve new devices. Open Add Device there.",
+                          comment: "Add Device on a device that is not the home device")
+        case .readOnly:
+            return String(localized: "This vault is read-only here (it needs a newer Sempere), so no device can be approved.",
+                          comment: "Add Device: the vault is read-only")
         case .advertising:
             return String(localized: "A new device nearby can send its request straight to this one while this screen is open.",
                           comment: "Add Device: the direct link")

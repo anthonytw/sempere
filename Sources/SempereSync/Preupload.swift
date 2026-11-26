@@ -101,7 +101,7 @@ extension SyncEngine {
             }
         }
         let me = UncheckedSendable(self)
-        try pool.run(groups) { item in try me.value.preupload(item) }
+        try runInBatches(groups) { item in try me.value.preupload(item) }
     }
 
     /// The blobs of a note the note loop would upload as new on this side, with

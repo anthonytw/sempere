@@ -186,6 +186,10 @@ struct JoinDeviceView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("join.nearby")
+                        if case .problem(let problem) = model.nearbyJoining, let title = problem.settingsTitle {
+                            Button(title, systemImage: "gearshape") { NearbyLinkProblem.openSettings() }
+                                .accessibilityIdentifier("join.nearbySettings")
+                        }
                     }
                     // A declined request looks like one approved and on its way (review of #124, note 2).
                     Text("If the other device declined this request, choose Cancel, then Ask to Join again.")
@@ -413,11 +417,15 @@ struct AddDeviceSheet: View {
                             .accessibilityIdentifier("addDevice.looking")
                         }
                         // The direct link (docs/design/nearby-join.md): a device nearby sends its request here at once.
-                        if let nearby = model.nearbyApproving.text {
+                        if let nearby = model.nearbyApproving.text(homeName: model.nearbyHomeName) {
                             Label(nearby, systemImage: "antenna.radiowaves.left.and.right")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .accessibilityIdentifier("addDevice.nearby")
+                            if case .problem(let problem) = model.nearbyApproving, let title = problem.settingsTitle {
+                                Button(title, systemImage: "gearshape") { NearbyLinkProblem.openSettings() }
+                                    .accessibilityIdentifier("addDevice.nearbySettings")
+                            }
                         }
                     }
                     Section {

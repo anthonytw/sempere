@@ -13774,7 +13774,7 @@
         }
       }
     },
-    "Looking for the device that manages devices nearby…" : {
+    "Looking for the device that manages devices nearby. Only that device can approve this request." : {
       "comment" : "Join screen: the direct link to the other device",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13782,7 +13782,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buscando cerca el dispositivo que gestiona los dispositivos…"
+            "value" : "Buscando cerca el dispositivo que gestiona los dispositivos. Solo ese dispositivo puede aprobar esta solicitud."
           }
         }
       }
@@ -16877,6 +16877,19 @@
         }
       }
     },
+    "Only the device that manages devices can approve new devices. Open Add Device there." : {
+      "comment" : "Add Device on a device that is not the home device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo el dispositivo que gestiona los dispositivos puede aprobar dispositivos nuevos. Abre Añadir dispositivo allí."
+          }
+        }
+      }
+    },
     "Only the device that manages devices can do this." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -16911,6 +16924,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solo tu clave abre estas notas"
+          }
+        }
+      }
+    },
+    "Only “%@” can approve new devices" : {
+      "comment" : "Alert title on a device that is not home, after Add Device; the value is the home device's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo “%@” puede aprobar dispositivos nuevos"
+          }
+        }
+      }
+    },
+    "Only “%@” can approve new devices. Open Add Device there." : {
+      "comment" : "Add Device on a device that is not the home device; the value is the home device's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo “%@” puede aprobar dispositivos nuevos. Abre Añadir dispositivo allí."
           }
         }
       }
@@ -16950,6 +16989,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir archivo de clave"
+          }
+        }
+      }
+    },
+    "Open Local Network Settings" : {
+      "comment" : "Button: opens System Settings, Privacy & Security, Local Network",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir ajustes de Red local"
           }
         }
       }
@@ -17027,6 +17079,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre Sempere para ver los detalles."
+          }
+        }
+      }
+    },
+    "Open Sempere on that device and choose Add Device there. The new device's request, and the approval, find their way through the vault's sync target." : {
+      "comment" : "Alert on a device that is not home, after Add Device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere en ese dispositivo y elige Añadir dispositivo allí. La solicitud del dispositivo nuevo y la aprobación llegan a través del destino de sincronización de la bóveda."
           }
         }
       }
@@ -22316,6 +22381,19 @@
         }
       }
     },
+    "Sempere needs the Local Network permission to find the other device nearby. Allow it in Settings; until then the approval comes with the next sync." : {
+      "comment" : "Join screen and Add Device: the direct link is blocked by the Local Network permission",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere necesita el permiso de Red local para encontrar el otro dispositivo cerca. Permítelo en Ajustes; mientras tanto la aprobación llega con la próxima sincronización."
+          }
+        }
+      }
+    },
     "Sempere opens vaults through the system’s file picker, so it sees exactly the locations the Files app shows." : {
       "comment" : "iCloud Drive help footer (iPhone and iPad only)",
       "extractionState" : "manual",
@@ -26007,6 +26085,19 @@
         }
       }
     },
+    "The direct link to a device nearby failed. Sempere keeps trying; the approval still comes with the next sync." : {
+      "comment" : "Join screen and Add Device: the direct link failed",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falló el enlace directo con un dispositivo cercano. Sempere sigue intentándolo; la aprobación llegará con la próxima sincronización."
+          }
+        }
+      }
+    },
     "The editor's own menus change these too." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -29064,6 +29155,19 @@
         }
       }
     },
+    "This vault is read-only here (it needs a newer Sempere), so no device can be approved." : {
+      "comment" : "Add Device: the vault is read-only",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda es de solo lectura aquí (necesita un Sempere más reciente), así que no se puede aprobar ningún dispositivo."
+          }
+        }
+      }
+    },
     "This vault is read-only here, so Note Insights cannot be changed." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -31390,6 +31494,19 @@
         }
       }
     },
+    "Wi-Fi is off, so the other device cannot be found nearby. Turn it on, or the approval comes with the next sync." : {
+      "comment" : "Join screen and Add Device: the direct link needs Wi-Fi",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Wi-Fi está desactivado, así que no se puede encontrar el otro dispositivo cerca. Actívalo, o la aprobación llega con la próxima sincronización."
+          }
+        }
+      }
+    },
     "Widget or Control Center" : {
       "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: where a voice note was started",
       "extractionState" : "manual",
@@ -32503,6 +32620,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "el código"
+          }
+        }
+      }
+    },
+    "the device that manages devices" : {
+      "comment" : "Alert title fallback: the home device, unnamed",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el dispositivo que gestiona los dispositivos"
           }
         }
       }

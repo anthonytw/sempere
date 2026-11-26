@@ -214,7 +214,7 @@ extension SyncEngine {
             }
         }
         let me = UncheckedSendable(self)
-        try pool.run(groups) { item in try me.value.prefetch(item) }
+        try runInBatches(groups) { item in try me.value.prefetch(item) }
     }
 
     /// One prefetched download: placed, quarantined, skipped or reported, as

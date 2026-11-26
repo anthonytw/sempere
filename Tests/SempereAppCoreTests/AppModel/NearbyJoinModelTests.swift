@@ -250,6 +250,53 @@ extension AppModelSuites {
             #expect(w.home.model.nearbyRequests.count == 1)
         }
 
+        /// The transport says why the link failed (a refused Local Network permission, Wi-Fi off): both screens carry it until the
+        /// link is up again, and any other failure says so too.
+        @Test func aFailureCarriesItsProblem() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            for m in [w.home.model, w.pad.model] { m.nearbyRetry = .seconds(30) }
+            w.home.model.startNearbyApproving()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+            w.link.problem = .localNetworkDenied
+            w.link.fail()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyApproving == .problem(.localNetworkDenied) })
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .problem(.localNetworkDenied) })
+            // Stopping the screens clears them.
+            w.home.model.stopNearbyApproving()
+            w.pad.model.stopNearbyJoin()
+            #expect(w.home.model.nearbyApproving == .off && w.pad.model.nearbyJoining == .off)
+            // No reason given: a plain failure.
+            w.link.problem = nil
+            w.home.model.startNearbyApproving()
+            w.link.fail()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyApproving == .problem(.other) })
+        }
+
+        /// Add Device on a device that cannot approve says so (and names home) instead of waiting.
+        @Test func addDeviceOnADeviceThatIsNotHomeSaysWhoCanApprove() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            approval.startNearby()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyRequests.count == 1 })
+            await approval.refresh()
+            #expect(await approval.approve(request: try #require(approval.lookout?.requests.first)))
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .received })
+            let keys = RememberedKeys(store: w.padKeys)
+            _ = await keys.unlockWithDeviceKey(w.pad.model)
+            let device = try await w.padKeys.keys(for: w.pad.vaultID, reason: .unlock(vaultName: nil))
+            try await w.pad.model.confirmJoin(words: try #require(keys.joinStage.flatMap { s -> [String]? in
+                if case .confirming(let words) = s { return words } else { return nil } }), keys: device)
+            w.pad.model.startNearbyApproving()
+            #expect(w.pad.model.nearbyApproving == .notHome)
+            #expect(w.pad.model.nearbyHomeName?.isEmpty == false)
+            #expect(w.pad.model.nearby.advertisement == nil, "nothing advertises")
+            w.pad.model.stopNearbyApproving()
+        }
+
         /// In the background nothing advertises or browses; back in the foreground both start again, while their
         /// screens still show (and not once they are gone).
         @Test func theBackgroundStopsTheLinkAndTheForegroundRestartsIt() async throws {

@@ -21,7 +21,61 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
     private var endpoints: [String: NWEndpoint] = [:]
     private var loopbackBrowsers: [UUID: @Sendable ([NearbyPeer]) -> Void] = [:]
 
+    private var _problem: NearbyLinkProblem?
+    /// Why the last listener or browser waited past its grace or failed; cleared when one comes up.
+    var linkProblem: NearbyLinkProblem? {
+        lock.lock(); defer { lock.unlock() }
+        return _problem
+    }
+
+    private func setProblem(_ p: NearbyLinkProblem?) {
+        lock.lock()
+        _problem = p
+        lock.unlock()
+    }
+
     init(mode: Mode = .bonjour) { self.mode = mode }
+
+    /// What a `.waiting` or `.failed` error means. A refused (or unanswered) Local Network permission reports
+    /// `kDNSServiceErr_PolicyDenied` (-65570); a network that is down reports a POSIX network error. Anything else is
+    /// settled by `classify(error:then:)`, which looks at the interfaces.
+    static func problem(of error: NWError) -> NearbyLinkProblem? {
+        switch error {
+        case .dns(let code) where code == NearbyLinkProblem.policyDeniedCode:
+            return .localNetworkDenied
+        case .posix(let code) where [.ENETDOWN, .ENETUNREACH, .EHOSTDOWN, .EHOSTUNREACH].contains(code):
+            return .wifiOff
+        default:
+            return nil
+        }
+    }
+
+    /// True when `path` has a Wi-Fi or wired interface (peer-to-peer links aside): without one the local network is off.
+    static func hasLocalInterface(_ path: NWPath) -> Bool {
+        path.availableInterfaces.contains { $0.type == .wifi || $0.type == .wiredEthernet }
+    }
+
+    /// Records the problem `error` stands for and calls `done` (on `queue`): for an unknown error, Wi-Fi off when no local
+    /// interface is up, else `.other`.
+    func classify(error: NWError?, then done: @escaping @Sendable () -> Void) {
+        if let error, let known = Self.problem(of: error) {
+            setProblem(known)
+            done()
+            return
+        }
+        guard mode == .bonjour else { setProblem(.other); done(); return }
+        let monitor = NWPathMonitor()
+        let once = NWNearbyConnection.Once()
+        let queue = self.queue
+        monitor.pathUpdateHandler = { [weak self] path in
+            once.run {
+                monitor.cancel()
+                self?.setProblem(Self.hasLocalInterface(path) ? .other : .wifiOff)
+                done()
+            }
+        }
+        monitor.start(queue: queue)
+    }
 
     static func parameters(peerToPeer: Bool) -> NWParameters {
         let tcp = NWProtocolTCP.Options()
@@ -75,25 +129,30 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             waiting.waiting = false
             switch state {
             case .ready:
+                self?.setProblem(nil)
                 if self?.mode == .loopback, let port = listener?.port { self?.registerLoopback(id, port: port) }
                 onReady()
-            case .waiting:
+            case .waiting(let error):
                 // The local network prompt may still be up: a failure only if it keeps waiting.
                 waiting.waiting = true
                 waiting.since += 1
                 let mark = waiting.since
                 queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak self, weak listener] in
-                    guard waiting.waiting, waiting.since == mark else { return }
+                    guard waiting.waiting, waiting.since == mark, let self else { return }
+                    self.classify(error: error) {
+                        self.unregisterLoopback(id)
+                        listener?.cancel()
+                        failed.run { onFailure() }
+                    }
+                }
+            case .failed(let error):
+                // The system suspended the app, or the local network is not allowed: the model says why and starts
+                // it again later.
+                self?.classify(error: error) {
                     self?.unregisterLoopback(id)
                     listener?.cancel()
                     failed.run { onFailure() }
                 }
-            case .failed:
-                // The system suspended the app, or the local network is not allowed: the model says the link is
-                // unavailable and starts it again later.
-                self?.unregisterLoopback(id)
-                listener?.cancel()
-                failed.run { onFailure() }
             case .cancelled:
                 self?.unregisterLoopback(id)
             default:
@@ -163,26 +222,31 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
         let failed = NWNearbyConnection.Once()
         let waiting = Waiting()
         let queue = self.queue
-        browser.stateUpdateHandler = { [weak browser] state in
+        browser.stateUpdateHandler = { [weak self, weak browser] state in
             waiting.waiting = false
             switch state {
             case .ready:
+                self?.setProblem(nil)
                 onReady()
-            case .waiting:
+            case .waiting(let error):
                 // Waiting for the local network permission: the first prompt may still be up, so only a wait that
                 // lasts past the grace is reported (not left to look for ever); the model then says the link is
                 // unavailable and starts it again later.
                 waiting.waiting = true
                 waiting.since += 1
                 let mark = waiting.since
-                queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak browser] in
-                    guard waiting.waiting, waiting.since == mark else { return }
+                queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak self, weak browser] in
+                    guard waiting.waiting, waiting.since == mark, let self else { return }
+                    self.classify(error: error) {
+                        browser?.cancel()
+                        failed.run { onFailure() }
+                    }
+                }
+            case .failed(let error):
+                self?.classify(error: error) {
                     browser?.cancel()
                     failed.run { onFailure() }
                 }
-            case .failed:
-                browser?.cancel()
-                failed.run { onFailure() }
             default:
                 break
             }
