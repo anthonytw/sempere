@@ -90,8 +90,9 @@ public enum NearbyJoin {
             self.request = request ?? handshake
         }
 
-        /// 10 seconds to each header, 3 seconds to a whole request, 10 minutes in all.
-        public static let standard = Timeouts(handshake: .seconds(10), session: .seconds(600), request: .seconds(3))
+        /// 10 seconds to each header, 15 seconds to a whole request (it carries an ML-KEM key, over a peer-to-peer Wi-Fi
+        /// link that may need seconds to set up: 3 seconds failed every attempt of a real pair, 2026-11-26), 10 minutes in all.
+        public static let standard = Timeouts(handshake: .seconds(10), session: .seconds(600), request: .seconds(15))
     }
 
     /// A random Bonjour instance name: `Sempere-` and 12 hex digits, new for every advertisement, naming no vault and

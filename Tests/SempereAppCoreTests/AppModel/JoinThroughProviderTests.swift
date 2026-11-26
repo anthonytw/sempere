@@ -261,6 +261,21 @@ extension AppModelSuites {
             #expect(JoinDelivery.judge(requestedAt: asked, targets: [t(1_100, failure: "x"), t(1_200)]) == .sent, "one target holds it")
         }
 
+        /// With a run every ten seconds `judge` says `.sending` whenever one is in flight; the line must keep the last
+        /// settled state meanwhile, and show `.sending` only before any run has settled (2026-11-26).
+        @Test func theDeliveryLineDoesNotFlipWhileARunGoes() {
+            let asked = Date(timeIntervalSince1970: 1_000), later = Date(timeIntervalSince1970: 2_000)
+            let memory = JoinDeliveryMemory()
+            #expect(memory.show(.sending, requestedAt: asked) == .sending, "before any run has settled")
+            #expect(memory.show(.waitingForUpload(iCloud: true), requestedAt: asked) == .waitingForUpload(iCloud: true))
+            #expect(memory.show(.sending, requestedAt: asked) == .waitingForUpload(iCloud: true), "a run in flight")
+            #expect(memory.show(.sent, requestedAt: asked) == .sent)
+            #expect(memory.show(.sending, requestedAt: asked) == .sent)
+            #expect(memory.show(.problem("offline"), requestedAt: asked) == .problem("offline"))
+            #expect(memory.show(.sending, requestedAt: asked) == .problem("offline"))
+            #expect(memory.show(.sending, requestedAt: later) == .sending, "a new request starts over")
+        }
+
         /// Two devices that never go online, joined through a plain folder (a USB drive carried between them): the
         /// joining device opens the drive's copy with "Keep syncing", its runs carry its request to the drive and take
         /// home's approval back, it confirms with the reply words, writes, and home sees the note (moved from the app's

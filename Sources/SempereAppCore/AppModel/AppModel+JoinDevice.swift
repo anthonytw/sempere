@@ -142,6 +142,23 @@ public enum JoinDelivery: Equatable, Sendable {
     }
 }
 
+/// What the join screen keeps of `JoinDelivery.judge`: while a run is in flight `judge` says `.sending`, and with a run every
+/// ten seconds the line flipped between that and the settled message. The last settled state of this request stays on
+/// screen until a run settles again; `.sending` shows only before any run has settled.
+final class JoinDeliveryMemory: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requestedAt: Date?
+    private var settled: JoinDelivery?
+
+    func show(_ current: JoinDelivery, requestedAt at: Date?) -> JoinDelivery {
+        lock.withLock {
+            if at != requestedAt { requestedAt = at; settled = nil }
+            if current != .sending { settled = current }
+            return settled ?? current
+        }
+    }
+}
+
 /// A takeover about to be signed (design §6.3): its candidates and what it drops.
 public struct TakeoverDraft: Sendable {
     var recovery: MLKEM768X25519Identity
@@ -244,13 +261,14 @@ extension AppModelCore {
     public var joinDelivery: JoinDelivery {
         let requestedAt = vault.flatMap { joinRequestedAt($0.vaultId) }
         let file = vault.flatMap { joinRequestedFile($0.vaultId) }
-        return JoinDelivery.judge(requestedAt: requestedAt, targets: syncSessions.map { s in
+        let judged = JoinDelivery.judge(requestedAt: requestedAt, targets: syncSessions.map { s in
             let held = s.lastJoinsHeld ?? []
             return JoinDelivery.Target(lastAttempt: s.schedule.lastAttempt, syncing: s.isSyncing, failure: s.failure,
                                 joinsError: s.lastReport?.errors.contains { $0.path.hasPrefix("joins") } == true,
                                 holdsRequest: file.map { held.contains($0) } ?? !held.isEmpty,
                                 providerPending: s.providerPending, viaICloud: s.uploadsViaICloud)
         })
+        return joinDeliveryMemory.show(judged, requestedAt: requestedAt)
     }
 
     /// How long home keeps a join request before it deletes it (design §6.2; `SyncEngine`'s rule).
