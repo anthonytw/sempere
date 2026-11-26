@@ -153,17 +153,26 @@ extension AppModelSuites {
             return m.devices.count
         }
 
+        /// The order that matters: Add Device's look finds the request, and its join-check run is followed at once by the loop's own run
+        /// (a long upload, which has passed `joins/` and `vault.json` by the time the user taps They Match). The approval must not wait for
+        /// that run. Gated on events (the run going and a number of notes uploaded), not on sleeps; the store releases one record per
+        /// 100 ms whatever the machine, so the 70 notes still to go last at least 7 s.
         @Test func anApprovalReachesTheZoneWhileALongUploadGoes() async throws {
             let p = try await Self.pair(notes: 80)
             defer { p.slow.slow = false; p.home.model.close(); p.phone.model.close() }
             let session = try #require(p.home.model.syncSessions.first)
-            let before = p.slow.noteSaves
+            session.joinCheckDuration = 0.5   // the look's own run is short; the long upload is the loop's
             #expect(Self.remoteDeviceCount(p.db, p.home.vaultID) == 1)
-            // Add Device finds the request (the look interrupts the long run), then They Match approves it.
-            _ = try await p.home.model.approveDevice(words: p.words, qr: nil)
-            #expect(await TS.waitUntil(timeout: .seconds(20)) { Self.remoteDeviceCount(p.db, p.home.vaultID) == 2 },
+            let look = await p.home.model.lookForJoinRequests()
+            let request = try #require(look.requests.first, "the look found the phone's request")
+            // The loop's run after the look is the long one: wait until it is going and has sent a few notes.
+            let started = p.slow.noteSaves
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { session.isSyncing && p.slow.noteSaves >= started + 10 })
+            let before = p.slow.noteSaves
+            _ = try await p.home.model.approveDevice(request: request)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { Self.remoteDeviceCount(p.db, p.home.vaultID) == 2 },
                     "the approval's vault.json is in the zone")
-            #expect(p.slow.noteSaves - before < 80, "while the upload of the new notes was still going: \(p.slow.noteSaves - before) of 80")
+            #expect(p.slow.noteSaves < 80, "while the upload of the new notes was still going: \(p.slow.noteSaves) of 80 (\(before) at the tap)")
             #expect(session.problems.isEmpty && session.quietFailure == nil, "the interrupts left no failure")
         }
 

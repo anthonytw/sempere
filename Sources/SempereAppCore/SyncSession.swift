@@ -244,6 +244,9 @@ public final class SyncSession {
     /// The loop's sleep going now; cancelling it wakes the loop (`wake`).
     @ObservationIgnored private var sleeper: Task<Void, Never>?
     @ObservationIgnored private var running: Task<SyncReport?, Never>?
+    /// The bound of a join-check run (`syncForJoinCheck`): requests and approvals are handled in its first moments, and the caller (Add
+    /// Device's look, every 10 s) waits for it to end, so it is short; the loop carries on with the rest of the upload afterwards.
+    @ObservationIgnored var joinCheckDuration: TimeInterval = 10
     /// The cancel flag of the run going (`interruptRun`).
     @ObservationIgnored private var runCancel: SyncRunCancel?
     /// The run going now, if any (the copy must not be replaced or removed until it has ended).
@@ -384,9 +387,9 @@ public final class SyncSession {
     /// on their waiting screens (TestFlight 1.4.0 (117), k5). That run is stopped between files, and this one is bounded; the
     /// loop continues the rest afterwards (`demand`).
     @discardableResult
-    func syncForJoinCheck(maxDuration: TimeInterval = 60) async -> SyncReport? {
+    func syncForJoinCheck(maxDuration: TimeInterval? = nil) async -> SyncReport? {
         while let r = running { interruptRun(); _ = await r.value }
-        let report = await runOnce(maxDuration: maxDuration, interactive: true)
+        let report = await runOnce(maxDuration: maxDuration ?? joinCheckDuration, interactive: true)
         demand()
         return report
     }
