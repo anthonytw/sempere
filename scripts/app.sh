@@ -449,7 +449,11 @@ case "${1:-}" in
     # these test the UI and the outbox, not audio.
     sim=$(pick_simulator Watch)
     settle_simulator "$sim"
-    if [[ $1 == test-watch ]]; then suites -only-testing:SempereWatchTests; else suites -only-testing:SempereWatchUITests; fi
+    if [[ $1 == test-watch ]]; then suites -only-testing:SempereWatchTests; else
+      # WatchScreenshotTests is the website's shot generator (scripts/screenshots.sh docs-watch): it holds "Saved" for 10 s
+      # untouched, which the watch simulator does not reliably survive, and asserts nothing WatchStatesUITests does not.
+      suites -only-testing:SempereWatchUITests -skip-testing:SempereWatchUITests/WatchScreenshotTests
+    fi
     watch_skip=(); [[ $1 == test-watch ]] && watch_skip=(${unit_skip_watch[@]+"${unit_skip_watch[@]}"})
     xcb test "${lang[@]}" -project "$project" -scheme SempereWatch -derivedDataPath "$derived" \
       -destination "platform=watchOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO \
