@@ -1073,7 +1073,13 @@ public final class SyncEngine {
                              record: SyncState.MutableRecord?) throws {
         if name == Vault.manifestName && EpochManifest.sameExceptLabel(local, remoteData) {
             // Only the display label differs: the same vault (format.md §1.3). The server's copy is
-            // the one every device shares, so it stays, as iCloud Drive's current version does.
+            // the one every device shares, so it stays, as iCloud Drive's current version does. A name beats
+            // none in either direction: a label-less server copy (a zone kept after its target was removed)
+            // never erases the name this side holds; it goes up instead.
+            if VaultLabelText.peekLabel(local) != nil, VaultLabelText.peekLabel(remoteData) == nil {
+                try push(name, local, condition: .unconditional)
+                return try recordMutable(name, hash: FileDigest.sha256(local))
+            }
             return try accept(name, remoteData, stamp: stamp)
         }
         if name == Vault.manifestName, let vault {
