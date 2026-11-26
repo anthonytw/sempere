@@ -507,7 +507,9 @@ case "${1:-}" in
   cloudkit-sim-signin)
     # Sign the sempere-cloudkit simulator in to the test Apple ID again (an XCUITest drives Settings; password from the keychain; a
     # two-factor code is never answered): tools/cloudkit-live/signin/sim-signin.sh. `test-cloudkit` does it by itself when needed.
-    exec tools/cloudkit-live/signin/sim-signin.sh
+    # (no exec: app.sh's EXIT trap removes this run's TMPDIR, which xcodebuild's result-bundle staging copies live in)
+    rc=0; tools/cloudkit-live/signin/sim-signin.sh || rc=$?
+    exit "$rc"
     ;;
   test-mac)
     shutdown_simulators
