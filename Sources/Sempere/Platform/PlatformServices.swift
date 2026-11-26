@@ -16,6 +16,9 @@ public protocol PlatformServices: Sendable {
     @MainActor var isPhone: Bool { get }
     /// Keeps the screen from locking (true) or lets it lock again (false). App-wide.
     @MainActor func setIdleTimerDisabled(_ disabled: Bool)
+    /// Holds (true) or ends (false) the process's own activity while a "Process Now" pass works, whether or not the app is
+    /// active: a Mac naps a process that lost focus, and Catalyst resigns active on every app switch. Nothing elsewhere.
+    @MainActor func setProcessActivity(_ held: Bool)
     /// Plays `feedback` where the device has haptics (never on a Mac).
     @MainActor func play(_ feedback: HapticFeedback)
     /// The home-screen icon in use, by the name settings sync stores (`appearance.icon`); nil where the device
@@ -29,6 +32,10 @@ public protocol PlatformServices: Sendable {
     /// The name this device gives itself in a vault's device list (a new vault, a join, a takeover). Never the
     /// user's or the computer's name (it is stored unencrypted in `vault.json`).
     @MainActor var deviceName: String { get }
+}
+
+public extension PlatformServices {
+    @MainActor func setProcessActivity(_ held: Bool) {}
 }
 
 /// The `kind` a device of the vault's list names (format.md §15.3) for the app's devices.
@@ -69,6 +76,11 @@ public final class HeadlessPlatform: PlatformServices {
     public var idleTimerDisabled: Bool? { idleTimerSettings.last }
 
     public func setIdleTimerDisabled(_ disabled: Bool) { idleTimerSettings.append(disabled) }
+
+    /// Every `setProcessActivity` value, in order.
+    public private(set) var processActivitySettings: [Bool] = []
+
+    public func setProcessActivity(_ held: Bool) { processActivitySettings.append(held) }
 
     public func play(_ feedback: HapticFeedback) {
         guard !isMac else { return }

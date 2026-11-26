@@ -130,6 +130,19 @@
         }
       }
     },
+    "%@ elapsed" : {
+      "comment" : "Note Insights: Process Now time elapsed, %@ is a duration",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ transcurridos"
+          }
+        }
+      }
+    },
     "%@ has not delivered all of this note's files yet. Try again in a moment." : {
       "comment" : "%@ is a server's host name",
       "extractionState" : "manual",
@@ -4380,6 +4393,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Acerca de"
+          }
+        }
+      }
+    },
+    "About %@ left" : {
+      "comment" : "Note Insights: Process Now estimated time left, %@ is a duration",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quedan unos %@"
           }
         }
       }
@@ -16263,6 +16289,19 @@
         }
       }
     },
+    "Notes: %lld of %lld" : {
+      "comment" : "Note Insights: Process Now progress, notes done of notes to process [not-plural]",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas: %1$lld de %2$lld"
+          }
+        }
+      }
+    },
     "Nothing could be read. Type the equation below." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -18458,7 +18497,7 @@
         }
       }
     },
-    "Paused because the battery is low, Low Power Mode is on or the device is warm. Automatic processing continues when that passes, or tap Process Now." : {
+    "Paused because the device is not charging, Low Power Mode is on or the device is warm. Automatic processing continues when that passes, or tap Process Now." : {
       "comment" : "Note Insights: why an automatic pass stopped",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -18466,12 +18505,12 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En pausa porque la batería está baja, el modo de bajo consumo está activado o el dispositivo está caliente. El procesamiento automático continúa cuando eso pase, o toca Procesar ahora."
+            "value" : "En pausa porque el dispositivo no se está cargando, el modo de bajo consumo está activado o el dispositivo está caliente. El procesamiento automático continúa cuando eso pase, o toca Procesar ahora."
           }
         }
       }
     },
-    "Paused when the app left the screen or the phone locked. It picks up when you return." : {
+    "Paused when the app left the screen or the screen locked. It picks up when you return." : {
       "comment" : "Note Insights: why a Process Now pass stopped",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -18479,12 +18518,12 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En pausa al salir de la app o bloquear el teléfono. Continúa cuando vuelvas."
+            "value" : "En pausa al salir de la app o bloquearse la pantalla. Continúa cuando vuelvas."
           }
         }
       }
     },
-    "Paused when the app left the screen or the phone locked. Processing continues while you use the app." : {
+    "Paused when the app left the screen or the screen locked. Processing continues while you use the app." : {
       "comment" : "Note Insights: why an automatic pass stopped",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -18492,7 +18531,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En pausa al salir de la app o bloquear el teléfono. El procesamiento continúa mientras usas la app."
+            "value" : "En pausa al salir de la app o bloquearse la pantalla. El procesamiento continúa mientras usas la app."
           }
         }
       }
@@ -19009,18 +19048,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Con problemas, %@"
-          }
-        }
-      }
-    },
-    "Process Insights on Battery" : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Procesar ideas con batería"
           }
         }
       }
@@ -31671,19 +31698,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dónde"
-          }
-        }
-      }
-    },
-    "While Sempere is open, notes are also processed when unplugged, with at least 30% battery and a cool device. Off: only while charging." : {
-      "comment" : "Note Insights: the on-battery switch's explanation",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mientras Sempere está abierto, las notas también se procesan sin enchufar, con al menos un 30 % de batería y el dispositivo fresco. Desactivado: solo mientras se carga."
           }
         }
       }

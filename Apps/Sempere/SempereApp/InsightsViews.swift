@@ -73,12 +73,12 @@ enum InsightsText {
         switch r {
         case .backgrounded(let resumes):
             return resumes
-                ? String(localized: "Paused when the app left the screen or the phone locked. It picks up when you return.",
+                ? String(localized: "Paused when the app left the screen or the screen locked. It picks up when you return.",
                          comment: "Note Insights: why a Process Now pass stopped")
-                : String(localized: "Paused when the app left the screen or the phone locked. Processing continues while you use the app.",
+                : String(localized: "Paused when the app left the screen or the screen locked. Processing continues while you use the app.",
                          comment: "Note Insights: why an automatic pass stopped")
         case .powerWindowClosed:
-            return String(localized: "Paused because the battery is low, Low Power Mode is on or the device is warm. Automatic processing continues when that passes, or tap Process Now.",
+            return String(localized: "Paused because the device is not charging, Low Power Mode is on or the device is warm. Automatic processing continues when that passes, or tap Process Now.",
                           comment: "Note Insights: why an automatic pass stopped")
         case .modelUnavailable:
             return String(localized: "Apple Intelligence is not available or not ready on this device, so summaries cannot be made.",
@@ -202,8 +202,6 @@ struct AppleIntelligenceHelpSheet: View {
 struct InsightsSettingsSection: View {
     @AppModelEnvironment private var model
     @State private var confirmingOff = false
-    /// "Process Insights on Battery" (`InsightsOnBattery`, this device's, not synced).
-    @AppStorage(InsightsOnBattery.key) private var onBattery = InsightsOnBattery.defaultValue
     @State private var titleFormat = ""
     @State private var pinMove: InsightsSettingsWrite.PinMove?
     /// The language chosen in the picker while its confirmation shows ("" is Same as Note); nil: none waiting.
@@ -284,6 +282,7 @@ struct InsightsSettingsSection: View {
             }
             if state.isWorking {
                 Label("Processing notes on this device…", systemImage: "gearshape.2").foregroundStyle(.secondary)
+                if let progress = state.progress { InsightsProgressView(progress: progress, now: model.insightsNow) }
                 if state.isProcessingNow {
                     Text("The screen stays on until processing finishes.", comment: "Note Insights: Process Now keeps the screen awake")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -309,11 +308,6 @@ struct InsightsSettingsSection: View {
                     .accessibilityIdentifier("insights.stopReason")
             }
             if case .modelUnavailable? = state.passOutcome { AppleIntelligenceHelpButton(availability: state.capability.model) }
-            Toggle("Process Insights on Battery", isOn: $onBattery)
-                .accessibilityIdentifier("insights.onBattery")
-            Text("While Sempere is open, notes are also processed when unplugged, with at least 30% battery and a cool device. Off: only while charging.",
-                 comment: "Note Insights: the on-battery switch's explanation")
-                .font(.footnote).foregroundStyle(.secondary)
             NavigationLink {
                 InsightsMapScreen { model.selectedNoteID = $0 }
             } label: {
@@ -652,5 +646,37 @@ struct NoteInsightsSheet: View {
                 Text("In the group “\(cluster.joined(separator: ", "))”.", comment: "%@ is a group's label words")
             }
         }
+    }
+}
+
+/// "Process Now" progress under the Insights settings: a bar of notes done of notes to process, the time elapsed and, after a few
+/// notes, an estimate of the time left. The math is `InsightsPassProgress`'s; this only draws it once a second.
+struct InsightsProgressView: View {
+    let progress: InsightsPassProgress
+    /// The model's clock (the same one that stamped the pass's start).
+    let now: () -> Date
+
+    private func text(_ seconds: TimeInterval) -> String {
+        Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                .accessibilityIdentifier("insights.progressBar")
+            Text("Notes: \(progress.done) of \(progress.total)", comment: "Note Insights: Process Now progress, notes done of notes to process [not-plural]")
+                .font(.footnote).foregroundStyle(.secondary)
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let at = now()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(text(progress.elapsed(at: at))) elapsed", comment: "Note Insights: Process Now time elapsed, %@ is a duration")
+                    if let left = progress.estimatedRemaining(at: at) {
+                        Text("About \(text(InsightsPassProgress.rounded(left))) left", comment: "Note Insights: Process Now estimated time left, %@ is a duration")
+                    }
+                }
+                .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityIdentifier("insights.progress")
     }
 }

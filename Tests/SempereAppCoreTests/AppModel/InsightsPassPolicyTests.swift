@@ -5,47 +5,8 @@ import SempereInsights
 import TempDirSupport
 import Testing
 
-/// The pure rules of the foreground's Note Insights (`InsightsPassPolicy.swift`): the battery gate, the loop's pacing, and
-/// how a "Process Now" pass keeps the screen on.
+/// How a "Process Now" pass keeps the screen on (`KeepScreenOn`, `IdleTimerKeeper`).
 struct InsightsPassPolicyTests {
-    typealias S = InsightsPowerState
-
-    @Test func chargingKeepsItsOldBehavior() {
-        #expect(InsightsPowerGate.allows(S(source: .external, batteryLevel: 0.05, thermal: .fair), onBattery: false))
-        #expect(InsightsPowerGate.allows(S(source: .external), onBattery: true))
-        #expect(!InsightsPowerGate.allows(S(source: .external, lowPowerMode: true), onBattery: true), "Low Power Mode, charging or not")
-        #expect(!InsightsPowerGate.allows(S(source: .external, thermal: .serious), onBattery: true))
-        #expect(!InsightsPowerGate.allows(S(source: .unknown, batteryLevel: 0.9), onBattery: true), "unknown is not power")
-    }
-
-    @Test func batteryNeedsChargeAndACoolDevice() {
-        #expect(InsightsPowerGate.allows(S(source: .battery, batteryLevel: 0.30), onBattery: true))
-        #expect(InsightsPowerGate.allows(S(source: .battery, batteryLevel: 0.8, thermal: .fair), onBattery: true))
-        #expect(!InsightsPowerGate.allows(S(source: .battery, batteryLevel: 0.29), onBattery: true))
-        #expect(!InsightsPowerGate.allows(S(source: .battery, batteryLevel: nil), onBattery: true), "no reading: not enough")
-        #expect(!InsightsPowerGate.allows(S(source: .battery, batteryLevel: 0.9, lowPowerMode: true), onBattery: true))
-        #expect(!InsightsPowerGate.allows(S(source: .battery, batteryLevel: 0.9, thermal: .serious), onBattery: true))
-        #expect(!InsightsPowerGate.allows(S(source: .battery, batteryLevel: 0.9, thermal: .critical), onBattery: true))
-        #expect(!InsightsPowerGate.allows(S(source: .battery, batteryLevel: 0.9), onBattery: false), "the opt-out")
-    }
-
-    @Test func theSettingIsOnUntilTurnedOff() {
-        let defaults = MemoryKeyValueStore()
-        #expect(InsightsOnBattery.isEnabled(defaults))
-        defaults.set(false, forKey: InsightsOnBattery.key)
-        #expect(!InsightsOnBattery.isEnabled(defaults))
-    }
-
-    @Test func theLoopWaitsThreeMinutesWhileItWorksAndBacksOffWhenIdle() {
-        var pacing = InsightsLoopPacing()
-        #expect(pacing.next(generated: 4) == .seconds(180))
-        #expect(pacing.next(generated: 0) == .seconds(360))
-        #expect(pacing.next(generated: 0) == .seconds(720))
-        #expect(pacing.next(generated: 0) == .seconds(900), "never longer than the old 15 minutes")
-        #expect(pacing.next(generated: 0) == .seconds(900))
-        #expect(pacing.next(generated: 1) == .seconds(180), "work found: short again")
-    }
-
     @Test func theScreenStaysOnForAForcedPassOnItsOwnAndCombinesWithTheToggle() {
         func off(_ enabled: Bool, _ open: Bool, _ active: Bool, _ processing: Bool) -> Bool {
             KeepScreenOn.idleTimerDisabled(enabled: enabled, noteOpen: open, active: active, processing: processing)
@@ -87,7 +48,7 @@ struct InsightsPassPolicyTests {
 }
 
 extension AppModelSuites {
-    /// A model's foreground passes: the battery gate, the stop reasons, "Process Now" holding the screen on and picking
+    /// A model's foreground passes: the stop reasons, "Process Now" holding the screen on and picking
     /// up again after the app left the screen.
     @MainActor
     struct InsightsPassPolicyModelTests {
@@ -123,7 +84,6 @@ extension AppModelSuites {
 
         final class Power: @unchecked Sendable {
             var on = false
-            var state: InsightsPowerState?
         }
 
         func model(power: Power = Power(), provider: any ModelProvider, platform: HeadlessPlatform = HeadlessPlatform(),
@@ -135,7 +95,6 @@ extension AppModelSuites {
             services.lifecycle = lifecycle
             services.insights = InsightsServices(model: { provider }, embedder: { FakeEmbeddingProvider() }, powerWindow: { power.on },
                                                  platform: .init(platform: "ios", os: "iOS 27.2"))
-            if power.state != nil { services.insights.powerState = { power.state ?? InsightsPowerState(source: .unknown) } }
             let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), services: services)
             try await model.openVault(at: url)
             try await model.unlock(identityText: try await ModelFixture.keyText(key))
@@ -150,7 +109,7 @@ extension AppModelSuites {
             let power = Power()
             let model = try await model(power: power, provider: FakeModelProvider())
             _ = await model.runInsightsPass(batch: 4, ignorePower: false)
-            #expect(model.insights.lastStop == .powerWindowClosed, "an automatic pass outside its window")
+            #expect(model.insights.lastStop == nil, "an automatic pass outside its window ran no batch: nothing stopped")
             _ = await model.runInsightsPass(batch: 4, ignorePower: true)
             #expect(model.insights.lastStop == .finished)
             var script = FakeModelProvider.Script()
@@ -221,23 +180,111 @@ extension AppModelSuites {
             #expect(!model.insightsRuntime.resumeForced)
         }
 
-        @Test func theForegroundGateRunsOnBatteryUnlessTurnedOff() async throws {
-            let power = Power()
-            power.state = InsightsPowerState(source: .battery, batteryLevel: 0.6)
-            let settings = MemoryKeyValueStore()
-            let model = try await model(power: power, provider: FakeModelProvider(), settings: settings)
+        /// Review of batch/120 fix 1: a lock cancels without waiting, so an old "Process Now" pass ends after a newer one began;
+        /// its cleanup must not clear the newer pass's flags.
+        @Test func anOldPassEndingDoesNotClearANewerProcessNow() async throws {
+            let gated = GatedExtract()
+            let platform = HeadlessPlatform()
+            let lifecycle = ManualAppLifecycle()
+            let model = try await model(provider: gated, platform: platform, lifecycle: lifecycle)
+            defer { model.close(); model.idleTimer?.stop() }
+            model.keepScreenOn(lifecycle: lifecycle)
+            gated.set { $0.gated = true }
+            model.requestInsightsPass(force: true)
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            // A lock and an unlock, then Process Now again (what the new pass sets up), while the old pass still ends.
+            let old = try #require(model.insightsRuntime.pass)
+            model.close()
+            model.insights.isProcessingNow = true
+            model.insightsRuntime.passIsForced = true
+            gated.set { $0.released = true }
+            _ = await old.value
+            #expect(model.insights.isProcessingNow, "the newer pass still holds the screen")
+            #expect(model.insightsRuntime.passIsForced, "and still resumes after the background")
+        }
+
+        /// Fix 3: the background task's expiry cancels without a reason; the app is in the background, so that is the reason.
+        @Test func theBackgroundTasksExpiryIsSaidAsBackgrounded() async throws {
+            let gated = GatedExtract()
+            let lifecycle = ManualAppLifecycle()
+            let model = try await model(provider: gated, lifecycle: lifecycle)
             defer { model.close() }
-            #expect(model.insightsPowerWindow(), "on battery with enough charge: the default")
-            let ran = await model.runInsightsPass(batch: 4, ignorePower: false)
-            #expect(!ran.reports.isEmpty)
-            settings.set(false, forKey: InsightsOnBattery.key)
-            #expect(!model.insightsPowerWindow(), "opted out")
-            power.state = InsightsPowerState(source: .battery, batteryLevel: 0.2)
-            settings.set(true, forKey: InsightsOnBattery.key)
-            #expect(!model.insightsPowerWindow(), "under 30%")
-            power.state = InsightsPowerState(source: .external, batteryLevel: 0.2)
-            settings.set(false, forKey: InsightsOnBattery.key)
-            #expect(model.insightsPowerWindow(), "charging, whatever the setting says")
+            gated.set { $0.gated = true }
+            lifecycle.send(.didEnterBackground)
+            let task = Task { await model.runInsightsInBackground() }
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            task.cancel()
+            _ = await task.value
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { model.insightsRuntime.pass == nil })
+            #expect(model.insights.lastStop == .backgrounded(resumes: false))
+        }
+
+        /// Fix 3: the background task's own cancel never overwrites the reason a Process Now pass still ending already has.
+        @Test func aReasonAlreadySetIsNotOverwritten() async throws {
+            let gated = GatedExtract()
+            let lifecycle = ManualAppLifecycle()
+            let model = try await model(provider: gated, lifecycle: lifecycle)
+            defer { model.close() }
+            gated.set { $0.gated = true }
+            model.requestInsightsPass(force: true)
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            lifecycle.send(.didEnterBackground)
+            model.enterBackground()
+            await model.cancelInsightsPass(reason: .backgrounded(resumes: false))
+            #expect(model.insights.lastStop == .backgrounded(resumes: true))
+        }
+
+        /// Fix 4: Regenerate stops a Process Now pass; it is asked again as forced, in a closed power window too.
+        @Test func regenerateGivesProcessNowBack() async throws {
+            let gated = GatedExtract()
+            let platform = HeadlessPlatform()
+            let lifecycle = ManualAppLifecycle()
+            let model = try await model(provider: gated, platform: platform, lifecycle: lifecycle)   // power window closed
+            defer { model.close(); model.idleTimer?.stop() }
+            model.keepScreenOn(lifecycle: lifecycle)
+            gated.set { $0.gated = true }
+            model.requestInsightsPass(force: true)
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            await model.regenerateInsightsTopic(.init(tag: "none"))
+            #expect(model.insightsRuntime.pass != nil, "Process Now goes on")
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { model.insights.isProcessingNow }, "asked again as forced")
+            #expect(platform.idleTimerDisabled == true, "with the screen held")
+            gated.set { $0.released = true }
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+        }
+
+        /// Item 11: a Process Now pass counts the notes to process first, and the count advances with each run, never past the total.
+        @Test func processNowCountsItsNotesAndTheCountStaysWithinTheTotal() async throws {
+            let gated = GatedExtract()
+            let model = try await model(provider: gated, notes: 3)
+            defer { model.close() }
+            gated.set { $0.gated = true }
+            model.requestInsightsPass(force: true)
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            let progress = try #require(model.insights.progress, "counted at the start")
+            #expect(progress.total == 3 && progress.done == 0)
+            gated.set { $0.released = true }
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insights.lastStop == .finished && !model.insights.isProcessingNow })
+            #expect(model.insights.progress == nil, "gone with the pass")
+        }
+
+        /// Fix 2: the process activity follows the pass, not the scene: it stays while the app is inactive and ends with the pass.
+        @Test func theProcessActivityHoldsWhileInactiveAndEndsWithThePass() async throws {
+            let gated = GatedExtract()
+            let platform = HeadlessPlatform(isMac: true)
+            let lifecycle = ManualAppLifecycle()
+            let model = try await model(provider: gated, platform: platform, lifecycle: lifecycle)
+            defer { model.close(); model.idleTimer?.stop() }
+            model.keepScreenOn(lifecycle: lifecycle)
+            gated.set { $0.gated = true }
+            model.requestInsightsPass(force: true)
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            #expect(platform.processActivitySettings.last == true)
+            lifecycle.send(.willResignActive)   // Catalyst: every app switch
+            #expect(platform.processActivitySettings.last == true, "another app has the focus: the pass goes on")
+            gated.set { $0.released = true }
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insights.lastStop == .finished && !model.insights.isProcessingNow })
+            #expect(platform.processActivitySettings.last == false)
         }
     }
 }

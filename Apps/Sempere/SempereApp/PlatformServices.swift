@@ -152,8 +152,21 @@ struct SystemFileCoordinator: FileCoordinating {
 // MARK: - PlatformServices
 
 #if targetEnvironment(macCatalyst)
-/// The process activity held while the idle timer is disabled (`AppPlatform.setIdleTimerDisabled`).
-@MainActor private enum KeepAwakeActivity { static var token: NSObjectProtocol? }
+/// The process activity held while the idle timer is disabled or a "Process Now" pass works (`AppPlatform`).
+@MainActor private enum KeepAwakeActivity {
+    static var token: NSObjectProtocol?
+    static var screenHeld = false
+    static var processing = false
+    /// Begins or ends the one activity: held while either reason holds.
+    static func apply() {
+        if screenHeld || processing, token == nil {
+            token = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Sempere keeps the screen on")
+        } else if !screenHeld, !processing, let activity = token {
+            ProcessInfo.processInfo.endActivity(activity)
+            token = nil
+        }
+    }
+}
 #endif
 
 /// The device the app runs on: `Platform`'s flags, UIKit's idle timer and feedback generators.
@@ -167,13 +180,16 @@ struct AppPlatform: PlatformServices {
         UIApplication.shared.isIdleTimerDisabled = disabled
         #if targetEnvironment(macCatalyst)
         // A Mac also naps its idle processes and sleeps: an activity assertion lives as long as the screen is held
-        // awake (a "Process Now" pass, or the editor's Keep Screen On), and ends with it.
-        if disabled, KeepAwakeActivity.token == nil {
-            KeepAwakeActivity.token = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Sempere keeps the screen on")
-        } else if !disabled, let activity = KeepAwakeActivity.token {
-            ProcessInfo.processInfo.endActivity(activity)
-            KeepAwakeActivity.token = nil
-        }
+        // awake (the editor's Keep Screen On), and ends with it; a "Process Now" pass holds its own (`setProcessActivity`).
+        KeepAwakeActivity.screenHeld = disabled
+        KeepAwakeActivity.apply()
+        #endif
+    }
+
+    @MainActor func setProcessActivity(_ held: Bool) {
+        #if targetEnvironment(macCatalyst)
+        KeepAwakeActivity.processing = held
+        KeepAwakeActivity.apply()
         #endif
     }
 

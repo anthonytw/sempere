@@ -53,6 +53,8 @@ public final class IdleTimerKeeper {
     private var settingChanges: KeyValueObservation?
     /// What was applied last (nil before the first `update`).
     public private(set) var disabled: Bool?
+    /// Whether the process activity was last asked held (nil before the first `update`).
+    public private(set) var activityHeld: Bool?
 
     public init(settings: any KeyValueStore, platform: any PlatformServices, lifecycle: any AppLifecycle,
                 debugLaunch: Bool = false, processing: @escaping @MainActor () -> Bool = { false },
@@ -96,6 +98,10 @@ public final class IdleTimerKeeper {
         let value = KeepScreenOn.idleTimerDisabled(enabled: KeepScreenOn.isOn(settings), noteOpen: noteOpen(),
                                                    active: !leaving && lifecycle.isActive, debugLaunch: debugLaunch,
                                                    processing: processing())
+        // The process activity follows the pass alone: not the scene (a Mac resigns active on every app switch, and the pass
+        // must go on while another app has the focus).
+        let held = processing()
+        if held != activityHeld { activityHeld = held; platform.setProcessActivity(held) }
         guard value != disabled else { return }
         disabled = value
         platform.setIdleTimerDisabled(value)

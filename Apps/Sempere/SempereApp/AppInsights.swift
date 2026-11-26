@@ -16,7 +16,6 @@ enum AppInsights {
     @MainActor static var services: InsightsServices {
         var services = InsightsServices(model: { AppleInsightsProviders.model() }, embedder: { AppleInsightsProviders.embedder() },
                                         powerWindow: { powerWindow }, maxGraphNotes: maxGraphNotes)
-        services.powerState = { powerState }
         // Ask names the language of a question (docs/design/1.3-ask.md §3.1).
         services.detectLanguage = { AppleInsightsProviders.detectLanguage($0, among: $1) }
         services.languageHypotheses = { AppleInsightsProviders.languageHypotheses($0, among: $1, likely: $2) }
@@ -40,37 +39,6 @@ enum AppInsights {
         case .unknown, .unplugged: return false
         @unknown default: return false
         }
-    }
-
-    /// What the device says about its power now, for the foreground's gate (`InsightsPowerGate`): on battery too, with
-    /// enough charge. Battery monitoring is switched on here (the charge reads -1 without it); a Mac or a simulator
-    /// reports no charge, so it never counts as "enough".
-    @MainActor static var powerState: InsightsPowerState {
-        let info = ProcessInfo.processInfo
-        let thermal: InsightsThermal
-        switch info.thermalState {
-        case .nominal: thermal = .nominal
-        case .fair: thermal = .fair
-        case .serious: thermal = .serious
-        case .critical: thermal = .critical
-        @unknown default: thermal = .serious
-        }
-        let device = UIDevice.current
-        if !device.isBatteryMonitoringEnabled { device.isBatteryMonitoringEnabled = true }
-        let level = device.batteryLevel >= 0 ? Double(device.batteryLevel) : nil
-        let source: InsightsPowerState.Source
-        if let ac = macOnExternalPower {
-            source = ac ? .external : .battery
-        } else {
-            switch device.batteryState {
-            case .charging, .full: source = .external
-            case .unplugged: source = .battery
-            // Unknown is not taken for power (the safe side: "Process Now" still runs).
-            case .unknown: source = .unknown
-            @unknown default: source = .unknown
-            }
-        }
-        return InsightsPowerState(source: source, batteryLevel: level, lowPowerMode: info.isLowPowerModeEnabled, thermal: thermal)
     }
 
     /// On a Mac, whether it runs on external power (IOKit's power sources: no time limit means AC, also on a Mac
