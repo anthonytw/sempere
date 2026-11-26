@@ -146,6 +146,10 @@ public struct SyncOptions: Sendable {
     /// run's own bound is only `limits.maxDuration` (the caller's safety bound). Not for background tasks (`isCancelled` is theirs).
     public var softCancel: (@Sendable () -> Bool)?
     public var joinCheckWindow: TimeInterval?
+    /// Stop after the control files (above) and the notebook records: the notes, blobs and inbox are not listed or transferred. A device
+    /// joining on a partial copy (format.md §1.2) sends its request and takes the approval this way: before it has a key, every note
+    /// it fetched would be ciphertext it cannot read. The notes come with the run that follows the unlock (`PartialCopy`).
+    public var controlFilesOnly = false
 
     /// Files a provider lists but has not downloaded yet (`Arrivals.swift`):
     /// the longest one run waits, in all, for the ones it asked for to arrive.
@@ -697,8 +701,9 @@ public final class SyncEngine {
             }
         }
 
-        do {
+        notes: do {
             if let stoppedBefore { throw stoppedBefore }
+            if options.controlFilesOnly { break notes }
             recordedFiles = state.fileNamesByNote()
             thinnedFiles = SyncState.namesByNote(state.thinned?.keys.map { $0 } ?? [])
             // Note folders a provider listed before their `att/` are left out until they arrive (`Arrivals.swift`).

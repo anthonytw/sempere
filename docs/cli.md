@@ -3512,9 +3512,10 @@ vault's `vault.json` was last saved in iCloud, which tells two vaults of one nam
 half-made one that only `delete --force` clears). `--json`: an array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget, modified, hasVault, manifest}` (`manifest`: `present`, `absent` for an empty zone, or `unreadable` when the vault.json could not be read now: it may be a real vault).
 The name is the vault's `label`: `store create` writes the store name as it (`--vault-label` overrides), and `store sync` gives a vault that
 has none (made before) its store name when it has an iCloud target and the run has the vault's key; a label that is there is never replaced
-(`sempere vault label` changes it, and the next sync takes it to iCloud). `open` takes a vault id or a unique prefix: it downloads the
-vault whole into a temporary folder (a keyless run, which uploads nothing), checks it as `store import` does, copies it into the
-store (`--name` or its label) and adds the iCloud target, whose first sync finds nothing to do; a vault the store holds already
+(`sempere vault label` changes it, and the next sync takes it to iCloud). `open` takes a vault id or a unique prefix: it downloads a partial copy (format.md §1.2) into a temporary folder: the control files a join needs
+(`vault.json`, `epochs/`, `joins/`, `keys/`), the sealed summaries and an empty marked folder per note, no revision and no blob (a keyless run, which uploads nothing),
+checks it as `store import` does, copies it into the store (`--name` or its label) and adds the iCloud target, which keeps the pull's state; once
+the vault is joined and unlocked, `store sync` fetches the notes (an ordinary two-way run completes a partial copy). A vault the store holds already
 only gets the target (a label the store cannot use as a name, with `/` or `:`, is dropped: pass `--name`; a copy this command made is removed again if its target cannot be added). Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
 and the iCloud targets of that vault in this store (the zone first, so a failure leaves the targets in place), nothing else: refused (exit 1) when
 the vault here has no other target, and when the vault is not in this store at all, unless `--force` (the way to delete a zone that `list` shows and no

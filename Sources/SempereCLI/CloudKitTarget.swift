@@ -140,10 +140,13 @@ struct CloudKitOpen: ParsableCommand {
         commandName: "open",
         abstract: "Copy a vault from your iCloud into the store and sync it with iCloud.",
         discussion: """
-            VAULT is a vault id (or a unique id prefix) from `sempere cloudkit list`. The vault is downloaded whole into a \
-            temporary folder, checked and copied into the store as a vault of its own (no key is needed), and gets an iCloud \
-            target whose first sync finds nothing to do. A vault the store holds already just gets the target (if it has none). \
-            Join this device afterwards (`sempere keys` / `sempere device`) to read it. Exit codes: 0, 1 on any failure \
+            VAULT is a vault id (or a unique id prefix) from `sempere cloudkit list`. What is downloaded into a temporary folder \
+            is a partial copy (format.md §1.2, as `sync webdav --metadata-only` makes): the control files a join needs \
+            (vault.json, epochs, joins, keys), the sealed summaries and one empty marked folder per note, never a revision or a \
+            blob. It is checked and copied into the store as a vault of its own (no key is needed) and gets an iCloud target. \
+            Join this device (`sempere keys` / `sempere device`); once it is unlocked, `sempere store sync` fetches the notes \
+            (a partial copy is completed by an ordinary two-way run). A vault the store holds already just gets the target \
+            (if it has none). Exit codes: 0, 1 on any failure \
             (a copy made by this command is removed again when its iCloud target cannot be added).
             """
     )
@@ -179,15 +182,17 @@ struct CloudKitOpen: ParsableCommand {
             defer { try? FileManager.default.removeItem(at: work) }
             let folder = work.appendingPathComponent("vault.sempere", isDirectory: true)
             let options = SyncOptions(deviceLabel: "cli")
-            let report = try CloudVaults.download(vaultId: id, store: db, into: folder,
-                                                  stateURL: work.appendingPathComponent("state/sync-state.json"), expectedUser: user, options: options)
+            let report = try CloudVaults.downloadMetadata(vaultId: id, store: db, into: folder,
+                                                          stateURL: work.appendingPathComponent("state/sync-state.json"), expectedUser: user, options: options)
             guard report.errors.isEmpty, report.stoppedEarly == nil else {
                 throw CLIError.failure("the download did not finish: \(report.errors.first.map { "\($0.path): \($0.message)" } ?? "stopped early")")
             }
-            // The label names the folder; one the store refuses as a name (a `/` or `:`) is not worth failing after a full download for.
+            // The label names the folder; one the store refuses as a name (a `/` or `:`) is not worth failing after a download for.
             var chosen = name ?? (found.named ? found.name : nil)
             if name == nil, let label = chosen, (try? VaultStore.folderName(for: label)) == nil { chosen = nil }
-            entry = try store.importVault(from: folder, options: VaultStore.ImportOptions(name: chosen))
+            var importOptions = VaultStore.ImportOptions(name: chosen)
+            importOptions.allowPartial = true   // the copy is partial until the notes are fetched
+            entry = try store.importVault(from: folder, options: importOptions)
             imported = true
             let state = work.appendingPathComponent("state", isDirectory: true)
             if (try? FileManager.default.copyItem(at: state, to: keep)) != nil { seed = keep.appendingPathComponent("sync-state.json") }

@@ -36,8 +36,10 @@ extension AppModelCore {
     /// as it is), adds the CloudKit target to the copy and opens it. A keyless copy opens locked, as after Open Vault from a
     /// folder: Join This Device (the words or the code) takes it from there.
     ///
-    /// The copy is downloaded whole before it opens (the progress shows in `vaultCopy`); a partial copy that opens first, as for
-    /// WebDAV, is not done for CloudKit (design §8 says "a partial copy first"; recorded in §15).
+    /// What is downloaded first is a partial copy (format.md §1.2, `CloudVaults.downloadMetadata`, as WebDAV's Open does): the
+    /// control files a join needs (`vault.json`, `epochs/`, `joins/`, `keys/`, settings), the sealed summaries and one marked, empty
+    /// folder per note, never a revision or blob. Before the join every note would be ciphertext this device cannot read. The
+    /// target's runs (two-way once unlocked) and the on-demand fetches (`joinFetch`) then bring the notes.
     public func openCloudKitVault(_ vaultId: String, library: VaultLibrary) async throws {
         guard let cloud = services.cloudKit, cloud.isAvailable() else { throw CloudKitTargetProblem.unavailable }
         guard let id = UUID(uuidString: vaultId) else { throw CloudKitTargetProblem.noSuchVault }
@@ -60,22 +62,16 @@ extension AppModelCore {
         let folder = work.appendingPathComponent("vault.sempere", isDirectory: true)
         let state = work.appendingPathComponent("state", isDirectory: true).appendingPathComponent("sync-state.json")
         let entry: VaultStore.Entry
-        // The download shows how far it is (files of the listing), so a large vault does not sit at "0 of 0".
-        let relay = WebDAVProgressRelay { [weak self] p in
-            if case .downloading? = self?.vaultCopy?.stage { self?.vaultCopy?.stage = .downloading(done: p.filesDone, total: p.filesTotal) }
-        }
-        defer { relay.close() }
-        var downloadOptions = SyncOptions()
-        downloadOptions.progress = { relay.send($0) }
         do {
-            try await offMain { [downloadOptions] in
-                try CloudVaults.download(vaultId: id, store: store, into: folder, stateURL: state, expectedUser: account.userHash,
-                                         options: downloadOptions).requireComplete()
+            // A few requests whatever the zone holds, so there is no count to show (`VaultCopyProgress` says "Opening…").
+            try await offMain {
+                try CloudVaults.downloadMetadata(vaultId: id, store: store, into: folder, stateURL: state,
+                                                 expectedUser: account.userHash).requireComplete()
             }
             vaultCopy?.stage = .copying(done: 0, total: 0)
             // Named as the listing is, so the open screen shows one name (the folder's), not "vault" with the label beneath it.
             let storeName = Self.storeName(forICloudName: listing.name, taken: Set(library.vaultStore.list().map(\.name)))
-            entry = try await library.copyIn(folder, coordinated: false, name: storeName, files: services.files) { [weak self] done, total in
+            entry = try await library.copyIn(folder, coordinated: false, name: storeName, files: services.files, allowPartial: true) { [weak self] done, total in
                 Task { @MainActor in self?.vaultCopy?.stage = .copying(done: done, total: total) }
             }
         } catch let e as VaultStoreError {

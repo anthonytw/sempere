@@ -54,6 +54,17 @@ extension AppModelCore {
         }
     }
 
+    /// The open partial copy's iCloud (CloudKit) target, as what a fetch needs: the copy and its zone's remote. Nil when the open
+    /// partial copy has no CloudKit target here (or this build has no CloudKit).
+    func cloudKitJoinSource() -> (copy: LocalCopy, remote: @Sendable () -> CloudRecordRemote)? {
+        guard let cloud = services.cloudKit, cloud.isAvailable(), let root = partialCopyRoot,
+              let entry = syncStore.entry(containing: root),
+              let target = syncStore.targets.targets(of: entry.vaultId).first(where: { $0.kind == .cloudkit }) else { return nil }
+        let stateURL = syncStore.targets.stateURL(target.id, of: entry.vaultId), vaultID = entry.vaultId, user = target.cloudUser
+        let copy = LocalCopy(folder: entry.url, stateDirectory: stateURL.deletingLastPathComponent())
+        return (copy, { CloudTargetRun.remote(store: cloud.makeStore(), vaultId: vaultID, stateURL: stateURL, expectedUser: user) })
+    }
+
     /// "Not downloaded yet", naming the server of the open partial copy.
     var joinNotDownloadedError: ModelError {
         joinLocation.map { ModelError.noteNotDownloadedFromServer($0.host) } ?? .noteNotDownloaded
@@ -76,16 +87,22 @@ extension AppModelCore {
     /// location as stored now (an edited password or pin applies at once), checked under the key once the
     /// vault is unlocked. One fetch at a time (`joinFetchTail`).
     func joinFetch(_ scope: FetchScope) async throws -> SyncReport {
-        guard let location = joinLocation else { throw joinNotDownloadedError }
-        let remote = webdavRemote, passwords = webdavPasswords
-        let copy = webdavLocations.copy(of: location)
         let vault = phase == .unlocked ? self.vault : nil
+        let run: @Sendable () throws -> SyncReport
+        if let location = joinLocation {
+            let remote = webdavRemote, passwords = webdavPasswords
+            let copy = webdavLocations.copy(of: location)
+            run = { try remote.fetch(try Self.endpoint(location, passwords: passwords), copy: copy, vault: vault, scope: scope) }
+        } else if let source = cloudKitJoinSource() {
+            // An iCloud (CloudKit) copy fills the same way: `LocalCopy.fetch` against the zone (`CloudVaults.downloadMetadata` made it).
+            run = { try source.copy.fetch(remote: source.remote(), vault: vault, scope: scope) }
+        } else {
+            throw joinNotDownloadedError
+        }
         let previous = joinFetchTail
         let task = Task { () throws -> SyncReport in
             _ = await previous?.result
-            return try await Task.detached(priority: .userInitiated) {
-                try remote.fetch(try Self.endpoint(location, passwords: passwords), copy: copy, vault: vault, scope: scope)
-            }.value
+            return try await Task.detached(priority: .userInitiated) { try run() }.value
         }
         joinFetchTail = Task { _ = try? await task.value }
         return try await task.value
@@ -164,7 +181,7 @@ extension AppModelCore {
     /// server, then the copy must be complete. Throws "not downloaded yet" otherwise (offline, locked).
     func completePartialCopy() async throws {
         guard let root = partialCopyRoot else { return }
-        if let session = syncSessions.first(where: { $0.kind == .webdav }) { _ = await session.syncNow() }
+        if let session = syncSessions.first(where: { $0.kind == .webdav || $0.kind == .cloudkit }) { _ = await session.syncNow() }
         if PartialCopy.isPartial(root) { throw joinNotDownloadedError }
     }
 }

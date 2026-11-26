@@ -412,12 +412,15 @@ extension VaultLibrary {
 
     /// Copies the vault folder `source` into the store (`VaultStore.importVault`), off the main actor;
     /// `coordinated` reads it under one coordinated read of `files` (iCloud Drive, another provider).
-    func copyIn(_ source: URL, coordinated: Bool, name: String? = nil, files: any FileCoordinating,
+    /// `allowPartial`: the source is a partial copy made by Open from iCloud, kept as one (`ImportOptions.allowPartial`).
+    func copyIn(_ source: URL, coordinated: Bool, name: String? = nil, files: any FileCoordinating, allowPartial: Bool = false,
                        progress: @escaping @Sendable (Int, Int) -> Void) async throws -> VaultStore.Entry {
         let store = vaultStore
         let entry = try await Task.detached(priority: .userInitiated) {
             try files.coordinatedRead(coordinated ? source : nil) {
-                try store.importVault(from: source, options: VaultStore.ImportOptions(name: name, progress: progress))
+                var options = VaultStore.ImportOptions(name: name, progress: progress)
+                options.allowPartial = allowPartial
+                return try store.importVault(from: source, options: options)
             }
         }.value
         if !storedVaults.contains(where: { $0.vaultId == entry.vaultId }) { storedVaults.append(entry) }

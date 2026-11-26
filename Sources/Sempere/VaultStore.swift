@@ -161,6 +161,10 @@ public struct VaultStore: Sendable {
         public var afterEachFile: (@Sendable (String) throws -> Void)?
         /// Test seam: on failure, leave the staging folder as a crash would (`sweep` removes it).
         var keepStagingOnFailure = false
+        /// Accept a partial copy (format.md §1.2) and keep its markers (`.sempere-partial/`, `.sempere-pending`): the copy
+        /// is a vault that fetches the rest later. Only a copy made by `LocalCopy.downloadMetadata` (Open from iCloud); never
+        /// set for a folder the user picked, which must be complete.
+        public var allowPartial = false
 
         public init(name: String? = nil, progress: (@Sendable (Int, Int) -> Void)? = nil,
                     afterEachFile: (@Sendable (String) throws -> Void)? = nil) {
@@ -298,7 +302,7 @@ public struct VaultStore: Sendable {
         }
         if let existing = entry(id: id) { throw VaultStoreError.alreadyInStore(vaultId: id, name: existing.name) }
         let folder = try Self.folderName(for: options.name ?? Self.displayName(of: src))
-        let scan = try Self.scan(src)
+        let scan = try Self.scan(src, allowPartial: options.allowPartial)
         try prepare()
         sweep()
         let staging = try makeStaging()
@@ -316,8 +320,8 @@ public struct VaultStore: Sendable {
                 options.progress?(i + 1, scan.files.count)
             }
             // The source as it is now must be what was copied, and the copy exactly that.
-            guard try Self.scan(src) == scan else { throw VaultStoreError.sourceChanged(src.path) }
-            guard try Self.scan(staged) == scan else { throw VaultStoreError.copyMismatch(staged.path) }
+            guard try Self.scan(src, allowPartial: options.allowPartial) == scan else { throw VaultStoreError.sourceChanged(src.path) }
+            guard try Self.scan(staged, allowPartial: options.allowPartial) == scan else { throw VaultStoreError.copyMismatch(staged.path) }
             for path in scan.files {
                 guard try Self.sameBytes(src, staged, path) else { throw VaultStoreError.copyMismatch(path) }
             }
@@ -682,23 +686,23 @@ public struct VaultStore: Sendable {
 
     /// Lists `root` without following symbolic links: refuses partial copies, unfinished restores,
     /// cloud placeholders, links and special files; skips other hidden names.
-    static func scan(_ root: URL) throws -> Scan {
+    static func scan(_ root: URL, allowPartial: Bool = false) throws -> Scan {
         var scan = Scan()
         var placeholders: [String] = []
         func walk(_ rel: [String], depth: Int) throws {
             let dir = rel.reduce(root) { $0.appendingPathComponent($1, isDirectory: true) }
             for name in try FileIO.entries(dir) {
                 let path = (rel + [name]).joined(separator: "/")
-                if rel.isEmpty, name == PartialCopy.folderName { throw VaultStoreError.partialCopy(root.path) }
                 if rel.isEmpty, name == Backup.restoreMarker { throw VaultStoreError.unfinishedRestore(root.path) }
-                if name == PartialCopy.noteMarkerName || PartialCopy.realName(ofStandIn: name) != nil {
-                    throw VaultStoreError.partialCopy(root.path)
-                }
+                // A partial copy's own files are copied as they are when the caller made it (`ImportOptions.allowPartial`).
+                let partialFile = (rel.isEmpty && name == PartialCopy.folderName) || name == PartialCopy.noteMarkerName
+                    || PartialCopy.realName(ofStandIn: name) != nil
+                if partialFile, !allowPartial { throw VaultStoreError.partialCopy(root.path) }
                 if name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > ".icloud".count + 1 {
                     placeholders.append(path)
                     continue
                 }
-                if name.hasPrefix(".") { continue }
+                if name.hasPrefix("."), !partialFile { continue }
                 var st = stat()
                 let rc = dir.appendingPathComponent(name).withUnsafeFileSystemRepresentation { p -> Int32 in
                     guard let p else { return -1 }
