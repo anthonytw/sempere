@@ -28,6 +28,7 @@
 #                             # the real database"): imports and checks the schema, runs the adapter and transport scenarios and two stores of the
 #                             # signed CLI bundle syncing one vault. Exits 77 ("skipped") when this Mac has no test account. Not in the PR gate:
 #                             # local-ci.sh --testflight and --release run it. Subcommands: schema | suite [NAME...] | cli | cleanup [PREFIX...]
+#   scripts/app.sh cloudkit-sim-signin # sign the sempere-cloudkit simulator in to the test Apple ID again (its sign-in expires daily; test-cloudkit does it by itself)
 #   scripts/app.sh simulator [PREFIX [SUFFIX]] # print the simulator id `test` would use (or one named PREFIX…SUFFIX)
 #
 # The test subcommands pass any further arguments on to xcodebuild. An -only-testing among them
@@ -223,7 +224,7 @@ ui_pseudo=(PseudoLanguageUITests)
 # `scripts/app.sh test-phone-ui -only-testing:SempereAppUITests/KeyReceiptShareUITests` (iPhone; `test-ui` for the iPad).
 # SpotlightSystemUITests needs an ad-hoc signed build (append CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-): the
 # simulator's Spotlight lists no items of the unsigned build, whose signature names it `Sempere`, not its bundle id.
-ui_manual=(KeyReceiptShareUITests SpotlightSystemUITests)
+ui_manual=(KeyReceiptShareUITests SpotlightSystemUITests CloudKitSimSignInUITests)
 # Screenshot generators (scripts/screenshots.sh): they assert nothing.
 ui_tooling=(ScreenshotTests DocsScreenshotTests InkAfterUndoUITests)
 # ui-lists:end
@@ -503,6 +504,13 @@ case "${1:-}" in
     rc=0; tools/cloudkit-live/run.sh "${@:2}" || rc=$?
     exit "$rc"
     ;;
+  cloudkit-sim-signin)
+    # Sign the sempere-cloudkit simulator in to the test Apple ID again (an XCUITest drives Settings; password from the keychain; a
+    # two-factor code is never answered): tools/cloudkit-live/signin/sim-signin.sh. `test-cloudkit` does it by itself when needed.
+    # (no exec: app.sh's EXIT trap removes this run's TMPDIR, which xcodebuild's result-bundle staging copies live in)
+    rc=0; tools/cloudkit-live/signin/sim-signin.sh || rc=$?
+    exit "$rc"
+    ;;
   test-mac)
     shutdown_simulators
     tmp_guard_start
@@ -586,7 +594,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|test-quarantine|build-ios|build-sim-unit|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|test-cloudkit|simulator" >&2
+    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|test-quarantine|build-ios|build-sim-unit|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|test-cloudkit|cloudkit-sim-signin|simulator" >&2
     exit 2
     ;;
 esac

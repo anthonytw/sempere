@@ -1360,6 +1360,25 @@ account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, i
    but the account (the closest this seat gets to two devices: C0 saw no push between them, so nothing waits for one). The driver
    links no UIKit, so a Catalyst binary is simply started (LaunchServices refuses its bundle, -10670); output reaches the script
    through `CKL_OUT`, since a simulator process has no terminal.
+   **The simulator's sign-in expires** about daily (cloudd logs `AuthTokenError 2011`; the driver's `account` scenario then says
+   `temporarilyUnavailable`, and Settings shows an "Apple Account Verification" alert). Before it makes the clone, the simulator leg
+   checks the base simulator's account (`run.sh sim-account`) and, when it fails, signs in again (`scripts/app.sh cloudkit-sim-signin`,
+   `run.sh sim-signin`; `tools/cloudkit-live/signin/sim-signin.sh`) and checks once more. The UI test `CloudKitSimSignInUITests`
+   drives Settings (alert, then the "Apple Account Password" sheet). The Apple ID and password are read from the login keychain
+   (items `sempere-test-apple-id-email` and `sempere-test-apple-id`, account `sempere-test`) into shell variables and reach the
+   test through a 0600 file in the run's own TMPDIR (made with shell builtins; the test deletes it as soon as it has read it, and
+   the script again), whose path alone is in the environment of the test run (not of the build), so `ps eww`, the xcodebuild log,
+   the derived data and the simulator's log carry no secret; the password is typed once. The run keeps no result bundle and no log, its
+   own TMPDIR is removed, the runner is uninstalled from the base simulator, and the base simulator's unified log files (`*.tracev3`
+   in the `Persist`, `Special`, `Signpost` and `HighVolume` folders of its diagnostics store; they record the runner's launch
+   environment and clones would copy them) are deleted with it verified shut down, on every exit path including signals; a canary
+   password found nothing else on this Mac. The base simulator is under a kernel lock (`flock`, `signin/hold-lock.py`,
+   `~/.cache/sempere/sim-cloudkit-base.flock`) from the account check to the clone; a killed run frees it by itself.
+   A verification code (two-factor) is never answered: that run exits 3, "needs a code sent to the account's trusted device",
+   and the simulator stays signed out. Each password gets one attempt: an "attempted" marker in `~/.cache/sempere/`, keyed to the keychain item's modification date, is written
+   before the test starts and is removed only by a run that ends in a sign-in, reports (SIGNIN-NOTHING-TYPED) that it ended without typing, or stops at the verification-code
+   screen (the password was accepted then). Any other ending after the password was typed (a refusal, a stop, a timeout, a crash, a
+   signal) leaves it, and later runs exit 4 until the keychain item is changed. In every failing case the simulator leg fails (the other legs and the cleanup still run). `SEMPERE_CKL_NO_SIGNIN=1` turns the automatic sign-in off.
 4. **Two stores through the CLI bundle** (`cli-scenarios.sh`; it replaces `tools/cloudkit-spike/cli-smoke.sh`): device A creates
    a vault with notes, an image and a setting; device B (its own state folder, so its own keys) **joins through CloudKit alone**
    (`device init`, `devices approve`, `device confirm`, the files carried by the zone); then convergence, a conflict (both change

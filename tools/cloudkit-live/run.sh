@@ -7,6 +7,8 @@
 #   tools/cloudkit-live/run.sh suite [NAME...]      the adapter and transport scenarios (tools/cloudkit-live/Sources)
 #   tools/cloudkit-live/run.sh cli                  the two-store CLI scenarios (cli-scenarios.sh)
 #   tools/cloudkit-live/run.sh catalyst|simulator   the adapter scenarios as a Mac Catalyst process / in a clone of the sempere-cloudkit simulator
+#   tools/cloudkit-live/run.sh sim-account          is the sempere-cloudkit simulator's iCloud account usable? (exit 0 yes)
+#   tools/cloudkit-live/run.sh sim-signin           sign it in again (an XCUITest drives Settings; docs/io.md); the simulator leg does it by itself when the account fails
 #   tools/cloudkit-live/run.sh cross                Mac Catalyst and the simulator, one zone: each writes, the other reads
 #   tools/cloudkit-live/run.sh cleanup [PREFIX...]  delete the test zones (default: test-) and the vault zones of the suite's own test vaults
 #                                                   (their vault.json label starts with `cloudkit-live-test`; no other `sempere-` zone is ever deleted:
@@ -26,6 +28,7 @@ repo=$(cd "$here/../.." && pwd)
 cd "$repo"
 container=iCloud.io.github.anthonytw.sempere
 env_file=${SEMPERE_RELEASE_ENV:-$HOME/.config/sempere/release.env}
+source "$here/signin/lock.sh"
 skip() { echo "SKIPPED test-cloudkit: $*" >&2; exit 77; }
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -245,11 +248,75 @@ PL
   codesign --force --sign - "$app" >/dev/null 2>&1 || die "codesign failed for the simulator driver"
 }
 # A clone of the base simulator with the test Apple ID signed in (a clone keeps the sign-in, design §13.1); deleted at exit.
-sim_up() {
-  [[ -z $sim_clone ]] || return 0
+sim_base_id() {
   sim_base=${SEMPERE_CLOUDKIT_SIM:-$(xcrun simctl list devices | sed -n 's/^ *sempere-cloudkit (\([0-9A-F-]\{36\}\)).*/\1/p' | head -1)}
   [[ -n $sim_base ]] || skip "no simulator named sempere-cloudkit (the base simulator with the test Apple ID signed in; docs/design/1.4-cloudkit.md §11)"
-  sim_clone=$(xcrun simctl clone "$sim_base" "sempere-ckl-$$") || die "could not clone the simulator"
+}
+# Is the base simulator's iCloud account usable? Boots the base itself (not a clone), runs the driver's `account` scenario in it
+# (the same call the suite makes). Sets $sim_account_out. The sign-in expires about daily (cloudd: AuthTokenError 2011).
+sim_account_ok() {
+  build_simulator; sim_base_id
+  xcrun simctl boot "$sim_base" >/dev/null 2>&1 || true
+  xcrun simctl bootstatus "$sim_base" -b >/dev/null 2>&1 || true
+  xcrun simctl install "$sim_base" "$work/sim/cloudkit-live-sim.app"
+  local out=$work/sim-account.out rc=0 i
+  : > "$out"
+  xcrun simctl terminate "$sim_base" io.github.anthonytw.sempere >/dev/null 2>&1 || true
+  SIMCTL_CHILD_CKL_OUT=$out SIMCTL_CHILD_CKL_ARGS="suite|account" xcrun simctl launch "$sim_base" io.github.anthonytw.sempere >/dev/null || rc=1
+  for ((i = 0; i < 120 && rc == 0; i++)); do
+    grep -qE '^(all [0-9]+ scenarios passed|[0-9]+ of [0-9]+ scenarios FAILED|FAIL |usage|this process is not signed)' "$out" && break
+    sleep 1
+  done
+  xcrun simctl terminate "$sim_base" io.github.anthonytw.sempere >/dev/null 2>&1 || true
+  sim_account_out=$(cat "$out")
+  [[ $rc == 0 ]] && grep -q '^all [0-9]* scenarios passed' "$out"
+}
+# The base simulator's account must work before a clone of it is made (a clone keeps the sign-in): when it does not, sign in again
+# (signin/sim-signin.sh: an XCUITest that drives Settings with the test Apple ID from the keychain) and check once more. A
+# verification code (2FA) is never answered, and a refused password is never repeated: those fail the leg (returns 1; the caller
+# goes on with the other legs and the cleanup) and the simulator is left signed out. The caller holds the base simulator's lock.
+sim_ensure_account() {
+  [[ -z ${SEMPERE_CKL_NO_SIGNIN:-} ]] || return 0
+  if sim_account_ok; then
+    echo "ok  simulator iCloud account is valid"
+    xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true; return 0
+  fi
+  echo "== the sempere-cloudkit simulator's iCloud account is not usable ($(echo "$sim_account_out" | tr '\n' ' ' | cut -c1-200)): signing in again"
+  local rc=0
+  xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true
+  SEMPERE_CKL_SIM_LOCKED=$$ SEMPERE_CLOUDKIT_SIM=$sim_base "$here/signin/sim-signin.sh" || rc=$?
+  case $rc in
+    0) ;;
+    3) echo "error: the simulator needs a verification code (two-factor) from the account's trusted device; sign it in by hand once" >&2; return 1 ;;
+    4) echo "error: the test Apple ID's password was tried and did not end in a sign-in (now or earlier); it is not tried again until the keychain item sempere-test-apple-id (account sempere-test) is changed" >&2; return 1 ;;
+    77) echo "error: the simulator's account is not usable and there are no keychain items to sign it in again" >&2; return 1 ;;
+    *) echo "error: could not sign the sempere-cloudkit simulator in again (exit $rc, see above)" >&2; return 1 ;;
+  esac
+  if ! sim_account_ok; then
+    xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true
+    echo "error: the simulator's iCloud account is still not usable after signing in: $sim_account_out" >&2; return 1
+  fi
+  echo "ok  simulator iCloud account is valid again"
+  xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true
+}
+# The sign-in alone (run.sh sim-signin), under the base simulator's lock.
+do_sim_signin() {
+  sim_base_id
+  sim_lock || return 1
+  xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true
+  local rc=0
+  SEMPERE_CKL_SIM_LOCKED=$$ SEMPERE_CLOUDKIT_SIM=$sim_base "$here/signin/sim-signin.sh" || rc=$?
+  sim_unlock
+  return $rc
+}
+# The base simulator is checked, and signed in again when needed, under its lock, which is held until the clone exists.
+sim_up() {
+  [[ -z $sim_clone ]] || return 0
+  sim_base_id
+  sim_lock || return 1
+  if ! sim_ensure_account; then sim_unlock; return 1; fi
+  sim_clone=$(xcrun simctl clone "$sim_base" "sempere-ckl-$$") || { sim_unlock; echo "error: could not clone the simulator" >&2; return 1; }
+  sim_unlock
   trap sim_down EXIT
   xcrun simctl boot "$sim_clone" >/dev/null 2>&1 || true
   xcrun simctl bootstatus "$sim_clone" -b >/dev/null 2>&1 || true
@@ -285,13 +352,13 @@ verdict() { # file, label
 do_platform() { # catalyst | simulator
   local name=$1 out=$work/$1.out
   if [[ $name == catalyst ]]; then build_catalyst; echo "== adapter and transport scenarios on Mac Catalyst (real database, development)"; run_catalyst "$out" suite "${platform_scenarios[@]}"
-  else build_simulator; sim_up; echo "== adapter and transport scenarios in the iOS simulator (real database, development)"; run_simulator "$out" suite "${platform_scenarios[@]}"; fi
+  else build_simulator; sim_up || return 1; echo "== adapter and transport scenarios in the iOS simulator (real database, development)"; run_simulator "$out" suite "${platform_scenarios[@]}"; fi
   verdict "$out" "$name"
 }
 
 # Two platforms on one zone, both directions.
 do_cross() {
-  build_driver; build_catalyst; build_simulator; sim_up
+  build_driver; build_catalyst; build_simulator; sim_up || return 1
   local zone="test-cross-$(uuidgen | tr 'A-Z' 'a-z')" ok=0
   echo "== two platforms, one zone: Mac Catalyst and the iOS simulator (real database, development)"
   run_catalyst "$work/c-write.out" cross write "$zone" fromcatalyst; verdict "$work/c-write.out" catalyst || ok=1
@@ -321,6 +388,8 @@ case $sub in
   cleanup) do_cleanup "$@" ;;
   catalyst) build_driver; do_platform catalyst ;;
   simulator) build_driver; do_platform simulator ;;
+  sim-account) build_driver; rc=0; sim_base_id; sim_lock || exit 1; sim_account_ok || rc=1; echo "$sim_account_out"; xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true; sim_unlock; exit $rc ;;
+  sim-signin) do_sim_signin ;;
   cross) do_cross ;;
   all)
     status=0
