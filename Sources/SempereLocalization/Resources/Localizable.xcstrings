@@ -131,7 +131,7 @@
       }
     },
     "%@ elapsed" : {
-      "comment" : "Note Insights: Process Now time elapsed, %@ is a duration",
+      "comment" : "Note Insights, Process Now time elapsed, %@ is a duration",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -4398,7 +4398,7 @@
       }
     },
     "About %@ left" : {
-      "comment" : "Note Insights: Process Now estimated time left, %@ is a duration",
+      "comment" : "Note Insights, Process Now estimated time left, %@ is a duration",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -16290,7 +16290,7 @@
       }
     },
     "Notes: %lld of %lld" : {
-      "comment" : "Note Insights: Process Now progress, notes done of notes to process [not-plural]",
+      "comment" : "Note Insights, Process Now progress, notes done of notes to process [not-plural]",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -18511,7 +18511,7 @@
       }
     },
     "Paused when the app left the screen or the screen locked. It picks up when you return." : {
-      "comment" : "Note Insights: why a Process Now pass stopped",
+      "comment" : "Note Insights, why a Process Now pass stopped",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -27087,7 +27087,7 @@
       }
     },
     "The screen stays on until processing finishes." : {
-      "comment" : "Note Insights: Process Now keeps the screen awake",
+      "comment" : "Note Insights, Process Now keeps the screen awake",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
