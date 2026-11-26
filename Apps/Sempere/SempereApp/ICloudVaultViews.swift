@@ -31,7 +31,7 @@ struct OpenFromICloudSheet: View {
                 case .found(let vaults):
                     Section {
                         if vaults.isEmpty {
-                            Text("No vaults were found in this Apple Account's iCloud. A vault appears here once a device with Sempere has added iCloud (CloudKit) to it in Sync Targets.")
+                            Text("No vaults were found in this Apple Account's iCloud. A vault appears here once a device with Sempere has added iCloud to it in Sync Targets.")
                                 .foregroundStyle(.secondary)
                                 .accessibilityIdentifier("openFromICloudEmpty")
                         }

@@ -15,13 +15,13 @@ enum CloudKitCLI {
     static var unavailable: String? {
         #if canImport(SempereCloudKit)
         if CloudKitDatabase.availability() != .available {
-            return "iCloud (CloudKit) is not available in this build of sempere: it is not signed for the iCloud container "
+            return "iCloud is not available in this build of sempere: it is not signed for the iCloud container "
                 + "(a source build has no provisioning profile). Use the released sempere (the Homebrew install carries "
                 + "the signed sempere.app), or sync this vault through a folder or WebDAV target."
         }
         return nil
         #else
-        return "iCloud (CloudKit) is only available in sempere for macOS (the released, signed build); this build has no CloudKit."
+        return "iCloud is only available in sempere for macOS (the released, signed build); this build has no CloudKit."
         #endif
     }
 
@@ -50,7 +50,7 @@ enum CloudKitCLI {
         return CloudTargetRun.remote(store: CloudKitDatabase(), vaultId: vaultId, stateURL: stateDirectory.appendingPathComponent("sync-state.json"),
                                      expectedUser: t.cloudUser)
         #else
-        throw CLIError.failure(unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(unavailable ?? "iCloud is not available")
         #endif
     }
 }
@@ -60,7 +60,7 @@ enum CloudKitCLI {
 struct CloudKitCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "cloudkit",
-        abstract: "Find, open and delete the vaults in your iCloud (CloudKit) account.",
+        abstract: "Find, open and delete the vaults in your iCloud account.",
         discussion: """
             What the app's Open Vault ▸ From iCloud, its suggestion on another device and Delete from iCloud do. macOS only, \
             in the released sempere (signed for the iCloud container; a source build says so and exits 1). A vault's target \
@@ -130,7 +130,7 @@ struct CloudKitList: ParsableCommand {
         }
         print(Format.table(table))
         #else
-        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud is not available")
         #endif
     }
 }
@@ -205,7 +205,7 @@ struct CloudKitOpen: ParsableCommand {
         output.info("Copied into the store as “\(entry.name)” (\(entry.vaultId.uuidString.lowercased())) and synced with iCloud")
         if output.quiet { print(entry.url.path) } else { output.info("Path: \(entry.url.path)") }
         #else
-        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud is not available")
         #endif
     }
 }
@@ -261,7 +261,7 @@ struct CloudKitDelete: ParsableCommand {
         if output.json { return try output.emitJSON(["deleted": found.vaultId]) }
         output.info("Deleted “\(found.name)” from iCloud")
         #else
-        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")
+        throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud is not available")
         #endif
     }
 }

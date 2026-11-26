@@ -103,7 +103,7 @@ public struct SyncTarget: Codable, Sendable, Hashable, Identifiable {
 
     /// Where the target is, for a listing: the folder, the server folder, or "iCloud" for a CloudKit target.
     public var place: String {
-        if kind == .cloudkit { return "iCloud (CloudKit)" }
+        if kind == .cloudkit { return "iCloud" }
         return path ?? url ?? ""
     }
 

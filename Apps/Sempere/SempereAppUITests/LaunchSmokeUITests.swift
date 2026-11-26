@@ -225,7 +225,7 @@ final class LaunchSmokeUITests: XCTestCase {
         requireRunning(app, "add webdav server sheet")
         // iCloud (CloudKit) comes first (docs/design/1.4-cloudkit.md §9); this build is not signed for the container, so only
         // its presence is checked, never an add.
-        require(app.descendants(matching: .any)["syncTargetsAddCloudKit"].firstMatch, "Add iCloud (CloudKit) button", in: app)
+        require(app.descendants(matching: .any)["syncTargetsAddCloudKit"].firstMatch, "Add iCloud button", in: app)
         let details = app.descendants(matching: .any)["syncTargetsDetails"].firstMatch
         require(details, "Details and Repair link", in: app)
         details.click()

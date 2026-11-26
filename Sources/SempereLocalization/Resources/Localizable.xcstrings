@@ -4778,7 +4778,7 @@
         }
       }
     },
-    "Add iCloud (CloudKit)" : {
+    "Add iCloud" : {
       "comment" : "Sync Targets: adds this vault's zone in the user's private iCloud database",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -4786,7 +4786,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añadir iCloud (CloudKit)"
+            "value" : "Añadir iCloud"
           }
         }
       }
@@ -15487,14 +15487,14 @@
         }
       }
     },
-    "No vaults were found in this Apple Account's iCloud. A vault appears here once a device with Sempere has added iCloud (CloudKit) to it in Sync Targets." : {
+    "No vaults were found in this Apple Account's iCloud. A vault appears here once a device with Sempere has added iCloud to it in Sync Targets." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se encontró ninguna bóveda en el iCloud de esta cuenta de Apple. Una bóveda aparece aquí cuando un dispositivo con Sempere le añade iCloud (CloudKit) en Sincronización."
+            "value" : "No se encontró ninguna bóveda en el iCloud de esta cuenta de Apple. Una bóveda aparece aquí cuando un dispositivo con Sempere le añade iCloud en Sincronización."
           }
         }
       }
@@ -16484,7 +16484,7 @@
       }
     },
     "Offline. Changes are kept on this device and sync with iCloud when it can be reached." : {
-      "comment" : "Sync status of an iCloud (CloudKit) target with no connection",
+      "comment" : "Sync status of an iCloud target with no connection",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -24590,7 +24590,7 @@
       }
     },
     "Synced with iCloud" : {
-      "comment" : "Sync status of an iCloud (CloudKit) target",
+      "comment" : "Sync status of an iCloud target",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -24603,7 +24603,7 @@
       }
     },
     "Synced with iCloud · %@" : {
-      "comment" : "Sync status of an iCloud (CloudKit) target; %@ is when, e.g. “2 min. ago”",
+      "comment" : "Sync status of an iCloud target; %@ is when, e.g. “2 min. ago”",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -24689,7 +24689,7 @@
       }
     },
     "Syncing with iCloud…" : {
-      "comment" : "Sync status of an iCloud (CloudKit) target while a run goes",
+      "comment" : "Sync status of an iCloud target while a run goes",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -25513,14 +25513,14 @@
         }
       }
     },
-    "That is not an iCloud (CloudKit) target of this vault." : {
+    "That is not an iCloud target of this vault." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ese no es un destino de iCloud (CloudKit) de esta bóveda."
+            "value" : "Ese no es un destino de iCloud de esta bóveda."
           }
         }
       }
@@ -27236,14 +27236,14 @@
         }
       }
     },
-    "The vault was created, but it does not sync with iCloud yet: sign in to iCloud in Settings, then add iCloud (CloudKit) in Sync Targets." : {
+    "The vault was created, but it does not sync with iCloud yet: sign in to iCloud in Settings, then add iCloud in Sync Targets." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La bóveda se creó, pero aún no se sincroniza con iCloud: inicia sesión en iCloud en Ajustes y añade iCloud (CloudKit) en Sincronización."
+            "value" : "La bóveda se creó, pero aún no se sincroniza con iCloud: inicia sesión en iCloud en Ajustes y añade iCloud en Sincronización."
           }
         }
       }
@@ -29091,7 +29091,7 @@
         }
       }
     },
-    "This vault is in iCloud (CloudKit). Sync with it here too?" : {
+    "This vault is in iCloud. Sync with it here too?" : {
       "comment" : "Sync Targets: the vault's iCloud zone exists (another device made it) and this device has no target for it",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -29099,7 +29099,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta bóveda está en iCloud (CloudKit). ¿Quieres sincronizarla también aquí?"
+            "value" : "Esta bóveda está en iCloud. ¿Quieres sincronizarla también aquí?"
           }
         }
       }
@@ -30761,14 +30761,14 @@
         }
       }
     },
-    "Use iCloud (CloudKit) Instead" : {
+    "Use iCloud Instead" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usar iCloud (CloudKit) en su lugar"
+            "value" : "Usar iCloud en su lugar"
           }
         }
       }
@@ -32071,39 +32071,10 @@
       }
     },
     "iCloud" : {
-      "comment" : "Sync status: the iCloud (CloudKit) target, after “to” or “from”",
+      "comment" : "Sync status: the iCloud target, after “to” or “from”",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "shouldTranslate" : false
-    },
-    "iCloud (CloudKit)" : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "shouldTranslate" : false
-    },
-    "iCloud (CloudKit) is not available in this build of Sempere." : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud (CloudKit) no está disponible en esta versión de Sempere."
-          }
-        }
-      }
-    },
-    "iCloud (CloudKit) syncs more reliably than a folder in iCloud Drive." : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud (CloudKit) sincroniza de forma más fiable que una carpeta de iCloud Drive."
-          }
-        }
-      }
     },
     "iCloud Drive" : {
       "comment" : "Where a sync folder is: the iCloud Drive root (Apple's name, not translated)",
@@ -32239,6 +32210,18 @@
         }
       }
     },
+    "iCloud is not available in this build of Sempere." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud no está disponible en esta versión de Sempere."
+          }
+        }
+      }
+    },
     "iCloud is restricted on this device (Screen Time or device management)." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -32252,7 +32235,7 @@
       }
     },
     "iCloud keeps your vault on Apple's servers. To open it without Sempere (with the recovery kit and age), keep a backup or a folder copy too." : {
-      "comment" : "Sync Targets: shown under a vault whose only copy besides this device is iCloud (CloudKit); age is the encryption tool's name",
+      "comment" : "Sync Targets: shown under a vault whose only copy besides this device is iCloud; age is the encryption tool's name",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -32286,6 +32269,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El almacenamiento de iCloud está lleno. Libera espacio o mejora a iCloud+ y pulsa Sincronizar ahora."
+          }
+        }
+      }
+    },
+    "iCloud syncs more reliably than a folder in iCloud Drive." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud sincroniza de forma más fiable que una carpeta de iCloud Drive."
           }
         }
       }

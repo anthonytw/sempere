@@ -74,7 +74,7 @@ final class CLIStoreTargetTests: CLITestCase {
         _ = try storeVault()
         let r = try cli(["store", "target", "add", "Notes", "--cloudkit", "--store", store])
         XCTAssertEqual(r.status, 1, r.err)
-        XCTAssertTrue(r.err.contains("iCloud (CloudKit)"), r.err)
+        XCTAssertTrue(r.err.contains("iCloud"), r.err)
         XCTAssertTrue(r.err.contains("not available") || r.err.contains("only available"), r.err)
         let listed = try XCTUnwrap(try cli(["store", "target", "list", "Notes", "--store", store, "--json"]).json as? [[String: Any]])
         XCTAssertTrue(listed.isEmpty)
@@ -91,7 +91,7 @@ final class CLIStoreTargetTests: CLITestCase {
         for args in [["cloudkit", "list"], ["cloudkit", "open", "0b0f1f3e"], ["cloudkit", "delete", "0b0f1f3e", "--yes"]] {
             let r = try cli(args + ["--store", store])
             XCTAssertEqual(r.status, 1, "\(args): \(r.err)")
-            XCTAssertTrue(r.err.contains("iCloud (CloudKit)"), r.err)
+            XCTAssertTrue(r.err.contains("iCloud"), r.err)
         }
         // An empty, short or non-hex vault argument is a usage error before anything else: it would match every vault.
         for bad in ["", "0b0f", "not-a-vault-id"] {

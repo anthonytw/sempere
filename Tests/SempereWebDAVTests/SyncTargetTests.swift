@@ -60,7 +60,7 @@ final class SyncTargetTests: SyncTestCase {
         let back = try XCTUnwrap(registry.targets(of: vaultA).first)
         XCTAssertEqual(back.kind, .cloudkit)
         XCTAssertEqual(back.cloudUser, "hash-of-the-account")
-        XCTAssertEqual(back.place, "iCloud (CloudKit)")
+        XCTAssertEqual(back.place, "iCloud")
         XCTAssertTrue(back.kind.usesNetwork)
         XCTAssertFalse(SyncTargetKind.folder.usesNetwork)
         // Beside the others; none of them is the same place.
