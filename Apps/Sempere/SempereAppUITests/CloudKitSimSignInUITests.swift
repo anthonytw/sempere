@@ -99,6 +99,7 @@ final class CloudKitSimSignInUITests: XCTestCase {
     private func typeOnce(_ field: XCUIElement, _ text: String) -> Bool {
         let v = field.value as? String ?? ""
         if v.contains("\u{2022}") || v.contains("\u{25CF}") { return false }   // bullets: already filled
+        print("SIGNIN-PASSWORD-TYPING")   // before the keys go in: the script counts an attempt from here on
         field.tap()
         field.typeText(text)
         return true

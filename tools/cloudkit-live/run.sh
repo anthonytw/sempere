@@ -284,11 +284,11 @@ sim_ensure_account() {
   echo "== the sempere-cloudkit simulator's iCloud account is not usable ($(echo "$sim_account_out" | tr '\n' ' ' | cut -c1-200)): signing in again"
   local rc=0
   xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true
-  SEMPERE_CKL_SIM_LOCKED=1 SEMPERE_CLOUDKIT_SIM=$sim_base "$here/signin/sim-signin.sh" || rc=$?
+  SEMPERE_CKL_SIM_LOCKED=$$ SEMPERE_CLOUDKIT_SIM=$sim_base "$here/signin/sim-signin.sh" || rc=$?
   case $rc in
     0) ;;
     3) echo "error: the simulator needs a verification code (two-factor) from the account's trusted device; sign it in by hand once" >&2; return 1 ;;
-    4) echo "error: Apple refused the test Apple ID's password; fix the keychain item sempere-test-apple-id (account sempere-test)" >&2; return 1 ;;
+    4) echo "error: the test Apple ID's password was tried and did not end in a sign-in (now or earlier); it is not tried again until the keychain item sempere-test-apple-id (account sempere-test) is changed" >&2; return 1 ;;
     77) echo "error: the simulator's account is not usable and there are no keychain items to sign it in again" >&2; return 1 ;;
     *) echo "error: could not sign the sempere-cloudkit simulator in again (exit $rc, see above)" >&2; return 1 ;;
   esac
@@ -305,7 +305,7 @@ do_sim_signin() {
   sim_lock || return 1
   xcrun simctl shutdown "$sim_base" >/dev/null 2>&1 || true
   local rc=0
-  SEMPERE_CKL_SIM_LOCKED=1 SEMPERE_CLOUDKIT_SIM=$sim_base "$here/signin/sim-signin.sh" || rc=$?
+  SEMPERE_CKL_SIM_LOCKED=$$ SEMPERE_CLOUDKIT_SIM=$sim_base "$here/signin/sim-signin.sh" || rc=$?
   sim_unlock
   return $rc
 }

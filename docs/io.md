@@ -1369,13 +1369,16 @@ account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, i
    test through a 0600 file in the run's own TMPDIR (made with shell builtins; the test deletes it as soon as it has read it, and
    the script again), whose path alone is in the environment of the test run (not of the build), so `ps eww`, the xcodebuild log,
    the derived data and the simulator's log carry no secret; the password is typed once. The run keeps no result bundle and no log, its
-   own TMPDIR is removed, the runner is uninstalled from the base simulator, and the base simulator's unified log files (which
-   record the runner's launch environment, and which clones would copy) are deleted with it shut down; a canary password found
-   nothing else on this Mac. The base simulator is under an `mkdir` lock (`~/.cache/sempere/sim-cloudkit-base.lock`) from the account check to the clone.
+   own TMPDIR is removed, the runner is uninstalled from the base simulator, and the base simulator's unified log files (`*.tracev3`
+   in the `Persist`, `Special`, `Signpost` and `HighVolume` folders of its diagnostics store; they record the runner's launch
+   environment and clones would copy them) are deleted with it verified shut down, on every exit path including signals; a canary
+   password found nothing else on this Mac. The base simulator is under a kernel lock (`flock`, `signin/hold-lock.py`,
+   `~/.cache/sempere/sim-cloudkit-base.flock`) from the account check to the clone; a killed run frees it by itself.
    A verification code (two-factor) is never answered: that run exits 3, "needs a code sent to the account's trusted device",
-   and the simulator stays signed out. A refused password is never repeated: the run exits 4 and writes a marker in `~/.cache/sempere/`
-   keyed to the keychain item's modification date, and later runs refuse until the item changes. In both cases the simulator leg
-   fails (the other legs and the cleanup still run). `SEMPERE_CKL_NO_SIGNIN=1` turns the automatic sign-in off.
+   and the simulator stays signed out. Each password gets one attempt: an "attempted" marker in `~/.cache/sempere/`, keyed to the keychain item's modification date, is written
+   before the test starts and is removed only by a run that ends in a sign-in, ends without typing, or stops at the verification-code
+   screen (the password was accepted then). Any other ending after the password was typed (a refusal, a stop, a timeout, a crash, a
+   signal) leaves it, and later runs exit 4 until the keychain item is changed. In every failing case the simulator leg fails (the other legs and the cleanup still run). `SEMPERE_CKL_NO_SIGNIN=1` turns the automatic sign-in off.
 4. **Two stores through the CLI bundle** (`cli-scenarios.sh`; it replaces `tools/cloudkit-spike/cli-smoke.sh`): device A creates
    a vault with notes, an image and a setting; device B (its own state folder, so its own keys) **joins through CloudKit alone**
    (`device init`, `devices approve`, `device confirm`, the files carried by the zone); then convergence, a conflict (both change
