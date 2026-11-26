@@ -1019,6 +1019,12 @@ public final class AppModelCore<Host: AppModelHost> {
     /// The vault opened again after its `vault.json` changed (`syncedVaultFileArrived`): its list is
     /// checked again (`listAlert`), the quick-capture profile follows the list's capture keys, and the
     /// views open their notes again (`keyEpoch`).
+    /// The open vault after only its label was written (`ensureICloudLabel`): the same keys and list, so nothing reopens.
+    func adoptLabeled(_ next: Vault) {
+        guard next.vaultId == vault?.vaultId else { return }
+        vault = next
+    }
+
     func adoptReopened(_ next: Vault) {
         guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
         let before = vault.map(SpotlightKeys.init)
@@ -1040,6 +1046,7 @@ public final class AppModelCore<Host: AppModelHost> {
     /// quick-capture profile, adopts the inbox, reschedules the backup
     /// reminder and syncs settings.
     private func didUnlock(awaitNotes: Bool) async throws {
+        await ensureICloudLabel()   // before the first two-way run: a vault in iCloud is listed by its name
         // The open store vault's targets run two-way from now on (also those added while it is open).
         syncCoordinator.openVaultUnlocked()
         await webdavUnlocked()   // a partial copy's rows come from the server's summaries: before the listing

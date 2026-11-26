@@ -51,6 +51,9 @@ extension AppModelCore {
         guard syncStore.entry(id: vaultID) != nil else { throw CloudKitTargetProblem.notAStoreVault }
         let account = try await offMain { try cloud.makeStore().account() }
         guard account.status == .available else { throw CloudKitTargetProblem.account(account.status) }
+        // Before the target exists, so its first run carries the name: the vault is listed by it in iCloud (only when this vault
+        // is open and unlocked here; else the label is written at its next unlock).
+        if vault?.vaultId == vaultID { await ensureICloudLabel(demandRun: false, beforeTarget: true) }
         let store = syncStore
         let target: SyncTarget
         do {

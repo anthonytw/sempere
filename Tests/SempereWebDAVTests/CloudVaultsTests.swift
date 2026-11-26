@@ -73,4 +73,24 @@ final class CloudVaultsTests: TempDirTestCase {
         put(db, manifest(String(repeating: "x", count: 500)))
         XCTAssertLessThanOrEqual(try CloudVaults.list(store: db)[0].name.count, CloudVaults.maxNameLength)
     }
+
+    /// TestFlight 1.4.0 (117), k2: what tells two vaults apart when their names do not (or are missing): when `vault.json` last
+    /// changed, and whether the zone holds a vault at all (an empty zone cannot be opened, only deleted).
+    func testAListingSaysWhenTheVaultChangedAndWhetherThereIsOne() throws {
+        let db = MemoryCloudDatabase()
+        put(db, manifest("Mine"))
+        let empty = "0b0f1f3e-5a3c-4d1e-9f3a-333333333333"
+        db.makeZone(CloudRecordNaming.zoneName(vaultId: empty))
+        let listed = try CloudVaults.list(store: db)
+        let mine = try XCTUnwrap(listed.first { $0.vaultId == id }), none = try XCTUnwrap(listed.first { $0.vaultId == empty })
+        XCTAssertTrue(mine.hasVault)
+        XCTAssertFalse(none.hasVault)
+        XCTAssertNil(none.modified)
+        XCTAssertEqual(none.name, "Vault 0b0f1f3e")
+        // An older encoding (no `modified`, no `hasVault`) still decodes: a listing is a stored `--json` row too.
+        let old = Data(#"{"vaultId":"x","zone":"sempere-x","name":"N","named":true}"#.utf8)
+        let decoded = try JSONDecoder().decode(CloudVaultListing.self, from: old)
+        XCTAssertTrue(decoded.hasVault)
+        XCTAssertNil(decoded.modified)
+    }
 }

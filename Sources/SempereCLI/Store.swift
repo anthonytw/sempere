@@ -108,10 +108,13 @@ struct StoreCreate: ParsableCommand {
 
     func run() throws {
         let prepared = try spec.prepare()
+        // The vault's label is its name unless --vault-label says otherwise: iCloud (CloudKit) lists vaults by it.
+        var named = spec
+        if named.vaultLabel == nil { named.vaultLabel = name }
         // The vault is made in a staging folder and moves into the store afterwards; nothing the report
         // names lies inside it but the passphrase copy, which is given relative to the vault.
         let (entry, created) = try location.open().create(name: name) { url -> VaultInitOptions.Created in
-            try spec.create(at: url, prepared: prepared)
+            try named.create(at: url, prepared: prepared)
         }
         try created.report(path: entry.url.path, output: output)
     }

@@ -835,3 +835,90 @@ struct SyncSessionJoinsHeldTests {
         #expect(session.lastJoinsHeld == ["abcd1234.join.json"], "still sent")
     }
 }
+
+/// TestFlight 1.4.0 (117), k5: "no clue if it synced". While a run goes the status counts what it moves (uploads against the files
+/// the target lacked at the start, downloads against the listing), and a run that failed quietly is told beside the changes that wait.
+@MainActor
+struct SyncSessionProgressTests {
+    /// What the run closure saw of its own session's status, and the session (set once it exists).
+    final class Seen: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _movement: SyncStatus.Movement?
+        private var _session: SyncSession?
+        var movement: SyncStatus.Movement? { get { lock.withLock { _movement } } set { lock.withLock { _movement = newValue } } }
+        var session: SyncSession? { get { lock.withLock { _session } } set { lock.withLock { _session = newValue } } }
+    }
+
+    @Test func aRunShowsItsUploadsAgainstWhatWasWaiting() async {
+        let seen = Seen()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            var p = SyncProgress()
+            p.stage = .syncingNotes
+            p.uploaded = 120
+            request.progress?(p)
+            // The relay hands the newest value to the main actor; wait for it as the app's own runs do.
+            for _ in 0..<200 {
+                if await MainActor.run(body: { seen.session?.runProgress != nil }) { break }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            seen.movement = await MainActor.run { seen.session?.status.movement }
+            return SyncReport()
+        }, countUnconfirmed: { 340 })
+        seen.session = session
+        session.kind = .cloudkit
+        session.vaultUnlocked()
+        _ = await session.syncNow()    // the first run counts nothing yet: unconfirmed is read after a run
+        _ = await session.syncNow()    // the second starts knowing 340 files wait
+        #expect(seen.movement == .uploading(done: 120, of: 340))
+        #expect(session.runProgress == nil, "between runs there is nothing in flight")
+        session.stop()
+    }
+
+    @Test func movementNamesUploadsDownloadsAndNothingBetween() {
+        func status(_ p: SyncProgress?, syncing: Bool = true, total: Int = 0) -> SyncStatus {
+            SyncStatus(syncing: syncing, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: nil, cloudKit: true,
+                       progress: p, uploadTotal: total)
+        }
+        var up = SyncProgress(); up.uploaded = 5
+        #expect(status(up, total: 9).movement == .uploading(done: 5, of: 9))
+        #expect(status(up, total: 3).movement == .uploading(done: 5, of: nil), "more went up than waited: no total")
+        var down = SyncProgress(); down.filesDone = 2; down.filesTotal = 7
+        #expect(status(down).movement == .downloading(done: 2, of: 7))
+        #expect(status(SyncProgress()).movement == nil, "listing: nothing moved yet")
+        #expect(status(up, syncing: false).movement == nil, "no run, no movement")
+    }
+
+    @Test func aQuietFailureIsToldBesideTheChangesThatWait() {
+        let failure = SyncSession.QuietFailure(message: "network lost", at: Date())
+        let s = SyncStatus(syncing: false, problems: [], unconfirmed: 4, arriving: 0, twoWay: true, lastSuccess: nil, cloudKit: true,
+                           lastFailure: failure)
+        #expect(s.kind == .pending(4) && !s.needsAttention, "still not a bar-level problem (it may heal by itself)")
+        #expect(s.lastFailure == failure)
+    }
+}
+
+/// TestFlight 1.4.0 (117), k5, "both just waited on waiting screens": a join check must not wait for a long run going (a first upload).
+@MainActor
+struct SyncSessionJoinCheckTests {
+    @Test func aJoinCheckStopsALongRunAndRunsBounded() async throws {
+        let started = Sync.Counter(), bounds = Sync.Counter()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            let n = started.add(1)
+            if n == 1 {
+                // The first upload: runs until something stops it (the way the engine polls `isCancelled` between files).
+                for _ in 0..<2_000 where !request.cancels.contains(where: { $0.isSet }) { try await Task.sleep(for: .milliseconds(5)) }
+                guard request.cancels.contains(where: { $0.isSet }) else { Issue.record("never stopped"); return SyncReport() }
+            } else if request.maxDuration != nil { _ = bounds.add(1) }
+            return SyncReport()
+        }, countUnconfirmed: { 0 })
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where started.add(0) == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(session.isSyncing)
+        _ = await session.syncForJoinCheck(maxDuration: 30)
+        _ = await long.value
+        #expect(started.add(0) >= 2, "a second run was made")
+        #expect(bounds.add(0) == 1, "and it was bounded")
+        session.stop()
+    }
+}

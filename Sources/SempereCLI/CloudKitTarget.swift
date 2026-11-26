@@ -87,7 +87,7 @@ struct CloudKitList: ParsableCommand {
         abstract: "List the vaults the signed-in Apple Account's iCloud holds.",
         discussion: """
             One request for the zones and one for each vault's vault.json label; nothing is downloaded. A vault that is in \
-            this store already says so. --json: an array of {vaultId, zone, name, named, inStore, hasCloudKitTarget}. \
+            this store already says so. --json: an array of {vaultId, zone, name, named, inStore, hasCloudKitTarget, modified, hasVault}. \
             Exit codes: 0, 1 when CloudKit cannot be used here or the account cannot be reached.
             """
     )
@@ -102,6 +102,10 @@ struct CloudKitList: ParsableCommand {
         var named: Bool
         var inStore: Bool
         var hasCloudKitTarget: Bool
+        /// When the vault's `vault.json` was last saved in iCloud; null for a zone with no vault in it.
+        var modified: Date?
+        /// False for a zone that holds no readable vault (nothing to open; delete it with `cloudkit delete --force`).
+        var hasVault: Bool
     }
 
     func run() throws {
@@ -112,12 +116,16 @@ struct CloudKitList: ParsableCommand {
             let id = UUID(uuidString: v.vaultId)
             let here = id.flatMap { store.entry(id: $0) } != nil
             let target = id.map { store.targets.targets(of: $0).contains { $0.kind == .cloudkit } } ?? false
-            return Row(vaultId: v.vaultId, zone: v.zone, name: v.name, named: v.named, inStore: here, hasCloudKitTarget: target)
+            return Row(vaultId: v.vaultId, zone: v.zone, name: v.name, named: v.named, inStore: here, hasCloudKitTarget: target,
+                       modified: v.modified, hasVault: v.hasVault)
         }
         if output.json { return try output.emitJSON(rows) }
         if rows.isEmpty { return output.info("No vaults in this iCloud account") }
-        var table = [["ID", "NAME", "IN STORE"]]
-        for r in rows { table.append([r.vaultId, r.name, r.inStore ? (r.hasCloudKitTarget ? "synced" : "yes") : "no"]) }
+        var table = [["ID", "NAME", "IN STORE", "CHANGED"]]
+        for r in rows {
+            let changed = r.modified.map { RFC3339.string($0) } ?? (r.hasVault ? "-" : "no vault")
+            table.append([r.vaultId, r.name, r.inStore ? (r.hasCloudKitTarget ? "synced" : "yes") : "no", changed])
+        }
         print(Format.table(table))
         #else
         throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")

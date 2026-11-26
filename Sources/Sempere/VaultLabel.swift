@@ -105,4 +105,14 @@ extension Vault {
         m.label = wanted
         manifest = try Self.writeManifest(m, to: manifestURL, replacing: true)
     }
+
+    /// Gives a vault that has no display name `name` as its label (1.4: a vault in iCloud is listed by its label, and
+    /// vaults made before the app wrote one have none). Never replaces a label that is there. True when it was written;
+    /// false when the vault has a label, the name is empty after cleaning, or this device cannot write the vault
+    /// (read-only, locked): a name is nice to have, never worth an error.
+    @discardableResult
+    public mutating func setLabelIfMissing(_ name: String) -> Bool {
+        guard label == nil, VaultLabelText.cleanVaultLabel(name) != nil else { return false }
+        return (try? setLabel(name)) != nil && label != nil
+    }
 }

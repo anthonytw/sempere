@@ -60,9 +60,18 @@ extension AppModelCore {
         let folder = work.appendingPathComponent("vault.sempere", isDirectory: true)
         let state = work.appendingPathComponent("state", isDirectory: true).appendingPathComponent("sync-state.json")
         let entry: VaultStore.Entry
+        // The download shows how far it is (files of the listing), so a large vault does not sit at "0 of 0".
+        let relay = WebDAVProgressRelay { [weak self] p in
+            if case .downloading? = self?.vaultCopy?.stage { self?.vaultCopy?.stage = .downloading(done: p.filesDone, total: p.filesTotal) }
+        }
+        defer { relay.close() }
+        var downloadOptions = SyncOptions()
+        downloadOptions.progress = { relay.send($0) }
         do {
-            try await offMain { try CloudVaults.download(vaultId: id, store: store, into: folder, stateURL: state,
-                                                         expectedUser: account.userHash).requireComplete() }
+            try await offMain { [downloadOptions] in
+                try CloudVaults.download(vaultId: id, store: store, into: folder, stateURL: state, expectedUser: account.userHash,
+                                         options: downloadOptions).requireComplete()
+            }
             vaultCopy?.stage = .copying(done: 0, total: 0)
             entry = try await library.copyIn(folder, coordinated: false, files: services.files) { [weak self] done, total in
                 Task { @MainActor in self?.vaultCopy?.stage = .copying(done: done, total: total) }
@@ -77,6 +86,29 @@ extension AppModelCore {
         _ = try await addCloudKitTarget(to: entry.vaultId)
         try await openVault(at: entry.url)
         remember(in: library)
+    }
+
+    // MARK: The vault's name in iCloud
+
+    /// A vault in iCloud is listed by the `label` in its `vault.json` (`CloudVaults.list`, Open Vault ▸ From iCloud, `sempere
+    /// cloudkit list`); the app's own name for a vault is its folder name in the store. A vault with a CloudKit target and no
+    /// label (made before 1.4 wrote one, or by a build that did not) gets its store name as the label, once, while it is open
+    /// and unlocked here (the label is covered by no tag or signature, so any listed device may write it, format.md §2; folder
+    /// and WebDAV targets of the same vault, and 1.3 devices, take it as a label-only change). A label that is there is never
+    /// replaced. Best effort: a read-only or recovery-key open writes nothing. The CloudKit sessions run at once (`demandRun`),
+    /// so the name is in the zone within moments; `beforeTarget`: the target is about to be added (its first run carries the name).
+    func ensureICloudLabel(demandRun: Bool = true, beforeTarget: Bool = false) async {
+        guard let open = vault, phase == .unlocked, open.label == nil,
+              let entry = syncStore.entry(id: open.vaultId),
+              beforeTarget || syncStore.targets.targets(of: open.vaultId).contains(where: { $0.kind == .cloudkit }) else { return }
+        let lock = syncStore.writeLock(for: open.vaultId), name = entry.name
+        let written = try? await offMain { () -> Vault? in
+            var copy = open
+            return try lock.withLock(timeout: 10) { copy.setLabelIfMissing(name) ? copy : nil }
+        }
+        guard let next = written ?? nil else { return }
+        adoptLabeled(next)   // the open vault's manifest is the file's again (nothing reopens: only the label changed)
+        if demandRun { for session in syncCoordinator.sessions(of: next.vaultId) where session.kind == .cloudkit { session.demand() } }
     }
 
     // MARK: The suggestion on another device (design §8, step 3)
@@ -160,6 +192,50 @@ extension AppModelCore {
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
         try await removeSyncTarget(targetID, of: vaultID)
+    }
+
+    /// What deleting the iCloud vault `vaultId` (a row of Open Vault ▸ From iCloud) leaves behind, for the confirmation: whether the
+    /// store here holds a copy, and whether any copy besides iCloud's is kept (another target, or a backup).
+    public struct ICloudDeletionImpact: Equatable, Sendable {
+        /// This device's store holds the vault (a copy stays here).
+        public var copyHere: Bool
+        /// Another sync target or this vault's backup holds it too.
+        public var otherCopy: Bool
+        /// Nothing besides iCloud holds the vault: deleting loses it for good (unless another of the user's devices has it).
+        public var onlyICloud: Bool { !copyHere && !otherCopy }
+    }
+
+    public func iCloudDeletionImpact(_ vaultId: String, library: VaultLibrary) -> ICloudDeletionImpact {
+        guard let id = UUID(uuidString: vaultId) else { return ICloudDeletionImpact(copyHere: false, otherCopy: false) }
+        return ICloudDeletionImpact(copyHere: library.vaultStore.entry(id: id) != nil, otherCopy: hasCopyBesidesICloud(id))
+    }
+
+    /// "Delete from iCloud" for a vault the account's iCloud lists (Open Vault ▸ From iCloud, `sempere cloudkit delete`): deletes
+    /// the vault's zone with everything in it (every other device that syncs through it stops), and this device's iCloud targets of
+    /// the vault, if any. It needs no copy on this device, which is the point: a zone no device here has (a vault another device
+    /// made and removed, a half-made one) is listed and can be deleted only this way. A vault with no copy here and none besides
+    /// iCloud is deleted only when the caller says the user was told so (`acknowledgingNoOtherCopy`: the confirmation names it).
+    /// Targets made with another Apple Account are not removed (the zone deleted is the signed-in account's).
+    public func deleteICloudVault(_ vaultId: String, library: VaultLibrary, acknowledgingNoOtherCopy: Bool) async throws {
+        guard let cloud = services.cloudKit, cloud.isAvailable() else { throw CloudKitTargetProblem.unavailable }
+        guard let id = UUID(uuidString: vaultId) else { throw CloudKitTargetProblem.noSuchVault }
+        let zone = CloudTargetRun.zone(vaultId: id)
+        if iCloudDeletionImpact(vaultId, library: library).onlyICloud, !acknowledgingNoOtherCopy { throw CloudKitTargetProblem.noOtherCopy }
+        let user: String
+        do {
+            let account = try await offMain { try cloud.makeStore().account() }
+            guard account.status == .available else { throw CloudKitTargetProblem.account(account.status) }
+            user = account.userHash ?? ""
+            try await offMain { try cloud.makeStore().deleteZone(zone) }
+        } catch let e as CloudKitTargetProblem {
+            throw e
+        } catch {
+            throw CloudKitTargetProblem.other(services.describeError(error))
+        }
+        // The zone is gone: this device's targets for it (made with this account) go too; they would only report "iCloud data gone".
+        for target in syncStore.targets.targets(of: id) where target.kind == .cloudkit && (target.cloudUser == nil || target.cloudUser == user) {
+            try await removeSyncTarget(target.id, of: id)
+        }
     }
 
     /// True when the vault has a copy that is not CloudKit's: another target, or this vault's own backup folder (not the open

@@ -729,7 +729,8 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   `--recovery-key`, `--name`, `--vault-label`, `--recovery-passphrase`, …; [Vault](#vault)): this machine is its home. `NAME` is the folder name without `.sempere`: no
   slashes, backslashes, colons, leading dots, control characters or line breaks (U+2028 and U+2029 too), not
   ending in `.sempere`, at most 255 bytes with it (exit 2). It is the app's rule for a vault's name
-  (`VaultStore.folderName`), for `import --name` and `restore --name` too. Names need not be unique; ids are.
+  (`VaultStore.folderName`), for `import --name` and `restore --name` too. Names need not be unique; ids are. Unless `--vault-label`
+  is given, the vault's `label` (its display name in `vault.json`) is `NAME`: iCloud (CloudKit) lists a vault by its label.
 - `copy SOURCE NAME` makes a copy of a vault, a read-only one too, as a new vault of your own in the store (the app's
   File > Make a Copy…; [Make a Copy](io.md#make-a-copy-app-and-cli)). The new vault takes `create`'s options
   (`--recovery-out` or `--recovery-key` are required, even with `--dry-run`; `--name`, `--vault-label`,
@@ -3506,13 +3507,19 @@ on a device that lacks a target, and Delete from iCloud do (docs/design/1.4-clou
 signed `sempere` (as `store target add --cloudkit`); any other build says so and exits 1.
 `list` asks for the account's `sempere-<vault id>` zones and reads each vault's label from its `vault.json` record (an
 intact, inline record that is that vault's own; else the name is `Vault` and the first eight digits of the id): nothing is
-downloaded. Text: `ID  NAME  IN STORE` (`no`, `yes`, or `synced` when the vault here has an iCloud target). `--json`: an
-array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget}`. `open` takes a vault id or a unique prefix: it downloads the
+downloaded. Text: `ID  NAME  IN STORE  CHANGED` (`no`, `yes`, or `synced` when the vault here has an iCloud target; `CHANGED` is when the
+vault's `vault.json` was last saved in iCloud, which tells two vaults of one name apart, or `no vault` for a zone that holds none: an empty or
+half-made one that only `delete --force` clears). `--json`: an array of `{vaultId, zone, name, named, inStore, hasCloudKitTarget, modified, hasVault}`.
+The name is the vault's `label`: `store create` writes the store name as it (`--vault-label` overrides), and `store sync` gives a vault that
+has none (made before) its store name when it has an iCloud target and the run has the vault's key; a label that is there is never replaced
+(`sempere vault label` changes it, and the next sync takes it to iCloud). `open` takes a vault id or a unique prefix: it downloads the
 vault whole into a temporary folder (a keyless run, which uploads nothing), checks it as `store import` does, copies it into the
 store (`--name` or its label) and adds the iCloud target, whose first sync finds nothing to do; a vault the store holds already
 only gets the target (a label the store cannot use as a name, with `/` or `:`, is dropped: pass `--name`; a copy this command made is removed again if its target cannot be added). Join this device afterwards to read it (docs/cli.md "Keys"). `delete` removes the vault's zone from iCloud
 and the iCloud targets of that vault in this store (the zone first, so a failure leaves the targets in place), nothing else: refused (exit 1) when
-the vault here has no other target, and when the vault is not in this store at all, unless `--force`, and always when an iCloud target of it here was made with another Apple Account than the one signed in (as the app's Delete from iCloud); without `--yes` it deletes nothing (exit 2). VAULT is
+the vault here has no other target, and when the vault is not in this store at all, unless `--force` (the way to delete a zone that `list` shows and no
+store here holds: a vault another device made and removed, an empty `no vault` zone; the app's Open Vault ▸ From iCloud does the same with a swipe or a context
+menu and a confirmation that says when no copy is left), and always when an iCloud target of it here was made with another Apple Account than the one signed in (as the app's Delete from iCloud); without `--yes` it deletes nothing (exit 2). VAULT is
 at least the first eight hex digits of the id (`list`); a shorter or non-hex argument is exit 2. Other devices' iCloud targets then report that the vault's iCloud
 data is gone (Upload Again puts it back). Recovery from "zone gone" or "another Apple Account" is `store target remove` then
 `store target add --cloudkit`. `store info` shows an iCloud target's files and bytes at its last run.

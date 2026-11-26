@@ -14,6 +14,9 @@
 #   token       a run with nothing to do moves nothing, and the mirror is kept on disk between processes
 #   zone        the zone is deleted under B: the run says so and keeps B's notes; removing and adding the target uploads again
 #   cloudkit    `cloudkit list` names the vault; `cloudkit delete` refuses a target made with another Apple Account, then deletes the zone
+#   named       a vault is listed by its store name (store create writes the label; a vault with none gets it at its first sync), a
+#               second device opens it from iCloud (`cloudkit open`, not a seed copy) and joins it, and a vault no store here holds
+#               (an orphan zone) is deleted with --force only
 # No scenario needs a push. A failed check prints `FAIL`, the logs stay in WORKDIR, and the exit status is 1.
 set -uo pipefail
 work=${1:?WORKDIR}
@@ -180,6 +183,54 @@ check "the zone is still there" bash -c '"$0" zones | grep -qx "$1"' "$CKL" "$zo
 a cloudkit delete "${id:0:8}" --yes --force --store "$work/storeA" >"$work/a-delete.log" 2>&1 && ok "delete with the account the target was made with" \
   || { bad "cloudkit delete on A"; tail -3 "$work/a-delete.log"; }
 check "the zone is gone" bash -c '! "$0" zones | grep -qx "$1"' "$CKL" "$zone"
+
+# --- named --------------------------------------------------------------------------------------------------------------------
+# TestFlight 1.4.0 (117), k2 and k5: every vault was listed as "Vault <hex>", orphan zones could not be deleted, and joining from a second
+# device that had opened the vault from iCloud seemed broken.
+echo "run named"
+zone=""
+name="cloudkit-live-test Named"
+sa create "$name" --recovery-out "$work/recovery-n.key" >/dev/null || { bad "store create (named)"; exit 1; }
+VN=$(ls -d "$work"/storeA/*/"$name.sempere")
+idn=$(basename "$(dirname "$VN")")
+zone=sempere-$(echo "$idn" | tr 'A-Z' 'a-z')
+check "store create wrote the name as the vault's label" test "$(a vault label --vault "$VN" 2>/dev/null)" = "$name"
+a vault label --clear --vault "$VN" >/dev/null || bad "vault label --clear"
+check "(a vault made before labels has none)" test -z "$(a vault label --vault "$VN" 2>/dev/null)"
+a notes new "Named note" --vault "$VN" >/dev/null
+sa target add "$name" --cloudkit >/dev/null || { bad "target add (named)"; exit 1; }
+sa sync "$name" >"$work/a-named-1.log" 2>&1 && ok "A's first sync of the vault with no label" || { bad "A's first sync (named)"; cat "$work/a-named-1.log"; }
+check "the first sync wrote the store name as its label" test "$(a vault label --vault "$VN" 2>/dev/null)" = "$name"
+a cloudkit list --json --store "$work/storeA" >"$work/list-named.json" 2>&1
+check "cloudkit list shows the name, not Vault <hex>" python3 - "$work/list-named.json" "$idn" "$name" <<'PY'
+import json, sys
+rows = json.load(open(sys.argv[1]))
+row = next(r for r in rows if r["vaultId"].lower() == sys.argv[2].lower())
+sys.exit(0 if row["name"] == sys.argv[3] and row["named"] and row.get("hasVault", True) else 1)
+PY
+# B opens it from iCloud (the app's Open Vault > From iCloud), then joins as the app does.
+b cloudkit open "${idn:0:8}" --store "$work/storeB" >"$work/b-open.log" 2>&1 && ok "B opens the vault from iCloud" || { bad "cloudkit open"; cat "$work/b-open.log"; }
+VB2=$(ls -d "$work"/storeB/*/"$name.sempere" 2>/dev/null | head -1)
+[[ -n $VB2 ]] || { bad "the opened copy is in B's store under its label"; exit 1; }
+b device init --vault "$VB2" --name "Device B2" --json >"$work/b2-init.json" 2>"$work/b2-init.err" || { bad "device init (opened copy)"; cat "$work/b2-init.err"; exit 1; }
+words_b2=$(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["words"]))' "$work/b2-init.json")
+sb sync "$name" >"$work/b2-sync-0.log" 2>&1 && ok "B's join run (uploads its request)" || { bad "B's join run"; cat "$work/b2-sync-0.log"; }
+sa sync "$name" >"$work/a-named-2.log" 2>&1 && ok "A's sync (receives the request)" || { bad "A's second sync (named)"; cat "$work/a-named-2.log"; }
+# shellcheck disable=SC2086
+a devices approve $words_b2 --vault "$VN" --json >"$work/a-approve2.json" 2>"$work/a-approve2.err" || { bad "approve (opened copy)"; cat "$work/a-approve2.err"; exit 1; }
+words_a2=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join(d.get("reply") or []))' "$work/a-approve2.json")
+sa sync "$name" >/dev/null 2>&1 || bad "A's sync after the approval"
+sb sync "$name" >"$work/b2-sync-1.log" 2>&1 && ok "B's run takes the approval" || { bad "B's second run"; cat "$work/b2-sync-1.log"; }
+# shellcheck disable=SC2086
+b device confirm $words_a2 --vault "$VB2" >"$work/b2-confirm.log" 2>&1 && ok "B confirms: the copy opened from iCloud joined" || { bad "device confirm (opened copy)"; cat "$work/b2-confirm.log"; }
+# A zone no store here holds: refused without --force, deleted with it.
+mkdir -p "$work/storeC"
+a cloudkit delete "${idn:0:8}" --yes --store "$work/storeC" >"$work/c-delete.log" 2>&1; st=$?
+check "delete of a vault no store here holds is refused without --force" test "$st" != 0
+check "the zone is still there" bash -c '"$0" zones | grep -qx "$1"' "$CKL" "$zone"
+a cloudkit delete "${idn:0:8}" --yes --force --store "$work/storeC" >"$work/c-delete2.log" 2>&1 && ok "delete --force of an orphan zone" || { bad "orphan delete"; cat "$work/c-delete2.log"; }
+check "the zone is gone" bash -c '! "$0" zones | grep -qx "$1"' "$CKL" "$zone"
+zone=""
 
 [[ $fail == 0 ]] && echo "cli scenarios: all passed" || echo "cli scenarios: FAILED (logs in $work)"
 exit $fail

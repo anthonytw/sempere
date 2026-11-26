@@ -251,9 +251,14 @@ struct StoreSync: ParsableCommand {
         // Every option of a hand-made OptionGroup is set: reading an unset one traps.
         access.recoveryKey = nil
         access.root = nil
-        let vault = try access.openVaultForSync()
+        var vault = try access.openVaultForSync()
         let lease = try store.lease(entry.vaultId)
         defer { lease.release() }
+        // An iCloud (CloudKit) vault is listed by its label (`sempere cloudkit list`, Open Vault ▸ From iCloud): a vault with
+        // none (made before the label was written) gets its store name, when this run has the key to write it. Never replaced.
+        if chosen.contains(where: { $0.kind == .cloudkit }) {
+            try store.writeLock(for: entry.vaultId).withLock { _ = vault.setLabelIfMissing(entry.name) }
+        }
 
         var base = SyncOptions()
         base.deviceID = vault.writerDevice ?? SyncCLI.deviceID()

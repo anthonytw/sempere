@@ -192,7 +192,8 @@ extension AppModelCore {
             try? FileManager.default.removeItem(at: url.appendingPathComponent("joins").appendingPathComponent(previous))
         }
         setJoinRequested(keys, vaultID: locked.vaultId)
-        syncSessions.forEach { $0.demand() }
+        // A run going (staging a large iCloud vault's files, say) is stopped: the request goes out now, not after it.
+        syncSessions.forEach { $0.interruptRun(); $0.demand() }
         let codes = Self.joinCodes(keys, vaultId: locked.vaultId, kind: kind)
         return .waiting(words: codes.words, qr: codes.qr)
     }
@@ -395,7 +396,7 @@ extension AppModelCore {
     /// seen, and typed words matched only what the copy held then): every target of the open vault is synced now,
     /// then the copy's `joins/` is read.
     public func lookForJoinRequests() async -> JoinRequestLookout {
-        await syncAllTargetsNow()
+        await syncAllTargetsForJoinCheck()
         let requests = await pendingJoinRequests()
         return JoinRequestLookout(requests: requests, arriving: joinRequestArriving, checked: Date())
     }
@@ -443,7 +444,7 @@ extension AppModelCore {
         guard proceed() else { throw CancellationError() }
         let synced = found == nil && !syncSessions.isEmpty
         if synced {
-            await syncAllTargetsNow()
+            await syncAllTargetsForJoinCheck()
             guard proceed() else { throw CancellationError() }
             guard let again = vault, phase == .unlocked, again.vaultId == first.vaultId else { throw KeyError.notUnlocked }
             // The run may have taken a vault.json that makes this device read-only or not home (review of #117, N1).

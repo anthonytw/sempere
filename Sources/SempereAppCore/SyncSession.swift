@@ -44,6 +44,9 @@ public struct SyncRunRequest: Sendable {
     /// Attachment blobs too large for this target's recent windows (`SyncOptions.largeBlobs`, offline audit P3):
     /// `.now` for a background processing task and for Sync Now (time to send them), else `.auto`.
     var largeBlobs = LargeBlobPolicy.auto
+    /// Told how far the run is (`SyncOptions.progress`, on the sync's threads): the session shows it in the status while the run
+    /// goes (`SyncSession.runProgress`).
+    var progress: (@Sendable (SyncProgress) -> Void)?
 
     init(mode: SyncRunMode, maxDuration: TimeInterval? = nil, stage: Bool = false, cancels: [SyncRunCancel] = [],
                 interactive: Bool = false, networkReturned: Date? = nil, largeBlobs: LargeBlobPolicy = .auto) {
@@ -60,6 +63,7 @@ public struct SyncRunRequest: Sendable {
     func apply(to options: inout SyncOptions) {
         SyncBounds(maxDuration: maxDuration).apply(to: &options)
         options.largeBlobs = largeBlobs
+        if let progress { options.progress = progress }
         if let networkReturned { options.networkReturned = networkReturned }
         let cancels = self.cancels
         if !cancels.isEmpty { options.isCancelled = { cancels.contains { $0.isSet } } }
@@ -126,6 +130,11 @@ public final class SyncSession {
         get { cloudTrackerStore ?? CloudStatusTracker(lastSuccess: lastSuccess, added: neverSyncedSince) }
         set { cloudTrackerStore = newValue }
     }
+    /// How far the run that is going has got (uploads, downloads; nil between runs): the status line says it, so a first upload
+    /// of a large vault is seen to move.
+    public private(set) var runProgress: SyncProgress?
+    /// The files the target had not confirmed when the run started: the "of M" of an upload (a first upload has no other total).
+    @ObservationIgnored private var runUploadTotal = 0
     /// Files of the local copy the target has not confirmed (recounted after each run and write).
     private(set) var unconfirmed = 0
     /// When a run last finished without problems.
@@ -233,6 +242,8 @@ public final class SyncSession {
     /// The loop's sleep going now; cancelling it wakes the loop (`wake`).
     @ObservationIgnored private var sleeper: Task<Void, Never>?
     @ObservationIgnored private var running: Task<SyncReport?, Never>?
+    /// The cancel flag of the run going (`interruptRun`).
+    @ObservationIgnored private var runCancel: SyncRunCancel?
     /// The run going now, if any (the copy must not be replaced or removed until it has ended).
     var currentRun: Task<SyncReport?, Never>? { running }
 
@@ -357,6 +368,23 @@ public final class SyncSession {
         return await runOnce(interactive: true)
     }
 
+    /// Stops the run going between files (it ends as a run cut short after it moved files: progress, no problem, and the next run
+    /// continues). Nothing when no run goes.
+    func interruptRun() { runCancel?.cancel() }
+
+    /// A run for a join check (Add Device looking for a request, approving): a request is picked up early in a run and the approval is
+    /// sent early in the next, so a long run already going (a first upload of a large vault, hours at worst) would keep both devices
+    /// on their waiting screens (TestFlight 1.4.0 (117), k5). That run is stopped between files, and this one is bounded; the
+    /// loop continues the rest afterwards (`demand`).
+    @discardableResult
+    func syncForJoinCheck(maxDuration: TimeInterval = 60) async -> SyncReport? {
+        interruptRun()
+        while let running { _ = await running.value }
+        let report = await runOnce(maxDuration: maxDuration, interactive: true)
+        demand()
+        return report
+    }
+
     /// One run for a background task (`SyncCoordinator`): bounded by `maxDuration`, stopped between files when
     /// `cancel` is set. A session whose run is already going is skipped, never waited for: that run may be a
     /// foreground one without a bound (review of #74, B2; the task's expiry stops it through the app-wide flag).
@@ -394,7 +422,9 @@ public final class SyncSession {
                          full: Bool = false) async -> SyncReport? {
         if let running { return await running.value }
         let mode: SyncRunMode = twoWay ? .twoWay : .uploadOnly
-        var request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, appCancel()].compactMap { $0 })
+        let own = SyncRunCancel()
+        runCancel = own
+        var request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, own, appCancel()].compactMap { $0 })
         request.interactive = interactive
         request.largeBlobs = interactive || full ? .now : .auto
         request.networkReturned = networkReturnedAt
@@ -409,7 +439,14 @@ public final class SyncSession {
             isSyncing = true
             runsStarted += 1
             schedule.started(at: now())
+            runUploadTotal = unconfirmed
+            let relay = WebDAVProgressRelay { [weak self] in self?.runProgress = $0 }
+            var request = request
+            request.progress = { relay.send($0) }
             defer {
+                relay.close()
+                runProgress = nil
+                if runCancel === own { runCancel = nil }
                 if mode == .twoWay { afterTwoWayRun() }
                 isSyncing = false
                 running = nil   // cleared by the run itself, so a waiter never takes a finished run for a current one
@@ -574,7 +611,8 @@ public final class SyncSession {
                    twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
                    staged: staged, networkDown: networkDown && kind.usesNetwork, continuing: continuing,
                    providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError,
-                   targetName: targetName, added: neverSyncedSince, now: now(), cloudKit: kind == .cloudkit)
+                   targetName: targetName, added: neverSyncedSince, now: now(), cloudKit: kind == .cloudkit,
+                   progress: runProgress, uploadTotal: runUploadTotal, lastFailure: quietFailure)
     }
 
     /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
@@ -636,6 +674,12 @@ public struct SyncStatus: Equatable, Sendable {
     var added: Date?
     /// The time the status was taken (the session's clock): `unreachableDays` counts to it.
     var now: Date
+    /// How far the run that is going has got, and the files the target lacked when it started (`SyncSession.runProgress`).
+    public var progress: SyncProgress?
+    public var uploadTotal = 0
+    /// A failure of the last run that the status does not call a problem (an iCloud run that may heal by itself): shown beside
+    /// "N changes not synced yet", so a stalled first upload is not silent.
+    public var lastFailure: SyncSession.QuietFailure?
 
     /// How long a target may stay unreachable before it needs attention (`unreachableDays`): offline for an hour is
     /// normal, for a week the user should look (a server gone, a renamed host, a share never mounted again).
@@ -645,7 +689,11 @@ public struct SyncStatus: Equatable, Sendable {
                 folder: Bool = false, deviceLocked: Bool = false, staged: Int = 0, networkDown: Bool = false,
                 continuing: Bool = false, providerPending: Int = 0, viaICloud: Bool = false,
                 providerError: ProviderUploads.State? = nil, targetName: String = "", added: Date? = nil,
-                now: Date = Date(), cloudKit: Bool = false) {
+                now: Date = Date(), cloudKit: Bool = false, progress: SyncProgress? = nil, uploadTotal: Int = 0,
+                lastFailure: SyncSession.QuietFailure? = nil) {
+        self.progress = progress
+        self.uploadTotal = uploadTotal
+        self.lastFailure = lastFailure
         self.cloudKit = cloudKit
         self.syncing = syncing
         self.problems = problems
@@ -672,6 +720,21 @@ public struct SyncStatus: Equatable, Sendable {
     public var kind: Kind {
         if syncing { return .syncing }
         return settledKind
+    }
+
+    /// What the run that is going is moving, for the status line ("Uploading 120 of 340 files…"); nil when it has moved nothing
+    /// yet (listing, comparing) or no run goes. Uploads count against the files the target lacked at the start (a first upload
+    /// has no other total; more than that, because notes were written meanwhile, shows no total).
+    public enum Movement: Equatable, Sendable {
+        case uploading(done: Int, of: Int?)
+        case downloading(done: Int, of: Int)
+    }
+
+    public var movement: Movement? {
+        guard syncing, let p = progress else { return nil }
+        if p.uploaded > 0 { return .uploading(done: p.uploaded, of: uploadTotal >= p.uploaded ? uploadTotal : nil) }
+        if p.filesTotal > 0, p.filesDone < p.filesTotal { return .downloading(done: p.filesDone, of: p.filesTotal) }
+        return nil
     }
 
     /// What the status is apart from a run going: a problem the last run (or the provider) reported stays while the next

@@ -24,6 +24,18 @@ extension SyncStatus {
     private func headline(for kind: Kind) -> String {
         switch kind {
         case .syncing:
+            switch movement {
+            case .uploading(let done, let total?)?:
+                return String(localized: "Uploading \(done) of \(total) files to \(destination)…",
+                              comment: "Sync status while a run goes: %1$lld files done, %2$lld in all, %3$@ where to (iCloud, the folder, the server)")
+            case .uploading(let done, nil)?:
+                return String(localized: "Uploading \(done) files to \(destination)…",
+                              comment: "Sync status while a run goes: a count of files done, %2$@ where to (iCloud, the folder, the server)")
+            case .downloading(let done, let total)?:
+                return String(localized: "Downloading \(done) of \(total) files from \(destination)…",
+                              comment: "Sync status while a run goes: %1$lld files done, %2$lld in all, %3$@ where from (iCloud, the folder, the server)")
+            case nil: break
+            }
             if cloudKit { return String(localized: "Syncing with iCloud…", comment: "Sync status of an iCloud (CloudKit) target while a run goes") }
             return folder ? String(localized: "Syncing with the folder…") : String(localized: "Syncing with the server…")
         case .offline:
@@ -39,7 +51,13 @@ extension SyncStatus {
                          comment: "Sync status; the number is a count of files")
                 : String(localized: "Offline. Changes are kept on this device and sync when the server can be reached.")
         case .pending(let n):
-            return String(localized: "\(n) changes not synced yet", comment: "Sync status; the number is a count of files")
+            let pending = String(localized: "\(n) changes not synced yet", comment: "Sync status; the number is a count of files")
+            // An iCloud run that failed without being a problem yet (it may heal by itself) says so here, so a first upload
+            // that is not getting through is not silent: the last attempt's words and when (Vault Details has them too).
+            guard let failure = lastFailure else { return pending }
+            let when = failure.at.formatted(.relative(presentation: .named))
+            return pending + " " + String(localized: "The last attempt (\(when)) failed: \(failure.message)",
+                                          comment: "Sync status after a failed run; %1$@ is when, %2$@ the error message (English)")
         case .continuing:
             return String(localized: "Part of the changes synced. The rest follows at the next sync.",
                           comment: "Sync status: a run stopped early after it moved files")
@@ -75,6 +93,13 @@ extension SyncStatus {
                 ? String(localized: "Synced. \(arriving) files are still on their way.", comment: "Sync status; a count of files")
                 : (folder ? String(localized: "Synced with the folder") : String(localized: "Synced with the server"))
         }
+    }
+
+    /// Where the run's files go to or come from, in the line of a run that moves some.
+    private var destination: String {
+        cloudKit ? String(localized: "iCloud", comment: "Sync status: the iCloud (CloudKit) target, after “to” or “from”")
+            : folder ? String(localized: "the folder", comment: "Sync status: a folder target, after “to” or “from”")
+            : String(localized: "the server", comment: "Sync status: a WebDAV target, after “to” or “from”")
     }
 
     /// What to do about a problem.

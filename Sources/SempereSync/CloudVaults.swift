@@ -21,11 +21,30 @@ public struct CloudVaultListing: Codable, Hashable, Sendable, Identifiable {
     public var name: String
     /// True when the name is the vault's own label.
     public var named: Bool
+    /// When the zone's `vault.json` was last saved (a device added or renamed, a label written): what tells two vaults of one
+    /// name, or two unnamed ones, apart. Nil when that record could not be read (a zone with no vault in it).
+    public var modified: Date?
+    /// False when the zone holds no readable `vault.json` of its own: an empty or half-made zone, which only Delete from
+    /// iCloud can clear (nothing can be opened from it).
+    public var hasVault: Bool
 
     public var id: String { vaultId }
 
-    public init(vaultId: String, zone: String, name: String, named: Bool) {
+    public init(vaultId: String, zone: String, name: String, named: Bool, modified: Date? = nil, hasVault: Bool = true) {
         self.vaultId = vaultId; self.zone = zone; self.name = name; self.named = named
+        self.modified = modified; self.hasVault = hasVault
+    }
+
+    private enum CodingKeys: String, CodingKey { case vaultId, zone, name, named, modified, hasVault }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        vaultId = try c.decode(String.self, forKey: .vaultId)
+        zone = try c.decode(String.self, forKey: .zone)
+        name = try c.decode(String.self, forKey: .name)
+        named = try c.decode(Bool.self, forKey: .named)
+        modified = try c.decodeIfPresent(Date.self, forKey: .modified)
+        hasVault = try c.decodeIfPresent(Bool.self, forKey: .hasVault) ?? true
     }
 }
 
@@ -55,22 +74,28 @@ public enum CloudVaults {
         var out: [CloudVaultListing] = []
         for zone in try store.zones().sorted().prefix(maxZones) {
             guard let id = vaultId(ofZone: zone) else { continue }
-            let label = (try? label(store: store, zone: zone, vaultId: id)) ?? nil
-            let shown = label.map(display) ?? ""
-            out.append(CloudVaultListing(vaultId: id, zone: zone, name: shown.isEmpty ? "Vault " + id.prefix(8) : shown, named: !shown.isEmpty))
+            let found = (try? manifestRecord(store: store, zone: zone, vaultId: id)) ?? nil
+            let shown = found.flatMap { VaultLabelText.peekLabel($0.bytes) }.map(display) ?? ""
+            out.append(CloudVaultListing(vaultId: id, zone: zone, name: shown.isEmpty ? "Vault " + id.prefix(8) : shown,
+                                         named: !shown.isEmpty, modified: found?.modified, hasVault: found != nil))
         }
         return out.sorted { ($0.name.lowercased(), $0.vaultId) < ($1.name.lowercased(), $1.vaultId) }
     }
 
     /// The label in the zone's `vault.json` record, when that record is inline, intact and the vault's own.
     static func label(store: any CloudRecordStore, zone: String, vaultId: String) throws -> String? {
+        try manifestRecord(store: store, zone: zone, vaultId: vaultId).flatMap { VaultLabelText.peekLabel($0.bytes) }
+    }
+
+    /// The zone's `vault.json`: its bytes and when it was saved, when that record is inline, intact and the vault's own.
+    static func manifestRecord(store: any CloudRecordStore, zone: String, vaultId: String) throws -> (bytes: Data, modified: Date?)? {
         let name = CloudRecordNaming.fileName([Vault.manifestName])
         guard let r = try store.fetch(zone: zone, name: name, payload: true), r.kind == .file, (r.fields.tomb ?? 0) == 0,
               r.fields.path == Vault.manifestName, (r.fields.schema ?? 0) == CloudSchema.current,
               let bytes = r.fields.bytes, bytes.count <= BoundedRead.maxManifestBytes,
               r.fields.sha256 == Data(SHA256.hash(data: bytes)),
               SyncEngine.manifestFields(bytes)?.vaultId == vaultId else { return nil }
-        return VaultLabelText.peekLabel(bytes)
+        return (bytes, r.modified)
     }
 
     /// What the zone held at the target's last run: live files and their bytes, from the metadata mirror in the state
