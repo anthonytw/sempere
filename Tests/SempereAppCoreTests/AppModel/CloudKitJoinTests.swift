@@ -76,6 +76,26 @@ extension AppModelSuites {
             #expect(await TS.waitUntil(timeout: .seconds(30)) { !PartialCopy.isPartial(url) }, "the copy is complete")
         }
 
+        /// Review of batch/120, finding 5: the copy made by Open from iCloud is removed when the iCloud target cannot be added (the account
+        /// changed between the download and the add): a partial vault with no target could never fill.
+        @Test func aFailedTargetLeavesNoPartialCopyInTheStore() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let db = MemoryCloudDatabase()
+            // account() calls: the open's, the download's and the first target check are 1-3; the target's add is the 4th and finds no account.
+            let flipping = FlippingAccountStore(db, availableCalls: 3)
+            let home = Self.device(db, trust: false), phone = Self.device(db, trust: true, store: flipping)
+            defer { home.model.close(); phone.model.close() }
+            try await CloudKitTargetTests.opened(home, vault: vault, key: key)
+            _ = try await home.model.addCloudKitTarget(to: home.vaultID)
+            await home.model.syncAllTargetsNow()
+            let id = try #require(UUID(uuidString: home.vaultID.uuidString))
+            await #expect(throws: (any Error).self) { try await phone.model.openCloudKitVault(id.uuidString.lowercased(), library: phone.library) }
+            #expect(phone.library.vaultStore.entry(id: id) == nil, "no partial copy is left")
+            #expect(phone.library.vaultStore.list().isEmpty)
+            #expect(phone.model.vaultCopy == nil)
+        }
+
         @Test func aDeviceOpensAVaultFromICloudAndJoinsIt() async throws {
             let (vault, keyURL) = try await ModelFixture.vault()
             let key = try await ModelFixture.keyText(keyURL)
@@ -169,6 +189,32 @@ final class SlowCloudStore: CloudRecordStore, @unchecked Sendable {
             lock.withLock { _noteSaves += notes }
         }
         return try base.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic)
+    }
+}
+
+/// A store whose account is available for the first `availableCalls` calls of `account()`, and signed out after (an account change).
+final class FlippingAccountStore: CloudRecordStore, @unchecked Sendable {
+    let base: MemoryCloudDatabase
+    private let lock = NSLock()
+    private var calls = 0
+    let availableCalls: Int
+    init(_ base: MemoryCloudDatabase, availableCalls: Int) { self.base = base; self.availableCalls = availableCalls }
+
+    func account() throws -> CloudAccount {
+        let n = lock.withLock { () -> Int in calls += 1; return calls }
+        return n <= availableCalls ? try base.account() : CloudAccount(status: .noAccount)
+    }
+    func createZone(_ zone: String) throws { try base.createZone(zone) }
+    func deleteZone(_ zone: String) throws { try base.deleteZone(zone) }
+    func zones() throws -> [String] { try base.zones() }
+    func fetchDatabaseChanges(since token: CloudChangeToken?) throws -> CloudDatabaseChanges { try base.fetchDatabaseChanges(since: token) }
+    func fetchChanges(zone: String, since token: CloudChangeToken?) throws -> CloudZoneChanges { try base.fetchChanges(zone: zone, since: token) }
+    func fetch(zone: String, name: String, payload: Bool) throws -> CloudRecord? { try base.fetch(zone: zone, name: name, payload: payload) }
+    func readAsset(zone: String, name: String, maxBytes: Int64, chunk: (Data) throws -> Void) throws {
+        try base.readAsset(zone: zone, name: name, maxBytes: maxBytes, chunk: chunk)
+    }
+    func modify(zone: String, saves: [CloudSave], deletes: [String], atomic: Bool) throws -> CloudModifyResult {
+        try base.modify(zone: zone, saves: saves, deletes: deletes, atomic: atomic)
     }
 }
 

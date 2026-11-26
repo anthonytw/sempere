@@ -81,7 +81,14 @@ extension AppModelCore {
         } catch {
             throw CloudKitTargetProblem.other(services.describeError(error))
         }
-        _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state, seedUser: account.userHash)   // `work` is removed when this returns
+        do {
+            _ = try await addCloudKitTarget(to: entry.vaultId, seedState: state, seedUser: account.userHash)   // `work` is removed when this returns
+        } catch {
+            // A partial copy with no iCloud target could never fill (the account changed since the download, or the target could not be
+            // stored): the copy goes, as the CLI's `cloudkit open` removes its own (`CloudKitOpen`).
+            try? library.vaultStore.remove(entry.vaultId)
+            throw error
+        }
         try await openVault(at: entry.url)
         remember(in: library)
     }
