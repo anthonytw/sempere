@@ -338,3 +338,16 @@ public enum VoiceNoteInsightsTiming: String, CaseIterable, Sendable {
 
     public func save(to defaults: any KeyValueStore) { defaults.set(rawValue, forKey: Self.key) }
 }
+
+/// "Process insights on battery" (Settings, per device, not synced): with it on (the default) the foreground processes
+/// notes while the app is in use on battery too, with enough charge and a cool device (`InsightsPowerGate`). Off keeps
+/// the foreground to charging, as before. Voice notes (`VoiceNoteInsightsTiming`) and "Process Now" have their own say.
+public enum InsightsOnBattery {
+    public static let key = "Sempere.insightsOnBattery"
+    public static let defaultValue = true
+
+    /// The stored choice, `defaultValue` when never set.
+    public static func isEnabled(_ defaults: any KeyValueStore) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? defaultValue
+    }
+}

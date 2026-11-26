@@ -67,6 +67,33 @@ enum InsightsText {
         }
     }
 
+    /// Why the last pass on this device stopped (`InsightsStopReason`), under "Process Now": a reason and what to do,
+    /// never the internals.
+    static func stop(_ r: InsightsStopReason) -> String {
+        switch r {
+        case .backgrounded(let resumes):
+            return resumes
+                ? String(localized: "Paused when the app left the screen or the phone locked. It picks up when you return.",
+                         comment: "Note Insights: why a Process Now pass stopped")
+                : String(localized: "Paused when the app left the screen or the phone locked. Processing continues while you use the app.",
+                         comment: "Note Insights: why an automatic pass stopped")
+        case .powerWindowClosed:
+            return String(localized: "Paused because the battery is low, Low Power Mode is on or the device is warm. Automatic processing continues when that passes, or tap Process Now.",
+                          comment: "Note Insights: why an automatic pass stopped")
+        case .modelUnavailable:
+            return String(localized: "Apple Intelligence is not available or not ready on this device, so summaries cannot be made.",
+                          comment: "Note Insights: why a pass stopped")
+        case .failed:
+            return String(localized: "Stopped after an error. Process Now tries again.", comment: "Note Insights: why a pass stopped")
+        case .vaultLocked:
+            return String(localized: "Stopped when the vault was locked. Unlock it and tap Process Now.", comment: "Note Insights: why a pass stopped")
+        case .superseded:
+            return String(localized: "Paused while a topic summary was made. Processing continues by itself.", comment: "Note Insights: why a pass stopped")
+        case .finished:
+            return String(localized: "Finished. Everything this device can process is done.", comment: "Note Insights: why a pass stopped")
+        }
+    }
+
     /// How this device stands to the shared map (`MapCompatibility.rawValue`).
     static func compatibility(_ raw: String) -> String {
         switch MapCompatibility(rawValue: raw) {
@@ -175,6 +202,8 @@ struct AppleIntelligenceHelpSheet: View {
 struct InsightsSettingsSection: View {
     @AppModelEnvironment private var model
     @State private var confirmingOff = false
+    /// "Process Insights on Battery" (`InsightsOnBattery`, this device's, not synced).
+    @AppStorage(InsightsOnBattery.key) private var onBattery = InsightsOnBattery.defaultValue
     @State private var titleFormat = ""
     @State private var pinMove: InsightsSettingsWrite.PinMove?
     /// The language chosen in the picker while its confirmation shows ("" is Same as Note); nil: none waiting.
@@ -183,6 +212,16 @@ struct InsightsSettingsSection: View {
     private var state: InsightsModelState { model.insights }
     private var on: Bool { state.mode == .on }
     private var writable: Bool { model.phase == .unlocked && !model.isVaultReadOnly }
+
+    /// Whether the stop reason adds to what the screen already says: a pass that made nothing explains itself
+    /// (`passOutcome`), and a failure shows its error.
+    private func shows(_ stop: InsightsStopReason) -> Bool {
+        switch stop {
+        case .finished: return state.passOutcome == nil
+        case .modelUnavailable: return false   // `modelReason` and `passOutcome` say it, with the way to turn it on
+        default: return true
+        }
+    }
 
     var body: some View {
         Section {
@@ -245,6 +284,11 @@ struct InsightsSettingsSection: View {
             }
             if state.isWorking {
                 Label("Processing notes on this device…", systemImage: "gearshape.2").foregroundStyle(.secondary)
+                if state.isProcessingNow {
+                    Text("The screen stays on until processing finishes.", comment: "Note Insights: Process Now keeps the screen awake")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("insights.screenStaysOn")
+                }
             } else if model.insightsBusy {
                 Label("Making a topic summary…", systemImage: "text.quote").foregroundStyle(.secondary)
             }
@@ -260,7 +304,16 @@ struct InsightsSettingsSection: View {
                 // Said beside the button and the counts: this device adds related notes and the map at most.
                 Text(InsightsText.modelReason(state.capability.model)).font(.footnote).foregroundStyle(.secondary)
             }
+            if let stop = state.lastStop, !model.insightsBusy, !state.isWorking, shows(stop) {
+                Text(InsightsText.stop(stop)).font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("insights.stopReason")
+            }
             if case .modelUnavailable? = state.passOutcome { AppleIntelligenceHelpButton(availability: state.capability.model) }
+            Toggle("Process Insights on Battery", isOn: $onBattery)
+                .accessibilityIdentifier("insights.onBattery")
+            Text("While Sempere is open, notes are also processed when unplugged, with at least 30% battery and a cool device. Off: only while charging.",
+                 comment: "Note Insights: the on-battery switch's explanation")
+                .font(.footnote).foregroundStyle(.secondary)
             NavigationLink {
                 InsightsMapScreen { model.selectedNoteID = $0 }
             } label: {
