@@ -344,7 +344,7 @@ extension AppModelCore {
     /// (`restartDelay`) while Add Device shows. The browser, if any, is not touched.
     func nearbyListenerFailed() {
         guard nearby.advertisement != nil else { return }
-        let problem = nearbyTransport?.linkProblem ?? .other
+        let problem = nearbyTransport?.advertisingProblem ?? .other
         stopAdvertising()
         if nearby.wantsApproving { nearbyApproving = .problem(problem) }
         nearby.listenerFailures += 1
@@ -355,7 +355,7 @@ extension AppModelCore {
     /// `nearbyListenerFailed`, for the join screen.
     func nearbyBrowserFailed() {
         guard nearby.browsing != nil || nearby.joinTask != nil else { return }
-        let problem = nearbyTransport?.linkProblem ?? .other
+        let problem = nearbyTransport?.browsingProblem ?? .other
         stopJoinLoop()
         if nearby.wantsJoining { nearbyJoining = .problem(problem) }
         nearby.browserFailures += 1
@@ -409,6 +409,25 @@ extension AppModelCore {
         nearby.browserFailures = 0
         startAdvertising()
         startJoinLoop()
+    }
+
+    /// The app became active (every activation, the Mac's too: a Catalyst window comes back without a foreground event): a side
+    /// that stands on a problem tries again at once, with its failure count reset, so a permission just granted in Settings clears
+    /// the line without waiting for the backoff.
+    public func nearbyBecameActive() {
+        guard !nearby.suspended else { return }
+        if case .problem = nearbyApproving, nearby.wantsApproving {
+            nearby.listenerRestart?.cancel()
+            nearby.listenerRestart = nil
+            nearby.listenerFailures = 0
+            startAdvertising()
+        }
+        if case .problem = nearbyJoining, nearby.wantsJoining {
+            nearby.browserRestart?.cancel()
+            nearby.browserRestart = nil
+            nearby.browserFailures = 0
+            startJoinLoop()
+        }
     }
 
     // MARK: - The joining device: the join screen

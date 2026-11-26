@@ -263,6 +263,15 @@ extension AppModelSuites {
             w.link.fail()
             #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyApproving == .problem(.localNetworkDenied) })
             #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .problem(.localNetworkDenied) })
+            // Becoming active (a permission just granted) tries again at once, and the problems go once each side is up.
+            w.link.problem = nil
+            w.home.model.nearbyBecameActive()
+            w.pad.model.nearbyBecameActive()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) {
+                (w.home.model.nearbyApproving == .advertising || w.home.model.nearbyApproving == .connected)
+                    && w.pad.model.nearbyJoining != .problem(.localNetworkDenied)
+            })
+            if case .problem = w.pad.model.nearbyJoining { Issue.record("the join screen still shows a problem") }
             // Stopping the screens clears them.
             w.home.model.stopNearbyApproving()
             w.pad.model.stopNearbyJoin()

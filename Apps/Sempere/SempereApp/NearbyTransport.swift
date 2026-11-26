@@ -21,16 +21,24 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
     private var endpoints: [String: NWEndpoint] = [:]
     private var loopbackBrowsers: [UUID: @Sendable ([NearbyPeer]) -> Void] = [:]
 
-    private var _problem: NearbyLinkProblem?
-    /// Why the last listener or browser waited past its grace or failed; cleared when one comes up.
-    var linkProblem: NearbyLinkProblem? {
+    private var _advertisingProblem: NearbyLinkProblem?
+    private var _browsingProblem: NearbyLinkProblem?
+    /// Why the last listener (browser) waited past its grace or failed; cleared when one comes up. Separate: a browser that is
+    /// up must not clear a listener's problem.
+    var advertisingProblem: NearbyLinkProblem? {
         lock.lock(); defer { lock.unlock() }
-        return _problem
+        return _advertisingProblem
+    }
+    var browsingProblem: NearbyLinkProblem? {
+        lock.lock(); defer { lock.unlock() }
+        return _browsingProblem
     }
 
-    private func setProblem(_ p: NearbyLinkProblem?) {
+    enum Side { case advertising, browsing }
+
+    private func setProblem(_ p: NearbyLinkProblem?, _ side: Side) {
         lock.lock()
-        _problem = p
+        if side == .advertising { _advertisingProblem = p } else { _browsingProblem = p }
         lock.unlock()
     }
 
@@ -57,20 +65,20 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
 
     /// Records the problem `error` stands for and calls `done` (on `queue`): for an unknown error, Wi-Fi off when no local
     /// interface is up, else `.other`.
-    func classify(error: NWError?, then done: @escaping @Sendable () -> Void) {
+    func classify(error: NWError?, side: Side, then done: @escaping @Sendable () -> Void) {
         if let error, let known = Self.problem(of: error) {
-            setProblem(known)
+            setProblem(known, side)
             done()
             return
         }
-        guard mode == .bonjour else { setProblem(.other); done(); return }
+        guard mode == .bonjour else { setProblem(.other, side); done(); return }
         let monitor = NWPathMonitor()
         let once = NWNearbyConnection.Once()
         let queue = self.queue
         monitor.pathUpdateHandler = { [weak self] path in
             once.run {
                 monitor.cancel()
-                self?.setProblem(Self.hasLocalInterface(path) ? .other : .wifiOff)
+                self?.setProblem(Self.hasLocalInterface(path) ? .other : .wifiOff, side)
                 done()
             }
         }
@@ -129,7 +137,7 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             waiting.waiting = false
             switch state {
             case .ready:
-                self?.setProblem(nil)
+                self?.setProblem(nil, .advertising)
                 if self?.mode == .loopback, let port = listener?.port { self?.registerLoopback(id, port: port) }
                 onReady()
             case .waiting(let error):
@@ -140,7 +148,7 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
                 queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak self, weak listener] in
                     guard waiting.waiting, waiting.since == mark, let self else { return }
                     let l = listener
-                    self.classify(error: error) { [self] in
+                    self.classify(error: error, side: .advertising) { [self] in
                         unregisterLoopback(id)
                         l?.cancel()
                         failed.run { onFailure() }
@@ -151,7 +159,7 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
                 // it again later.
                 guard let self else { return }
                 let l = listener
-                self.classify(error: error) { [self] in
+                self.classify(error: error, side: .advertising) { [self] in
                     unregisterLoopback(id)
                     l?.cancel()
                     failed.run { onFailure() }
@@ -229,7 +237,7 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             waiting.waiting = false
             switch state {
             case .ready:
-                self?.setProblem(nil)
+                self?.setProblem(nil, .browsing)
                 onReady()
             case .waiting(let error):
                 // Waiting for the local network permission: the first prompt may still be up, so only a wait that
@@ -241,14 +249,14 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
                 queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak self, weak browser] in
                     guard waiting.waiting, waiting.since == mark, let self else { return }
                     let b = browser
-                    self.classify(error: error) {
+                    self.classify(error: error, side: .browsing) {
                         b?.cancel()
                         failed.run { onFailure() }
                     }
                 }
             case .failed(let error):
                 let b = browser
-                self?.classify(error: error) {
+                self?.classify(error: error, side: .browsing) {
                     b?.cancel()
                     failed.run { onFailure() }
                 }

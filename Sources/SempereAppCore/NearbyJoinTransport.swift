@@ -33,9 +33,10 @@ public enum NearbyLinkProblem: Equatable, Sendable {
 
 /// The nearby link (`AppModelServices.nearby`).
 public protocol NearbyJoinTransport: AnyObject, Sendable {
-    /// Why the last listener or browser failed or waited past its grace, nil when it came up or none failed. Read by the
-    /// model right after `onFailure`.
-    var linkProblem: NearbyLinkProblem? { get }
+    /// Why the last listener failed or waited past its grace, nil when one came up or none failed (read by the model right after
+    /// the listener's `onFailure`); and the same for the browser: each side keeps its own.
+    var advertisingProblem: NearbyLinkProblem? { get }
+    var browsingProblem: NearbyLinkProblem? { get }
     /// Advertises the service (`NearbyJoin.serviceType`) under a random instance name, handing every connection that
     /// arrives to `accept`, until the activity is stopped. `onReady` runs when the listener is up (the model then counts
     /// its failures from zero again); `onFailure` runs once if the listener fails (the system suspended the app, the
@@ -51,7 +52,8 @@ public protocol NearbyJoinTransport: AnyObject, Sendable {
 }
 
 extension NearbyJoinTransport {
-    public var linkProblem: NearbyLinkProblem? { nil }
+    public var advertisingProblem: NearbyLinkProblem? { nil }
+    public var browsingProblem: NearbyLinkProblem? { nil }
 
     /// `advertise(accept:onReady:onFailure:)` without a ready hook.
     public func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void,
@@ -84,12 +86,13 @@ public final class MemoryNearbyTransport: NearbyJoinTransport, @unchecked Sendab
     public init() {}
 
     private var _problem: NearbyLinkProblem?
-    /// What `linkProblem` answers (tests set it before `fail()`).
+    /// What both problems answer (tests set it before `fail()`).
     public var problem: NearbyLinkProblem? {
         get { lock.lock(); defer { lock.unlock() }; return _problem }
         set { lock.lock(); _problem = newValue; lock.unlock() }
     }
-    public var linkProblem: NearbyLinkProblem? { problem }
+    public var advertisingProblem: NearbyLinkProblem? { problem }
+    public var browsingProblem: NearbyLinkProblem? { problem }
 
     /// The joining ends of every connection made (tests look at what crossed the link).
     public var opened: [NearbyJoinPipe.Connection] {
