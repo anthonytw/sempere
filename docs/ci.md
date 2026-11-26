@@ -203,6 +203,32 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
     gone; `WatchModel.savedWait` is the timer behind Saved, which the test fires by hand and then awaits `savedTask`. No crash
     report of the one test-host crash survived (no DiagnosticReports, no watch xcresult bundle), so its cause is unknown.
 
+  Triaged after a flake (2026-11-25) and made deterministic in place, never quarantined:
+  - `FolderTargetTests/aCaptureWhileTheVaultIsClosedIsUploaded()` (SempereAppCore, Linux runner: PR #81, PR #89) waited 30 s
+    for a transient state: the capture's inbox file in the open device's copy, which the adoption deletes (and may delete before
+    `syncAllTargetsNow` returns, during the session's `await recount()`), or a note titled "Voice note…", which no capture has
+    stored since 1.3. It passed only when the poll won that race. It now awaits the adoption (`inboxAdoption`) and checks the end
+    state: the note derived from the capture id (`CaptureAdoption.ids(for:)`) is listed and the inbox file is gone. It fails
+    when the run's changes do not start the adoption and when the inbox file is never downloaded, which the old test did not
+    catch for the first.
+  - `CLIFolderSyncTests/testSyncThroughAFATDrive` (Mac runner, PR #90: one exit 1 from A's last sync, then two passes; none in
+    about 170 runs on main and on PR #90's head, alone, four at once, with PR #90's control pass forced on every batch, and with
+    every CLI test in parallel). Kept: it is the one sync test on a FAT volume (no hard links: it fails when `placeNew` loses
+    its check-and-rename fallback). It said "settings changed on both sides within one tick" without making the tick; the
+    folder's `settings.age` now gets back the modification time A uploaded it with (A still takes the merge: a run reads and
+    compares that file's bytes, never only its stamp). Every sync passes `--json` and puts its report in its failure message.
+    The exit 1 is not explained: that assertion printed nothing, and exit 1 means errors, quarantined or arriving files (a
+    conflict would be 3). A next failure names its cause; that one gets its own triage.
+  - `SyncSessionTests/providerLooksStopWhileNothingUploads()` (SempereAppCore, Mac runner, PR #90's rerun job: 4 looks for 3,
+    then 7 for 6) took 100 ms without a new look for "the looks stopped". A look clears its plan before it asks the provider and
+    plans the next after the answer, so a look whose answer came back late on a loaded runner was sampled as the stop, one look
+    early; the 150 ms sleeps after it checked nothing. The session now counts each stop (`providerLooksStops`, at
+    `providerRecheckLimit` looks in a row, with `onProviderLooksStopped`), the test awaits that and checks the plan (none
+    due), and it fails when the looks never stop (30 s bound) or stop at another count. The gate's rerun of it "ran no test":
+    `scripts/test-runner.py` cut a line at the `//` of a URL in a string before taking the strings out, lost that line's `}`,
+    and so named the suite `SyncCoordinatorTests.SyncSessionTests`, which matches nothing; it takes the strings out first now
+    (its self-test has the case).
+
   Adding one is a line in the runner's list and a line here with its reason; a reviewer then decides keep-or-delete.
 - Off CI, `scripts/app.sh` stops an `xcodebuild` that sits idle after the end of its whole run
   (`SEMPERE_STALL_SECS`, default 180 s): `Test Suite 'All tests'` or `'Selected tests'` passed or failed, or

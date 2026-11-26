@@ -87,6 +87,13 @@ enum Sync {
         func raise(to x: Int) { lock.lock(); n = max(n, x); lock.unlock() }
     }
 
+    /// Claimed once: the first `claim()` returns true, every later one false (one resume of a continuation).
+    final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+    }
+
     /// A thread-safe flag.
     final class Flag: @unchecked Sendable {
         private let lock = NSLock()
@@ -762,40 +769,41 @@ struct SyncSessionTests {
         session.vaultUnlocked()
         _ = await session.syncNow()
         session.start()
-        // Judged on the plan, not on sleeps (the gate under load, build 113: a count `start` made late started the
-        // looks over after they had been sampled as stopped): once `start`'s count is in, the looks go on until
-        // `providerRecheckLimit` in a row saw no fewer files, and then none is planned.
+        // Judged on the plan, never on a quiet spell: once `start`'s count is in (a count `start` made late starts the looks
+        // over, build 113), the looks go on until `providerRecheckLimit` in a row saw no fewer files, and then the session says
+        // they stopped (`onProviderLooksStopped`) with none planned. 100 ms without a look was taken for "stopped" before, and
+        // a look whose answer took longer to come back on a loaded runner (PR #90's gate) was counted as one too few.
         await session.startCount?.value
-        // Stopped = nothing planned, no run, and the count unchanged for 100 ms in a row: `providerRecheckDue` is also
-        // nil for the moment a look is running (it is cleared before the look and set again after), so it alone is
-        // not "stopped" (the gate, build 113, sampled in that moment).
-        func waitUntilStopped() async throws {
-            var last = looks.add(0), stableSince = ContinuousClock.now
-            for _ in 0..<4000 {
-                let now = looks.add(0)
-                if now != last || session.providerRecheckDue != nil || session.isSyncing {
-                    last = now; stableSince = .now
-                } else if ContinuousClock.now - stableSince >= .milliseconds(100) {
-                    break
+        /// Returns once the looks stopped more than `stops` times; false after 30 s, which only ends looks that never stop.
+        func looksStop(after stops: Int) async -> Bool {
+            if session.providerLooksStops > stops { return true }
+            let stopped = Sync.Once()
+            var bound: Task<Void, Never>?
+            defer { bound?.cancel(); session.onProviderLooksStopped = nil }
+            return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                session.onProviderLooksStopped = {
+                    if session.providerLooksStops > stops, stopped.claim() { c.resume(returning: true) }
                 }
-                try await Task.sleep(for: .milliseconds(5))
+                bound = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(30))
+                    if stopped.claim() { c.resume(returning: false) }
+                }
             }
-            #expect(session.providerRecheckDue == nil, "the looks stopped")
         }
-        try await waitUntilStopped()
-        // (`start`'s count may start the looks over once, after some of the first.)
+        // (`start`'s count may start the looks over once, after some of the first: those stopped before it, or not at all.)
+        let before = session.providerLooksStops
+        #expect(await looksStop(after: before), "the looks stopped")
         let stopped = looks.add(0)
         #expect((3...6).contains(stopped))
-        try await Task.sleep(for: .milliseconds(150))   // kept: a negative check, nothing to wait on
-        #expect(looks.add(0) == stopped, "no more looks while nothing uploads")
+        #expect(session.providerRecheckDue == nil, "no more looks while nothing uploads: none planned")
         #expect(session.status.kind == .waitingForProvider(2))
         // The next run counts again and the looks start over, exactly as many again.
+        let first = session.providerLooksStops
         _ = await session.syncNow()
-        try await waitUntilStopped()
-        let again = looks.add(0)
-        #expect(again == stopped + 3)
-        try await Task.sleep(for: .milliseconds(150))   // kept: a negative check, nothing to wait on
-        #expect(looks.add(0) == again, "the looks stop again while nothing uploads")
+        #expect(session.providerRecheckDue != nil, "the run's count plans a look")
+        #expect(await looksStop(after: first), "the looks stopped again")
+        #expect(looks.add(0) == stopped + 3)
+        #expect(session.providerRecheckDue == nil, "the looks stop again while nothing uploads: none planned")
         session.stop()
     }
 
