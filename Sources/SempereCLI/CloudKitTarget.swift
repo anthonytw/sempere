@@ -87,7 +87,7 @@ struct CloudKitList: ParsableCommand {
         abstract: "List the vaults the signed-in Apple Account's iCloud holds.",
         discussion: """
             One request for the zones and one for each vault's vault.json label; nothing is downloaded. A vault that is in \
-            this store already says so. --json: an array of {vaultId, zone, name, named, inStore, hasCloudKitTarget}. \
+            this store already says so. --json: an array of {vaultId, zone, name, named, inStore, hasCloudKitTarget, modified, hasVault}. \
             Exit codes: 0, 1 when CloudKit cannot be used here or the account cannot be reached.
             """
     )
@@ -102,6 +102,12 @@ struct CloudKitList: ParsableCommand {
         var named: Bool
         var inStore: Bool
         var hasCloudKitTarget: Bool
+        /// When the vault's `vault.json` was last saved in iCloud; null for a zone with no vault in it.
+        var modified: Date?
+        /// False for a zone that holds no readable vault (nothing to open; delete it with `cloudkit delete --force`).
+        var hasVault: Bool
+        /// `present`, `absent` (an empty zone) or `unreadable` (a request failed, a newer layout: may be a real vault).
+        var manifest: String
     }
 
     func run() throws {
@@ -112,12 +118,16 @@ struct CloudKitList: ParsableCommand {
             let id = UUID(uuidString: v.vaultId)
             let here = id.flatMap { store.entry(id: $0) } != nil
             let target = id.map { store.targets.targets(of: $0).contains { $0.kind == .cloudkit } } ?? false
-            return Row(vaultId: v.vaultId, zone: v.zone, name: v.name, named: v.named, inStore: here, hasCloudKitTarget: target)
+            return Row(vaultId: v.vaultId, zone: v.zone, name: v.name, named: v.named, inStore: here, hasCloudKitTarget: target,
+                       modified: v.modified, hasVault: v.hasVault, manifest: v.manifest.rawValue)
         }
         if output.json { return try output.emitJSON(rows) }
         if rows.isEmpty { return output.info("No vaults in this iCloud account") }
-        var table = [["ID", "NAME", "IN STORE"]]
-        for r in rows { table.append([r.vaultId, r.name, r.inStore ? (r.hasCloudKitTarget ? "synced" : "yes") : "no"]) }
+        var table = [["ID", "NAME", "IN STORE", "CHANGED"]]
+        for r in rows {
+            let changed = r.modified.map { RFC3339.string($0) } ?? (r.manifest == "absent" ? "no vault" : r.manifest == "unreadable" ? "unreadable" : "-")
+            table.append([r.vaultId, r.name, r.inStore ? (r.hasCloudKitTarget ? "synced" : "yes") : "no", changed])
+        }
         print(Format.table(table))
         #else
         throw CLIError.failure(CloudKitCLI.unavailable ?? "iCloud (CloudKit) is not available")
@@ -159,6 +169,9 @@ struct CloudKitOpen: ParsableCommand {
         let store = location.open()
         let entry: VaultStore.Entry
         var imported = false
+        var seed: URL?   // the download's sync state and mirror: the target's first run continues from them
+        let keep = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-icloud-seed-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: keep) }
         if let existing = store.entry(id: id) {
             entry = existing
         } else {
@@ -176,9 +189,14 @@ struct CloudKitOpen: ParsableCommand {
             if name == nil, let label = chosen, (try? VaultStore.folderName(for: label)) == nil { chosen = nil }
             entry = try store.importVault(from: folder, options: VaultStore.ImportOptions(name: chosen))
             imported = true
+            let state = work.appendingPathComponent("state", isDirectory: true)
+            if (try? FileManager.default.copyItem(at: state, to: keep)) != nil { seed = keep.appendingPathComponent("sync-state.json") }
         }
         if !store.targets.targets(of: entry.vaultId).contains(where: { $0.kind == .cloudkit }) {
-            do { try store.targets.add(.cloudkit(user: user, name: "iCloud"), to: entry.vaultId) } catch {
+            do {
+                let made = try store.targets.add(.cloudkit(user: user, name: "iCloud"), to: entry.vaultId)
+                if let seed { CloudVaults.seed(store.targets.stateURL(made.id, of: entry.vaultId), from: seed) }
+            } catch {
                 if imported { try? store.remove(entry.vaultId) }   // a copy that does not sync is not what was asked for
                 throw error
             }

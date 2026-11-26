@@ -57,7 +57,7 @@ public struct SyncLimits: Sendable, Hashable {
 /// What one run has used of its `SyncLimits`.
 struct RunBudget {
     let limits: SyncLimits
-    let deadline: Date
+    var deadline: Date
     var entries = 0
     var downloadedBytes: Int64 = 0
     /// Listed sizes of the downloads running now (`reserve`), so that

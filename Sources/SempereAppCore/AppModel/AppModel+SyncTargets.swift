@@ -544,6 +544,12 @@ extension AppModelCore {
     public func syncAllTargetsNow() async {
         for s in syncSessions { await s.syncNow() }
     }
+
+    /// `syncAllTargetsNow` for a join check (Add Device's look, an approval): a run going is stopped and each target runs once more,
+    /// bounded, so a request is found and an approval sent while a first upload is still going (`SyncSession.syncForJoinCheck`).
+    public func syncAllTargetsForJoinCheck(since: Date? = nil) async {
+        for s in syncSessions { await s.syncForJoinCheck(since: since) }
+    }
 }
 
 // MARK: - A folder target held as a package (docs/io.md "A vault folder held as a package")

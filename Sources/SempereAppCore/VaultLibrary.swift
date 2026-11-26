@@ -184,7 +184,10 @@ public struct NewVaultRequest: Sendable {
     /// The rest of what `VaultCreation` takes. The form's empty passphrase means no copy.
     var options: VaultCreation.Options {
         VaultCreation.Options(deviceName: deviceName, deviceKind: deviceKind,
-                              recoveryPassphrase: passphrase.flatMap { $0.isEmpty ? nil : $0 }, workFactor: workFactor)
+                              recoveryPassphrase: passphrase.flatMap { $0.isEmpty ? nil : $0 }, workFactor: workFactor,
+                              // The name is the vault's label too: iCloud (CloudKit) lists its vaults by it, and a name
+                              // that is only a folder name on this device would show there as "Vault 3f2a9c1b".
+                              label: name)
     }
 }
 

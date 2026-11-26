@@ -284,6 +284,15 @@ public struct CloudRecordRemote: SyncRemote {
         // is coming must move the token.
         var pages = 0, seen = 0
         core.locked { core.quotaFull = false }
+        // A feed cut short (a stop, an error, a killed process) keeps what it read: the mirror and its token are saved while the feed
+        // goes (at most every `feedSaveInterval`) and when it is cut, so the next run continues from there instead of reading the whole
+        // zone again, which a vault of tens of thousands of records never finishes inside a short run (a join check). The saved mirror
+        // is a valid snapshot "as of its token"; nothing is judged from it until the feed has finished (`prepared`, set below, is
+        // per process and run), and `feedIncomplete` marks the file so that no reader outside a run takes it for the zone.
+        var lastSaved = Date()
+        var saveInterval = Self.feedSaveInterval
+        var finished = false
+        defer { if !finished, core.with({ $0.token != nil }) { persistMirror(partial: true) } }
         fetching: while true {
             pages += 1
             guard pages <= 100_000 else { throw CloudRecordError.corrupt(path: "zone feed", reason: "more than 100000 pages") }
@@ -298,6 +307,7 @@ public struct CloudRecordRemote: SyncRemote {
                     if e.code == .userDeletedZone { core.locked { core.userDeletedZone = true } }
                     core.with { $0.reset(zoneExists: false) }
                     persistMirror()
+                    finished = true
                     core.locked { core.prepared = true }
                     return
                 case .changeTokenExpired where expired < 2:
@@ -344,7 +354,16 @@ public struct CloudRecordRemote: SyncRemote {
             }
             if !skips.isEmpty { core.locked { for (k, v) in skips { core.diagnostics.skipped[k, default: 0] += v } } }
             if !page.moreComing { break }
+            if Date().timeIntervalSince(lastSaved) >= saveInterval {
+                let began = Date()
+                persistMirror(partial: true)
+                lastSaved = Date()
+                // Encoding is linear in the mirror: the interval grows with what a save costs (at least 20 times its own duration), so
+                // a large first feed spends about 5% of its time saving, never more, whatever the device.
+                saveInterval = max(Self.feedSaveInterval, 20 * lastSaved.timeIntervalSince(began))
+            }
         }
+        finished = true
         core.locked {
             core.diagnostics.newerSchemaFiles = core.mirror.files.values.filter { $0.isNewer && !$0.tomb }.count
         }
@@ -371,11 +390,22 @@ public struct CloudRecordRemote: SyncRemote {
         }
     }
 
-    private func persistMirror() {
+    /// How often a feed in progress saves the mirror (encoding it is linear in the zone: not every page).
+    static let feedSaveInterval: TimeInterval = 2
+
+    /// The marker beside the mirror file while the saved mirror is a feed cut short.
+    public static func feedIncompleteMarker(_ mirror: URL) -> URL { mirror.deletingLastPathComponent().appendingPathComponent("mirror-2.incomplete") }
+
+    private func persistMirror(partial: Bool = false) {
         guard let url = core.stateURL else { return }
         let data = core.with { $0.encoded() }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let marker = Self.feedIncompleteMarker(url)
+        // The marker first when partial and last when complete: a crash in between leaves "incomplete", never a partial mirror taken
+        // for a whole one.
+        if partial { try? Data().write(to: marker) }
         try? data.write(to: url, options: .atomic)
+        if !partial { try? FileManager.default.removeItem(at: marker) }
     }
 
     // MARK: Listings (from the mirror)

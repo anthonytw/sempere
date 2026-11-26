@@ -46,6 +46,50 @@ final class CloudRecordRemoteTests: TempDirTestCase {
                     fields: CloudFields(schema: schema, path: path.joined(separator: "/"), tomb: 1))
     }
 
+    // MARK: A feed cut short keeps what it read (join checks on a large zone)
+
+    /// The first feed of a large zone is cut (a stop, a kill): the mirror and token are saved with a marker, the next run continues
+    /// from there (fewer requests than a fresh feed), nothing is judged from the partial mirror, and the marker goes with the last page.
+    func testACutFeedIsSavedAndTheNextRunContinuesFromIt() throws {
+        var limits = MemoryCloudLimits()
+        limits.pageSize = 5
+        let fx = CloudFixture(limits: limits)
+        let a = try device(fx)
+        for i in 0..<30 { try put(a, "rev\(i).delta.age", Data("x\(i)".utf8)) }
+        let counts = CloudFaults(seed: 1)   // no faults: it counts requests
+        fx.database.faults = counts
+        let state = tmp.appendingPathComponent("B/cloudkit")
+        let mirror = state.appendingPathComponent("mirror-2.txt")
+        let marker = CloudRecordRemote.feedIncompleteMarker(mirror)
+        func reader() -> CloudRecordRemote {
+            CloudRecordRemote(store: fx.database, zone: fx.zone, stateDirectory: state, layout: fx.layout)
+        }
+        // A fresh feed's size, for comparison.
+        let fresh = CloudRecordRemote(store: fx.database, zone: fx.zone, stateDirectory: tmp.appendingPathComponent("C/cloudkit"), layout: fx.layout)
+        counts.resetCounts()
+        try fresh.prepareRun()
+        let fullFeed = counts.requests[.fetchChanges] ?? 0
+        XCTAssertGreaterThan(fullFeed, 4)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: CloudRecordRemote.feedIncompleteMarker(
+            tmp.appendingPathComponent("C/cloudkit/mirror-2.txt")).path), "a whole feed leaves no marker")
+
+        var cut = reader()
+        counts.resetCounts()
+        cut.interrupt = { (counts.requests[.fetchChanges] ?? 0) >= 3 ? SyncError.cancelled : nil }
+        XCTAssertThrowsError(try cut.prepareRun())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mirror.path), "what the feed read is saved")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "and marked as not the zone")
+        XCTAssertNil(CloudVaults.mirrorSummary(stateURL: state.deletingLastPathComponent().appendingPathComponent("sync-state.json")),
+                     "a partial mirror is not a count of the zone's files")
+
+        counts.resetCounts()
+        let next = reader()
+        try next.prepareRun()
+        XCTAssertLessThan(counts.requests[.fetchChanges] ?? 0, fullFeed, "continued from the saved token, not read again")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the marker goes with the last page")
+        XCTAssertEqual(try next.list(dir)?.count, 30, "the whole zone is in the mirror")
+    }
+
     // MARK: Records
 
     func testRecordNamesAreHashedAndFixedLength() throws {

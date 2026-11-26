@@ -192,7 +192,8 @@ extension AppModelCore {
             try? FileManager.default.removeItem(at: url.appendingPathComponent("joins").appendingPathComponent(previous))
         }
         setJoinRequested(keys, vaultID: locked.vaultId)
-        syncSessions.forEach { $0.demand() }
+        // A run going (staging a large iCloud vault's files, say) is stopped: the request goes out now, not after it.
+        syncSessions.forEach { $0.interruptRun(); $0.demand() }
         let codes = Self.joinCodes(keys, vaultId: locked.vaultId, kind: kind)
         return .waiting(words: codes.words, qr: codes.qr)
     }
@@ -305,6 +306,12 @@ extension AppModelCore {
         return .stage(.waiting(words: codes.words, qr: codes.qr))
     }
 
+    /// The joining device asks its targets for home's approval (the join screen, every `joinLookInterval`): a run going is stopped and
+    /// each target makes one bounded run, so a long keyless pull or staging run does not hold the approval back.
+    public func askForApprovalNow() async {
+        await syncAllTargetsForJoinCheck()
+    }
+
     /// The open vault's `vault.json` as on disk now (a run may have taken the approval since it opened).
     public func refreshLockedManifest() async {
         guard phase == .locked, let url = vaultURL, let gen = Optional(generation) else { return }
@@ -395,7 +402,7 @@ extension AppModelCore {
     /// seen, and typed words matched only what the copy held then): every target of the open vault is synced now,
     /// then the copy's `joins/` is read.
     public func lookForJoinRequests() async -> JoinRequestLookout {
-        await syncAllTargetsNow()
+        await syncAllTargetsForJoinCheck()
         let requests = await pendingJoinRequests()
         return JoinRequestLookout(requests: requests, arriving: joinRequestArriving, checked: Date())
     }
@@ -443,7 +450,7 @@ extension AppModelCore {
         guard proceed() else { throw CancellationError() }
         let synced = found == nil && !syncSessions.isEmpty
         if synced {
-            await syncAllTargetsNow()
+            await syncAllTargetsForJoinCheck()
             guard proceed() else { throw CancellationError() }
             guard let again = vault, phase == .unlocked, again.vaultId == first.vaultId else { throw KeyError.notUnlocked }
             // The run may have taken a vault.json that makes this device read-only or not home (review of #117, N1).
@@ -497,7 +504,10 @@ extension AppModelCore {
         adoptReopened(next)
         // A device that sent this request nearby gets the approval over the link now; the targets get it with the runs.
         nearbyApproved(request)
-        syncSessions.forEach { $0.demand() }
+        // The approval goes out now, not after the run going (a first upload of a large vault can take hours): that run is stopped
+        // between files and each target makes one bounded run, which sends `vault.json` early. Not awaited: the reply shows at once.
+        let approvedAt = Date()
+        Task { [weak self] in await self?.syncAllTargetsForJoinCheck(since: approvedAt) }
         return JoinReply(deviceName: DeviceName.display(request.name), words: reply,
                          qr: JoinCodes.replyQR(vaultId: next.vaultId, root: next.root, frontier: next.manifest.epochId))
     }

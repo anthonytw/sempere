@@ -21,11 +21,43 @@ public struct CloudVaultListing: Codable, Hashable, Sendable, Identifiable {
     public var name: String
     /// True when the name is the vault's own label.
     public var named: Bool
+    /// When the zone's `vault.json` was last saved (a device added or renamed, a label written): what tells two vaults of one
+    /// name, or two unnamed ones, apart. Nil when that record could not be read (a zone with no vault in it).
+    public var modified: Date?
+    /// What was found of the zone's `vault.json`: a vault, nothing (an empty or half-made zone: nothing can be opened from it, only
+    /// deleted), or something this device could not read (a request that failed, a newer layout, a record it does not believe).
+    /// An unreadable one may well be a real vault: it stays openable and is never described as empty.
+    public var manifest: ManifestState
+    /// False only for a zone with no `vault.json` at all (`manifest == .absent`).
+    public var hasVault: Bool { manifest != .absent }
 
     public var id: String { vaultId }
 
-    public init(vaultId: String, zone: String, name: String, named: Bool) {
+    /// What reading a zone's `vault.json` found.
+    public enum ManifestState: String, Codable, Sendable, Hashable { case present, absent, unreadable }
+
+    public init(vaultId: String, zone: String, name: String, named: Bool, modified: Date? = nil, manifest: ManifestState = .present) {
         self.vaultId = vaultId; self.zone = zone; self.name = name; self.named = named
+        self.modified = modified; self.manifest = manifest
+    }
+
+    private enum CodingKeys: String, CodingKey { case vaultId, zone, name, named, modified, hasVault, manifest }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(vaultId, forKey: .vaultId); try c.encode(zone, forKey: .zone); try c.encode(name, forKey: .name)
+        try c.encode(named, forKey: .named); try c.encodeIfPresent(modified, forKey: .modified)
+        try c.encode(hasVault, forKey: .hasVault); try c.encode(manifest, forKey: .manifest)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        vaultId = try c.decode(String.self, forKey: .vaultId)
+        zone = try c.decode(String.self, forKey: .zone)
+        name = try c.decode(String.self, forKey: .name)
+        named = try c.decode(Bool.self, forKey: .named)
+        modified = try c.decodeIfPresent(Date.self, forKey: .modified)
+        manifest = try c.decodeIfPresent(ManifestState.self, forKey: .manifest) ?? .present
     }
 }
 
@@ -55,22 +87,62 @@ public enum CloudVaults {
         var out: [CloudVaultListing] = []
         for zone in try store.zones().sorted().prefix(maxZones) {
             guard let id = vaultId(ofZone: zone) else { continue }
-            let label = (try? label(store: store, zone: zone, vaultId: id)) ?? nil
-            let shown = label.map(display) ?? ""
-            out.append(CloudVaultListing(vaultId: id, zone: zone, name: shown.isEmpty ? "Vault " + id.prefix(8) : shown, named: !shown.isEmpty))
+            let found = manifestRecord(store: store, zone: zone, vaultId: id)
+            var bytes: Data?, modified: Date?, state = CloudVaultListing.ManifestState.unreadable
+            switch found {
+            case .vault(let b, let m): bytes = b; modified = m; state = .present
+            case .absent: state = .absent
+            case .unreadable: break
+            }
+            let shown = bytes.flatMap { VaultLabelText.peekLabel($0) }.map(display) ?? ""
+            out.append(CloudVaultListing(vaultId: id, zone: zone, name: shown.isEmpty ? "Vault " + id.prefix(8) : shown,
+                                         named: !shown.isEmpty, modified: modified, manifest: state))
         }
         return out.sorted { ($0.name.lowercased(), $0.vaultId) < ($1.name.lowercased(), $1.vaultId) }
     }
 
     /// The label in the zone's `vault.json` record, when that record is inline, intact and the vault's own.
     static func label(store: any CloudRecordStore, zone: String, vaultId: String) throws -> String? {
+        if case .vault(let bytes, _) = manifestRecord(store: store, zone: zone, vaultId: vaultId) { return VaultLabelText.peekLabel(bytes) }
+        return nil
+    }
+
+    /// What reading a zone's `vault.json` found: the record is `absent` only when the server answered that there is none; anything
+    /// else that is not an intact, inline, schema-current record that is the vault's own (a request that failed, a newer layout, an
+    /// asset-stored or tombstoned record, a hash that does not match) is `unreadable`: not believed, and not called empty either.
+    enum ManifestRead { case vault(bytes: Data, modified: Date?), absent, unreadable }
+
+    static func manifestRecord(store: any CloudRecordStore, zone: String, vaultId: String) -> ManifestRead {
         let name = CloudRecordNaming.fileName([Vault.manifestName])
-        guard let r = try store.fetch(zone: zone, name: name, payload: true), r.kind == .file, (r.fields.tomb ?? 0) == 0,
+        let fetched: CloudRecord?
+        do { fetched = try store.fetch(zone: zone, name: name, payload: true) } catch { return .unreadable }
+        guard let r = fetched else { return .absent }
+        guard r.kind == .file, (r.fields.tomb ?? 0) == 0,
               r.fields.path == Vault.manifestName, (r.fields.schema ?? 0) == CloudSchema.current,
               let bytes = r.fields.bytes, bytes.count <= BoundedRead.maxManifestBytes,
               r.fields.sha256 == Data(SHA256.hash(data: bytes)),
-              SyncEngine.manifestFields(bytes)?.vaultId == vaultId else { return nil }
-        return VaultLabelText.peekLabel(bytes)
+              SyncEngine.manifestFields(bytes)?.vaultId == vaultId else { return .unreadable }
+        return .vault(bytes: bytes, modified: r.modified)
+    }
+
+    /// Copies a finished download's sync state and mirror (`seedState` is its `sync-state.json`) into a new target's state folder.
+    /// Best effort: without them the first run starts from nothing, as it always did.
+    public static func seed(_ stateURL: URL, from seedState: URL) {
+        let fm = FileManager.default
+        let from = seedState.deletingLastPathComponent(), to = stateURL.deletingLastPathComponent()
+        guard fm.fileExists(atPath: seedState.path), fm.fileExists(atPath: from.appendingPathComponent("cloudkit/mirror-2.txt").path),
+              !fm.fileExists(atPath: CloudRecordRemote.feedIncompleteMarker(from.appendingPathComponent("cloudkit/mirror-2.txt")).path) else { return }
+        do {
+            try fm.createDirectory(at: to, withIntermediateDirectories: true)
+            for name in ["sync-state.json", "cloudkit"] {
+                let dest = to.appendingPathComponent(name)
+                try? fm.removeItem(at: dest)
+                try fm.copyItem(at: from.appendingPathComponent(name), to: dest)
+            }
+        } catch {
+            try? fm.removeItem(at: to.appendingPathComponent("sync-state.json"))
+            try? fm.removeItem(at: to.appendingPathComponent("cloudkit"))
+        }
     }
 
     /// What the zone held at the target's last run: live files and their bytes, from the metadata mirror in the state
@@ -78,7 +150,9 @@ public enum CloudVaults {
     public static func mirrorSummary(stateURL: URL) -> (files: Int, bytes: Int64)? {
         let url = stateURL.deletingLastPathComponent().appendingPathComponent("cloudkit", isDirectory: true)
             .appendingPathComponent("mirror-2.txt")
-        guard let data = try? BoundedRead.contents(of: url, maxBytes: 512 << 20),
+        // A feed cut short saved a partial mirror (`CloudRecordRemote.prepareRun`): it says nothing of the zone's size yet.
+        guard !FileManager.default.fileExists(atPath: CloudRecordRemote.feedIncompleteMarker(url).path),
+              let data = try? BoundedRead.contents(of: url, maxBytes: 512 << 20),
               let mirror = try? CloudMirror.decode(data, maxRecords: SyncLimits.defaultMaxEntries) else { return nil }
         let live = mirror.files.values.filter { !$0.tomb }
         return (live.count, live.reduce(0) { $0 + $1.size })

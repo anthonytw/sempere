@@ -257,7 +257,7 @@ struct JoinDeviceView: View {
             while !Task.isCancelled, case .waiting? = keys.joinStage {
                 try? await Task.sleep(for: .seconds(3))
                 if ContinuousClock.now - lastDemand >= model.joinLookInterval {
-                    model.syncSessions.forEach { $0.demand() }
+                    await model.askForApprovalNow()
                     lastDemand = .now
                 }
                 await recheck()

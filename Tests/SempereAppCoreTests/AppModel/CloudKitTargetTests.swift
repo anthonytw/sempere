@@ -191,8 +191,9 @@ extension AppModelSuites {
 
             // Another device finds it by name, without opening anything.
             let listed = try await b.model.cloudKitVaults()
-            #expect(listed.count == 1 && listed[0].vaultId == a.vaultID.uuidString.lowercased() && listed[0].name.hasPrefix("Vault "),
-                    "the fixture vault has no label: a short id names it")
+            #expect(listed.count == 1 && listed[0].vaultId == a.vaultID.uuidString.lowercased()
+                    && listed[0].name == a.library.vaultStore.entry(id: a.vaultID)?.name,
+                    "the fixture vault had no label: its store name was written when it got the target")
             #expect(await b.model.cloudKitAccountStatus() == .available)
             // The device that made it has the target: no suggestion.
             #expect(await a.model.cloudKitSuggestion(for: a.vaultID) == false)
@@ -241,6 +242,70 @@ extension AppModelSuites {
             #expect(try db.zones().isEmpty)
             #expect(a.model.openVaultTargets.map(\.id) == [other.id])
             #expect(a.model.notes.contains { $0.id == note })
+        }
+
+        /// TestFlight 1.4.0 (117), k2: every vault was "Vault 3f2a9c1b". A vault is listed by the label in its `vault.json`; one
+        /// that has none gets its store name when it gets an iCloud target (the vault moved to iCloud was made before any label),
+        /// and a label that is there is kept.
+        @Test func aVaultInICloudIsListedByItsStoreName() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let db = MemoryCloudDatabase()
+            let a = Self.device(db), b = Self.device(db)
+            defer { a.model.close(); b.model.close() }
+            try await Self.opened(a, vault: vault, key: key)
+            #expect(a.model.vault?.label == nil, "the fixture vault is one with no label")
+            _ = try await a.model.addCloudKitTarget(to: a.vaultID)
+            let name = try #require(a.library.vaultStore.entry(id: a.vaultID)).name
+            #expect(a.model.vault?.label == name, "the open vault has its name")
+            #expect(try Vault.open(at: try #require(a.model.vaultURL)).label == name, "and so does its vault.json on disk")
+            await a.model.syncAllTargetsNow()
+            let listed = try await b.model.cloudKitVaults()
+            #expect(listed.map(\.name) == [name] && listed.first?.named == true && listed.first?.hasVault == true)
+            #expect(listed.first?.modified != nil)
+
+            // A label that is there stays: the vault's own word wins over the folder's name.
+            var open = try #require(a.model.vault)
+            try open.setLabel("Chosen label")
+            #expect(open.setLabelIfMissing("Folder name") == false)
+            #expect(open.label == "Chosen label")
+        }
+
+        /// k2: "how are you supposed to delete vaults from iCloud?": any listed vault can be deleted, one no device here has included
+        /// (it needs an explicit acknowledgement that nothing else holds it), and this device's own targets for it go with it.
+        @Test func aListedVaultNoDeviceHereHoldsCanBeDeleted() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let db = MemoryCloudDatabase()
+            let a = Self.device(db), b = Self.device(db)
+            defer { a.model.close(); b.model.close() }
+            try await Self.opened(a, vault: vault, key: key)
+            _ = try await a.model.addCloudKitTarget(to: a.vaultID)
+            await a.model.syncAllTargetsNow()
+            let orphan = UUID().uuidString.lowercased()
+            db.makeZone(CloudTargetRun.zone(vaultId: UUID(uuidString: orphan)!))   // an empty zone: a vault made and lost
+            let listed = try await b.model.cloudKitVaults()
+            #expect(listed.count == 2 && listed.contains { $0.vaultId == orphan && !$0.hasVault })
+
+            // b holds nothing of either: the impact says so, and deleting asks for the acknowledgement.
+            let impact = b.model.iCloudDeletionImpact(orphan, library: b.library)
+            #expect(impact.onlyICloud && !impact.copyHere && !impact.otherCopy)
+            await #expect(throws: CloudKitTargetProblem.noOtherCopy) {
+                try await b.model.deleteICloudVault(orphan, library: b.library, acknowledgingNoOtherCopy: false)
+            }
+            #expect(try db.zones().count == 2, "nothing was deleted without the acknowledgement")
+            try await b.model.deleteICloudVault(orphan, library: b.library, acknowledgingNoOtherCopy: true)
+            #expect(try db.zones() == [CloudTargetRun.zone(vaultId: a.vaultID)])
+
+            // a holds a copy: deleting its zone needs no acknowledgement (the copy stays), and removes a's iCloud target.
+            #expect(a.model.iCloudDeletionImpact(a.vaultID.uuidString, library: a.library).copyHere)
+            try await a.model.deleteICloudVault(a.vaultID.uuidString, library: a.library, acknowledgingNoOtherCopy: false)
+            #expect(try db.zones().isEmpty)
+            #expect(a.model.openVaultTargets.isEmpty)
+            #expect(a.library.vaultStore.entry(id: a.vaultID) != nil)
+            await #expect(throws: CloudKitTargetProblem.noSuchVault) {
+                try await b.model.deleteICloudVault("not-an-id", library: b.library, acknowledgingNoOtherCopy: true)
+            }
         }
     }
 }
