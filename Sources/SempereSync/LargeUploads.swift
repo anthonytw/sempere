@@ -123,6 +123,7 @@ extension SyncEngine {
         let order = byNote.map { (id: $0.key, largest: $0.value.values.max() ?? 0) }
             .sorted { ($0.largest, $0.id) < ($1.largest, $1.id) }
         for (id, _) in order {
+            try controlPassIfDue()
             var ready = true
             for (name, size) in (byNote[id] ?? [:]).sorted(by: { ($0.value, $0.key) < ($1.value, $1.key) }) {
                 if let from = largeDeferFrom, size >= from {

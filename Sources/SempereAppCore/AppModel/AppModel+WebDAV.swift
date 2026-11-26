@@ -235,6 +235,7 @@ extension AppModelCore {
                     return (store.location(id), run?.vault, run?.join)
                 }
                 guard let current else { throw WebDAVVaultError.noSuchLocation }
+                let controlInterval = await MainActor.run { self?.syncControlInterval(for: id) ?? 60 }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
                     var options = SyncOptions(deviceLabel: "app")
                     options.summaryCacheDirectory = cacheDirectory
@@ -251,6 +252,7 @@ extension AppModelCore {
                     // An upload-only run honors this device's sightings by epoch number (KH4, J5b).
                     options.epochTrust = Self.defaultTrust
                     request.apply(to: &options)
+                    options.controlCheckInterval = controlInterval
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
                     let staging = LockedStaging(targetState: copy.stateURL)

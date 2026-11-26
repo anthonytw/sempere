@@ -663,6 +663,8 @@ public final class AppModelCore<Host: AppModelHost> {
     public internal(set) var nearbyApproving: NearbyApproverStatus = .off
     /// The join screen's side of the nearby link (`startNearbyJoin`).
     public internal(set) var nearbyJoining: NearbyJoinStatus = .off
+    /// The home device's name, for Add Device's line on a device that cannot approve (`NearbyApproverStatus.notHome`).
+    public internal(set) var nearbyHomeName: String?
     /// Requests that came nearby while Add Device shows, in memory only, listed with the synced ones (at most
     /// `NearbyJoinRuntime.requestLimit`, the oldest dropped first).
     public internal(set) var nearbyRequests: [JoinRequest] = []

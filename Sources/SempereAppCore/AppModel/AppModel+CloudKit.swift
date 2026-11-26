@@ -97,6 +97,7 @@ extension AppModelCore {
                     return (store.targets.targets(of: vaultID).first { $0.id == targetID }, run?.vault, run?.join)
                 }
                 guard let target else { throw SyncTargetError.notFound(targetID.uuidString) }
+                let controlInterval = await MainActor.run { self?.syncControlInterval(for: targetID) ?? 60 }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
                     guard cloud.isAvailable() else { throw CloudRecordError.unsupported("this build is not signed for iCloud") }
                     var options = SyncOptions(deviceLabel: "app")
@@ -105,6 +106,7 @@ extension AppModelCore {
                     options.localWriteLock = lock
                     options.quarantineDirectory = quarantine
                     request.apply(to: &options)
+                    options.controlCheckInterval = controlInterval
                     options.deviceID = vault?.writerDevice ?? (FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil)
                     options.recordSynced = true

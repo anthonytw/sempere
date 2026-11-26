@@ -79,6 +79,7 @@ struct HoldGatedRemote: SyncRemote {
     func missingCollectionError(_ path: [String]) -> any Error { base.missingCollectionError(path) }
     func checkAbsentBase(syncedBefore: Bool) throws { try breaker.run { try base.checkAbsentBase(syncedBefore: syncedBefore) } }
     func prepareRun() throws { try breaker.run { try base.prepareRun() } }
+    func refreshListing() throws { try breaker.run { try base.refreshListing() } }
 
     func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
         try gate.check(path, "uploaded")

@@ -49,9 +49,10 @@ struct DeferredUpload {
 extension SyncEngine {
     /// `vault.json` and `settings.age`, in rounds that never hold the write lock across a request.
     /// `settleVersions`: false for a metadata pull of a partial copy, which leaves provider versions alone.
-    func syncMutableFiles(_ remoteRoot: [String: RemoteEntry], settleVersions: Bool = true) {
-        var entries = remoteRoot.filter { [Vault.manifestName, SharedSettings.fileName].contains($0.key) }
-        var names = [Vault.manifestName, SharedSettings.fileName]
+    /// `only`: just these (the control pass, `ControlPass.swift`).
+    func syncMutableFiles(_ remoteRoot: [String: RemoteEntry], settleVersions: Bool = true, only: [String]? = nil) {
+        var names = [Vault.manifestName, SharedSettings.fileName].filter { only?.contains($0) ?? true }
+        var entries = remoteRoot.filter { names.contains($0.key) }
         if settleVersions { prefetchConflictCurrent(remoteRoot) }
         defer { conflictCurrent = nil }
         for round in 0..<Self.stampRetries {

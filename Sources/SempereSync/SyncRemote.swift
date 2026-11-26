@@ -305,6 +305,11 @@ public protocol SyncRemote: Sendable {
     /// keeps (a change cursor and a metadata mirror, `CloudRecordRemote`) brings it up to date here, so the run's
     /// listings are one consistent view. An error stops the run like any failed request. Default: nothing.
     func prepareRun() throws
+    /// A look at the remote's listing in the middle of a run (`ControlPass.swift`): the cheap part of `prepareRun`, none of its
+    /// run-start work (quota flags, sweeps, account checks). A cache that is behind the server reads what it lacks and nothing else;
+    /// one that cannot do that cheaply (a token that expired) leaves it to the next run. Default: nothing. Errors that are not
+    /// transient stop the run.
+    func refreshListing() throws
 }
 
 extension SyncRemote {
@@ -317,6 +322,7 @@ extension SyncRemote {
     public func changes() -> AsyncStream<RemoteChange>? { nil }
     public func checkAbsentBase(syncedBefore: Bool) throws {}
     public func prepareRun() throws {}
+    public func refreshListing() throws {}
 
     /// Deletes a file, whatever its version.
     @discardableResult

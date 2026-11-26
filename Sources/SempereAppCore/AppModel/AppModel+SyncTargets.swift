@@ -163,6 +163,7 @@ extension AppModelCore {
                     return (store.targets.targets(of: vaultID).first { $0.id == targetID }, run?.vault, run?.join)
                 }
                 guard let target else { throw SyncTargetError.notFound(targetID.uuidString) }
+                let controlInterval = await MainActor.run { self?.syncControlInterval(for: targetID) ?? 60 }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
                     let access = try FolderTargetAccess.open(target, mount: request.interactive, bookmarks: bookmarks)
                     defer { access.close() }
@@ -180,6 +181,7 @@ extension AppModelCore {
                     options.quarantineDirectory = quarantine
                     options.arrivalWait = wait
                     request.apply(to: &options)
+                    options.controlCheckInterval = controlInterval
                     // The vault device's id names its summaries file and sync state, as in the CLI (review nit); the
                     // state file's only when the vault is not open here.
                     options.deviceID = vault?.writerDevice ?? (FileManager.default.fileExists(atPath: deviceState.path)
@@ -294,6 +296,17 @@ extension AppModelCore {
         let mine = syncSessions.contains { $0.locationID == target }
         let open = mine && phase == .unlocked && !syncVaultStale
         return (open ? vault : nil, mine && phase == .locked ? joinIdentity : nil)
+    }
+
+    /// How often a long run looks at the control files again (`SyncOptions.controlCheckInterval`): every 5 seconds while a join is
+    /// plausible (Add Device or a join screen is showing, this device is joining, or a join request waits in the vault's `joins/`),
+    /// else every minute: the pass costs requests, and nothing is waiting for it.
+    func syncControlInterval(for target: UUID) -> TimeInterval {
+        if nearby.wantsApproving || nearby.wantsJoining || joinIdentity != nil { return 5 }
+        if let url = vaultURL,
+           let names = try? FileManager.default.contentsOfDirectory(atPath: url.appendingPathComponent(Vault.joinsName).path),
+           names.contains(where: { $0.hasSuffix(".join.json") }) { return 5 }
+        return 60
     }
 
     /// Two runs' local changes as one report's (a placing of staged files, then the run).

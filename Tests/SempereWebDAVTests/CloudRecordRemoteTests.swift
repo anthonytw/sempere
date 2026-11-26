@@ -46,6 +46,43 @@ final class CloudRecordRemoteTests: TempDirTestCase {
                     fields: CloudFields(schema: schema, path: path.joined(separator: "/"), tomb: 1))
     }
 
+    // MARK: The mid-run refresh (docs/design/1.4-cloudkit.md §17)
+
+    /// `refreshListing` reads what the feed has and nothing of the run start: another device's file is listed, the run's
+    /// storage-full flag stays, the once-per-run sweep is not armed again, and the next `prepareRun` is incremental (one
+    /// token, no full fetch), so the mirror and its token are what a plain run would have left.
+    func testARefreshInTheMiddleOfARunReadsTheFeedOnly() throws {
+        let fx = CloudFixture()
+        let a = try device(fx), b = try device(fx, "B", create: false)
+        try a.prepareRun()
+        try b.prepareRun()
+        _ = try b.makeCollection(["notes"])
+        _ = try b.makeCollection(dir)
+        try put(b, "one.delta.age", Data("1".utf8))
+        let fullBefore = a.diagnostics.fullFetches
+        // A flag a run raised, and a sweep it already did: a refresh must keep the first and not re-arm the second.
+        XCTAssertFalse(a.storageWasFull)
+        try a.refreshListing()
+        XCTAssertEqual(try a.list(dir)?.map(\.name).sorted(), ["one.delta.age"], "listed without a run start")
+        XCTAssertEqual(a.diagnostics.fullFetches, fullBefore, "no full fetch")
+        try put(b, "two.delta.age", Data("2".utf8))
+        try a.prepareRun()
+        XCTAssertEqual(try a.list(dir)?.map(\.name).sorted(), ["one.delta.age", "two.delta.age"])
+        XCTAssertEqual(a.diagnostics.fullFetches, fullBefore, "the next run is incremental")
+    }
+
+    /// A token that expired, or a zone that went, mid-run: the refresh resets nothing (no full fetch a stop could not reach).
+    func testARefreshDoesNotResetTheMirrorWhenTheTokenExpires() throws {
+        let fx = CloudFixture()
+        let a = try device(fx)
+        try a.prepareRun()
+        try put(a, "one.delta.age", Data("1".utf8))
+        fx.database.faults = { let f = CloudFaults(seed: 1); f.script(.fetchChanges, .error(CloudStoreError(.changeTokenExpired, "expired"))); return f }()
+        try a.refreshListing()
+        fx.database.faults = nil
+        XCTAssertEqual(try a.list(dir)?.map(\.name), ["one.delta.age"], "the mirror is as it was")
+    }
+
     // MARK: A feed cut short keeps what it read (join checks on a large zone)
 
     /// The first feed of a large zone is cut (a stop, a kill): the mirror and token are saved with a marker, the next run continues

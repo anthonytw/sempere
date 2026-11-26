@@ -44,6 +44,8 @@ final class CloudRemoteCore: @unchecked Sendable {
     /// A sweep is due on the first write or delete of this run (never from `prepareRun`: a pull-only, held or dry run
     /// must not change the server, and only writes and deletes reach the gate that stops them).
     var sweepDue = false
+    /// When a mid-run feed last saved the mirror (`readFeed(midRun:)`).
+    var lastMidRunSave = Date.distantPast
     /// The account is full: uploads stop for the rest of the run (design §4).
     var quotaFull = false
     var diagnostics = CloudRemoteDiagnostics()
@@ -269,12 +271,33 @@ public struct CloudRecordRemote: SyncRemote {
 
     // MARK: The run model: the mirror, brought up to date (design §3.1)
 
-    public func prepareRun() throws {
+    public func prepareRun() throws { try readFeed(midRun: false) }
+
+    /// The feed read again in the middle of a run (`SyncRemote.refreshListing`): pages only. The run-start work stays with
+    /// `prepareRun` (the account check, the storage-full flag, the once-per-run sweep, the full save); an account that changed
+    /// shows as the feed's own error, a token that expired or a zone that went is left to the next run (nothing is reset here, so no
+    /// full re-read starts that a stop could not reach), and the mirror is saved only when pages brought changes, at most every
+    /// `midRunSaveInterval`.
+    public func refreshListing() throws { try readFeed(midRun: true) }
+
+    /// The least time between two mid-run saves of the mirror.
+    static let midRunSaveInterval: TimeInterval = 30
+
+    private func readFeed(midRun: Bool) throws {
         try checkInterrupt()
-        let acct = try perform { try store.account() }
-        guard acct.status == .available else { throw CloudRecordError.account(acct.status) }
-        if let expected = core.expectedUser, let user = acct.userHash, user != expected { throw CloudRecordError.otherAccount }
+        if !midRun {
+            let acct = try perform { try store.account() }
+            guard acct.status == .available else { throw CloudRecordError.account(acct.status) }
+            if let expected = core.expectedUser, let user = acct.userHash, user != expected { throw CloudRecordError.otherAccount }
+        }
         loadMirrorIfNeeded()
+        var anyChange = false
+        defer {
+            if midRun, anyChange {
+                let due = core.locked { Date().timeIntervalSince(core.lastMidRunSave) >= Self.midRunSaveInterval }
+                if due { persistMirror(); core.locked { core.lastMidRunSave = Date() } }
+            }
+        }
 
         var changedPaths: [[String]] = []
         var hintOverflow = false
@@ -283,7 +306,7 @@ public struct CloudRecordRemote: SyncRemote {
         // A feed that never ends is a failure, not work: pages and records seen are bounded, and a page that says more
         // is coming must move the token.
         var pages = 0, seen = 0
-        core.locked { core.quotaFull = false }
+        if !midRun { core.locked { core.quotaFull = false } }
         // A feed cut short (a stop, an error, a killed process) keeps what it read: the mirror and its token are saved while the feed
         // goes (at most every `feedSaveInterval`) and when it is cut, so the next run continues from there instead of reading the whole
         // zone again, which a vault of tens of thousands of records never finishes inside a short run (a join check). The saved mirror
@@ -292,7 +315,7 @@ public struct CloudRecordRemote: SyncRemote {
         var lastSaved = Date()
         var saveInterval = Self.feedSaveInterval
         var finished = false
-        defer { if !finished, core.with({ $0.token != nil }) { persistMirror(partial: true) } }
+        defer { if !midRun, !finished, core.with({ $0.token != nil }) { persistMirror(partial: true) } }
         fetching: while true {
             pages += 1
             guard pages <= 100_000 else { throw CloudRecordError.corrupt(path: "zone feed", reason: "more than 100000 pages") }
@@ -303,12 +326,16 @@ public struct CloudRecordRemote: SyncRemote {
             } catch let e as CloudStoreError {
                 switch e.code {
                 case .zoneNotFound, .userDeletedZone:
+                    // Mid-run, nothing is reset: the next run's feed finds it, and the pass stops the run.
+                    if midRun { throw CloudRecordError.zoneGone(userDeleted: e.code == .userDeletedZone) }
                     // Gone: nothing is held, and `list([])` says so (`checkAbsentBase` decides what that means).
                     if e.code == .userDeletedZone { core.locked { core.userDeletedZone = true } }
                     core.with { $0.reset(zoneExists: false) }
                     persistMirror()
                     finished = true
                     core.locked { core.prepared = true }
+                    return
+                case .changeTokenExpired where midRun:
                     return
                 case .changeTokenExpired where expired < 2:
                     expired += 1
@@ -319,6 +346,7 @@ public struct CloudRecordRemote: SyncRemote {
                 }
             }
             seen += page.changed.count + page.deleted.count
+            if !page.changed.isEmpty || !page.deleted.isEmpty { anyChange = true }
             if seen > layout.maxRecords + 100_000 { throw CloudRecordError.tooManyRecords(layout.maxRecords) }
             if page.moreComing, page.token == token { throw CloudRecordError.corrupt(path: "zone feed", reason: "the change token did not advance") }
             for r in page.changed { noteServerTime(r.modified) }
@@ -354,7 +382,7 @@ public struct CloudRecordRemote: SyncRemote {
             }
             if !skips.isEmpty { core.locked { for (k, v) in skips { core.diagnostics.skipped[k, default: 0] += v } } }
             if !page.moreComing { break }
-            if Date().timeIntervalSince(lastSaved) >= saveInterval {
+            if !midRun, Date().timeIntervalSince(lastSaved) >= saveInterval {
                 let began = Date()
                 persistMirror(partial: true)
                 lastSaved = Date()
@@ -367,8 +395,10 @@ public struct CloudRecordRemote: SyncRemote {
         core.locked {
             core.diagnostics.newerSchemaFiles = core.mirror.files.values.filter { $0.isNewer && !$0.tomb }.count
         }
-        persistMirror()
-        core.locked { core.prepared = true; core.sweepDue = true }
+        if !midRun {
+            persistMirror()
+            core.locked { core.prepared = true; core.sweepDue = true }
+        }
         if hintOverflow { core.yield(.unknown) } else if !changedPaths.isEmpty { core.yield(.paths(changedPaths)) }
     }
 

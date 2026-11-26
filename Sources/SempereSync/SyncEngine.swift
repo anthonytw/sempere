@@ -127,6 +127,10 @@ public struct SyncOptions: Sendable {
     /// revisions) and the uploads of the files the server lacks (`Preupload.swift`;
     /// a note's blobs before its revisions). Deletions and mutable files stay one at a time.
     public var concurrency = TransferPool.defaultWidth
+    /// How often a long run looks at the control files again between its transfers (`ControlPass.swift`): the join
+    /// requests, `vault.json`, `epochs/` and the passphrase copies, so a request or an approval written while the run
+    /// goes is carried within about this long. 0 checks between every batch.
+    public var controlCheckInterval: TimeInterval = 5
     /// Called as the run moves on (`SyncProgress`): from the run's
     /// threads, one call at a time, so it must return quickly.
     public var progress: (@Sendable (SyncProgress) -> Void)?
@@ -353,6 +357,11 @@ public final class SyncEngine {
     var detachedPending: [Data: (why: String, seen: Date)] = [:]
     /// True once this run took a later epoch's `vault.json`: the vault is reopened, pinned and caught up.
     var epochTaken = false
+    /// The control files are being looked at again in the middle of a run (`controlPassIfDue`): `vault.json` is only
+    /// pushed or, for a joining device, its approval taken; nothing that changes epochs or keys.
+    var midRunControl = false
+    /// When the control files were last looked at (the start of the notes, then each pass).
+    var lastControlPass = Date.distantPast
     /// What the run met about device changes (`SyncReport.epoch`).
     var epochStatus = SyncReport.EpochStatus()
     /// The remote `vault.json` as this run read it (for the `keys/` deletion rule).
@@ -660,6 +669,7 @@ public final class SyncEngine {
         }
         controlFilesDone()
         prepareReplacements()
+        lastControlPass = Date()
 
         // Notebook records (format.md §14): write-once, so the union of both sides.
         // A run bound reached here stops the run like one reached in the notes below: reported (`stoppedEarly`),
@@ -713,7 +723,10 @@ public final class SyncEngine {
             if !options.dryRun && !options.pushOnly { try prefetchDownloads(remoteNotes) }
             if !options.dryRun { try preuploadNewFiles(remoteNotes, localNotes: localNotes) }
             updateProgress { $0.stage = .syncingNotes; $0.notesTotal = all.count }
-            for id in order { try syncNoteOfLoop(id, remoteEntries: remoteNotes[id]) }
+            for id in order {
+                try controlPassIfDue()
+                try syncNoteOfLoop(id, remoteEntries: remoteNotes[id])
+            }
             finishNoteStamps(notes: all.union(notesNotReadable))
             }
         } catch let e as SyncError where e.isRunLimit {
@@ -968,8 +981,8 @@ public final class SyncEngine {
 
     func syncMutable(_ name: String, remote: RemoteEntry?) throws {
         // A later epoch seen on another target whose record has arrived since is taken first (KH4).
-        if name == Vault.manifestName { try takeSettledSightings() }
-        defer { if name == Vault.manifestName { applyDetachedHolds() } }
+        if name == Vault.manifestName, !midRunControl { try takeSettledSightings() }
+        defer { if name == Vault.manifestName, !midRunControl { applyDetachedHolds() } }
         let local = try localMutable(name)
         let record = state.mutable[name]
 
@@ -1013,8 +1026,10 @@ public final class SyncEngine {
         if name == Vault.manifestName {
             remoteManifestData = remoteData
             targetEpochId = Self.epochOf(remoteData)?.epochId
-            refreshDetachedSightings(remoteData)
-            applyDetachedHolds()
+            if !midRunControl {
+                refreshDetachedSightings(remoteData)
+                applyDetachedHolds()
+            }
         }
         if remoteHash == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: stamp)
@@ -1025,6 +1040,9 @@ public final class SyncEngine {
            Vault.isJoinApproval(remoteData, local: local, identities: options.firstPullIdentities, unconfirmed: joinUnconfirmed(local)) {
             return try accept(name, remoteData, stamp: stamp)
         }
+        // In the middle of a run only this device's own change goes out: whatever the server's copy changed (another
+        // epoch, another device's list) is judged by the next run, before the notes (`ControlPass.swift`).
+        if midRunControl, name == Vault.manifestName, Self.otherEpochs(local, remoteData) { return }
         // Another epoch on the remote (KH4): judged by the device-change rules, never by which side moved.
         if name == Vault.manifestName, Self.otherEpochs(local, remoteData) {
             return try syncManifestAcrossEpochs(local: local, remoteData: remoteData, stamp: stamp,
@@ -1032,6 +1050,7 @@ public final class SyncEngine {
         }
         let localChanged = record.map { $0.hash != localHash } ?? true
         let remoteChanged = record.map { $0.hash != remoteHash } ?? true
+        if midRunControl, remoteChanged { return }
         switch (localChanged, remoteChanged) {
         case (false, _):
             // Only the server moved on: take it (an atomic replace, the one in-place write sync makes).

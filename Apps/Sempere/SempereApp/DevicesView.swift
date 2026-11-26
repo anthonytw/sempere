@@ -17,6 +17,8 @@ struct DevicesView: View {
     @State private var replacingKit = false
     @State private var addingCopy = false
     @State private var addingDevice = false
+    /// Add Device on a device that is not home: the notice that only the home device approves (no waiting sheet).
+    @State private var notHomeNotice = false
     @State private var takingOver = false
     @State private var reencrypting = false
     @State private var reencryptProgress = false
@@ -166,6 +168,17 @@ struct DevicesView: View {
             if s.thisIsHome {
                 Button("Add Device…", systemImage: "plus.circle") { addingDevice = true }
                     .accessibilityIdentifier("devices.add")
+            } else {
+                // Not home: a new device can only be approved on the home device, so there is no sheet to wait in.
+                Button("Add Device…", systemImage: "plus.circle") { notHomeNotice = true }
+                    .accessibilityIdentifier("devices.add")
+                    .alert("Only “\(s.homeName ?? String(localized: "the device that manages devices"))” can approve new devices",
+                           isPresented: $notHomeNotice) {
+                        Button("OK", role: .cancel) {}
+                    } message: {
+                        Text("Open Sempere on that device and choose Add Device there. The new device's request, and the approval, find their way through the vault's sync target.",
+                             comment: "Alert on a device that is not home, after Add Device")
+                    }
             }
         } header: {
             Text("Devices")
