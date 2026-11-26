@@ -663,6 +663,11 @@ public final class AppModelCore<Host: AppModelHost> {
     public internal(set) var nearbyApproving: NearbyApproverStatus = .off
     /// The join screen's side of the nearby link (`startNearbyJoin`).
     public internal(set) var nearbyJoining: NearbyJoinStatus = .off
+    @ObservationIgnored let joinDeliveryMemory = JoinDeliveryMemory()
+    /// The last error of a failed attempt at a device nearby, while `nearbyJoining` counts failures (diagnostics; nil when none).
+    public internal(set) var nearbyJoinError: String?
+    /// A nearby connection failed on home before its request was in: Add Device says so for a while, then it clears.
+    public internal(set) var nearbyLinkDroppedNotice = false
     /// The home device's name, for Add Device's line on a device that cannot approve (`NearbyApproverStatus.notHome`).
     public internal(set) var nearbyHomeName: String?
     /// Requests that came nearby while Add Device shows, in memory only, listed with the synced ones (at most
@@ -674,6 +679,13 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored let nearby = NearbyJoinRuntime()
     /// How long nearby sessions wait (tests shorten it).
     @ObservationIgnored var nearbyTimeouts = NearbyJoin.Timeouts.standard
+    /// Failures in a row at a device found before the join screen says nearby did not work (`NearbyJoinStatus.unreached`),
+    /// and the same by time: found for this long, never connected. Nothing found for `nearbyNotSeenAfter`: `.notSeen`. Tests shorten them.
+    @ObservationIgnored var nearbyUnreachedFailures = 4
+    @ObservationIgnored var nearbyUnreachedAfter: Duration = .seconds(30)
+    @ObservationIgnored var nearbyNotSeenAfter: Duration = .seconds(30)
+    /// How long Add Device keeps its "link dropped" line.
+    @ObservationIgnored var nearbyLinkDroppedFor: Duration = .seconds(20)
     /// How long the join screen waits before trying a nearby device again (tests shorten it).
     @ObservationIgnored var nearbyRetry: Duration = .seconds(2)
     /// Each target's run before a device change is bounded by this (design §5.2 step 2); tests shorten it.

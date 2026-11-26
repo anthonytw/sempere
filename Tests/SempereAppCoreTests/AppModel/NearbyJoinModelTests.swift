@@ -540,6 +540,50 @@ extension AppModelSuites {
             #expect(NearbyJoinRuntime.restartDelay(base: .seconds(90), failures: 3) == .seconds(90))
         }
 
+        /// 2026-11-26: over a slow link home's request limit ended every session before the request was in, and the join
+        /// screen dialed again and again without ever saying nearby had failed (it only came through iCloud). Now it
+        /// counts the failures, keeps the last error, says so after a few, and keeps trying with a longer wait each time.
+        @Test func aLinkTooSlowForHomeEndsInUnreachedAndKeepsTrying() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.nearbyTimeouts = NearbyJoin.Timeouts(handshake: .seconds(3), session: .seconds(20), request: .milliseconds(100))
+            w.home.model.nearbyLinkDroppedFor = .seconds(30)
+            let slow = SlowOpenTransport(w.link, delay: .milliseconds(300))
+            w.pad.model.nearbyTransport = slow
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            approval.startNearby()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(20)) { w.pad.model.nearbyJoining == .unreached })
+            #expect(slow.opens >= w.pad.model.nearbyUnreachedFailures)
+            #expect(w.pad.model.nearbyJoinError != nil, "the last error is kept")
+            #expect(w.home.model.nearbyLinkDroppedNotice, "home's Add Device says a device tried and the link dropped")
+            #expect(w.home.model.nearbyRequests.isEmpty)
+            // Still trying in the background.
+            let before = slow.opens
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { slow.opens > before })
+            // A link that works clears the state (home's limit is realistic again).
+            w.home.model.nearbyTimeouts = NearbyJoin.Timeouts(handshake: .seconds(3), session: .seconds(20))
+            w.pad.model.nearbyTransport = w.link
+            #expect(await TS.waitUntil(timeout: .seconds(40)) { w.pad.model.nearbyJoining == .connected })
+            #expect(w.pad.model.nearbyJoinError == nil)
+            #expect(w.home.model.nearbyLinkDroppedNotice == false, "cleared once a request arrives")
+            approval.close()
+        }
+
+        /// A device found that never answers within the time limit is unreached by time too; a peer set that stays empty is
+        /// `notSeen`, and a device that shows up clears it.
+        @Test func nothingFoundForAWhileSaysHomeMustHaveAddDeviceOpen() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.pad.model.nearbyNotSeenAfter = .milliseconds(200)
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .notSeen })
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            approval.startNearby()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+            approval.close()
+        }
+
         /// A decision for a session torn down since (another token) changes nothing of the session going now.
         @Test func aDecisionNeedsTheSessionsToken() {
             let runtime = NearbyJoinRuntime()
@@ -588,4 +632,43 @@ final class NearbyPeerBox: @unchecked Sendable {
     private var peers: [NearbyPeer] = []
     func set(_ p: [NearbyPeer]) { lock.lock(); peers = p; lock.unlock() }
     func get() -> [NearbyPeer] { lock.lock(); defer { lock.unlock() }; return peers }
+}
+
+/// A transport whose connections the joining device opens send slowly (every send waits `delay` first), as a weak
+/// peer-to-peer Wi-Fi link does; counts the dials. Everything else is the inner transport's.
+final class SlowOpenTransport: NearbyJoinTransport, @unchecked Sendable {
+    let inner: MemoryNearbyTransport
+    let delay: Duration
+    private let lock = NSLock()
+    private var count = 0
+
+    init(_ inner: MemoryNearbyTransport, delay: Duration) { self.inner = inner; self.delay = delay }
+
+    var opens: Int { lock.withLock { count } }
+
+    func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void, onReady: @escaping @Sendable () -> Void,
+                   onFailure: @escaping @Sendable () -> Void) throws -> any NearbyActivity {
+        try inner.advertise(accept: accept, onReady: onReady, onFailure: onFailure)
+    }
+
+    func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void, onReady: @escaping @Sendable () -> Void,
+                onFailure: @escaping @Sendable () -> Void) -> any NearbyActivity {
+        inner.browse(found: found, onReady: onReady, onFailure: onFailure)
+    }
+
+    func open(_ peer: NearbyPeer) async throws -> any NearbyJoinConnection {
+        lock.withLock { count += 1 }
+        return Slow(try await inner.open(peer), delay: delay)
+    }
+
+    final class Slow: NearbyJoinConnection, @unchecked Sendable {
+        let base: any NearbyJoinConnection
+        let delay: Duration
+        init(_ base: any NearbyJoinConnection, delay: Duration) { self.base = base; self.delay = delay }
+        func send(_ data: Data) async throws { try await Task.sleep(for: delay); try await base.send(data) }
+        func receive(maximum: Int) async throws -> Data { try await base.receive(maximum: maximum) }
+        func cancel() { base.cancel() }
+        func abort() { base.abort() }
+        var remoteHost: String? { base.remoteHost }
+    }
 }

@@ -3920,6 +3920,19 @@
         }
       }
     },
+    "A device nearby tried to connect, but the link dropped. It will try again." : {
+      "comment" : "Add Device: a nearby connection failed before its request arrived",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un dispositivo cercano intentó conectarse, pero se cortó el enlace. Volverá a intentarlo."
+          }
+        }
+      }
+    },
     "A folder in iCloud Drive, on a drive or a share." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -8139,6 +8152,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido transcribir la grabación: %@"
+          }
+        }
+      }
+    },
+    "Couldn't connect to your device nearby. Still waiting for the request to arrive through sync." : {
+      "comment" : "Join screen: the direct link keeps failing; the sync target is the way now",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo conectar con tu dispositivo cercano. Seguimos esperando a que la solicitud llegue por la sincronización."
           }
         }
       }
@@ -15173,6 +15199,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ningún dispositivo guarda la clave de recuperación: escríbela o pégala desde el kit impreso. Debe ser el kit actual: tras Reemplazar el kit, el nuevo. Si has perdido el kit, reemplázalo y añade allí la copia con frase."
+          }
+        }
+      }
+    },
+    "No device nearby yet. The device that manages devices must have Add Device open, with Local Network allowed." : {
+      "comment" : "Join screen: nothing found nearby for a while",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay ningún dispositivo cerca. El dispositivo que gestiona los dispositivos debe tener abierto Añadir dispositivo, con la red local permitida."
           }
         }
       }

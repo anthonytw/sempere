@@ -418,7 +418,7 @@ struct AddDeviceSheet: View {
                             .accessibilityIdentifier("addDevice.looking")
                         }
                         // The direct link (docs/design/nearby-join.md): a device nearby sends its request here at once.
-                        if let nearby = model.nearbyApproving.text(homeName: model.nearbyHomeName) {
+                        if let nearby = model.nearbyApproving.text(homeName: model.nearbyHomeName, linkDropped: model.nearbyLinkDroppedNotice) {
                             Label(nearby, systemImage: "antenna.radiowaves.left.and.right")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)

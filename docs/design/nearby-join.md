@@ -74,7 +74,7 @@ sequenceDiagram
 - **The reply**: `sempere-nearby-reply/1\n ‖ lp(nonce) ‖ lp(c) ‖ lp(vault.json) ‖ lp(record name) ‖ lp(record)`,
   encrypted with age to the request's `age1pq1…` key (X-Wing, as the wraps in `vault.json`). Fields are bounded
   (`vault.json` 16 MiB, record 8 MiB, an exact epoch-record name).
-- **Timeouts**: every read and every send is timed. On home's side one short limit (3 seconds,
+- **Timeouts**: every read and every send is timed. On home's side one short limit (15 seconds,
   `NearbyJoin.Timeouts.request`) covers the `hello` and the `request` together, from the connection. The handshake
   limit (10 seconds) covers each frame *header* on the new device's side (its first answer's body too, a few bytes),
   and home's `proof`, `waiting` and refusals; frame *bodies* toward the new device (a reply of megabytes) and home's
