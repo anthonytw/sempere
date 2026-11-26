@@ -988,3 +988,149 @@ struct SyncSessionSinceTests {
         session.stop()
     }
 }
+
+/// TestFlight 1.4.0 (117): "Uploading X of M" restarted at every join check, and the status flashed between "syncing" and another
+/// line each time a join check stopped the run going. One upload is one count across its runs, and a run stopped for a join check
+/// hands over to the next with the status still "syncing".
+@MainActor
+struct SyncSessionUploadContinuityTests {
+    /// What the status said, sampled from the main actor while the test drives the session.
+    final class Samples: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _kinds: [String] = []
+        var kinds: [String] { lock.withLock { _kinds } }
+        func add(_ k: String) { lock.withLock { _kinds.append(k) } }
+    }
+
+    /// Waits for the relay to hand the run's progress to the main actor, then reads the status line's count.
+    private static func movement(_ session: SyncSession?) async throws -> SyncStatus.Movement? {
+        for _ in 0..<400 {
+            if await MainActor.run(body: { session?.runProgress != nil }) { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        return await MainActor.run { session?.status.movement }
+    }
+
+    @Test func theCountCarriesAcrossRunsAJoinCheckStops() async throws {
+        let confirmed = Sync.Counter(), runs = Sync.Counter()
+        let seen = SyncSessionProgressTests.Seen()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            let n = runs.add(1)
+            var p = SyncProgress()
+            p.stage = .syncingNotes
+            if n == 1 {
+                p.uploaded = 30
+                _ = confirmed.add(30)
+                request.progress?(p)
+                for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
+                var report = SyncReport()
+                report.stopReason = .cancelled
+                return report
+            }
+            // The join check's run: ten files up, five the server held already (found in step, never sent).
+            p.uploaded = 10
+            p.adopted = 5
+            _ = confirmed.add(15)
+            request.progress?(p)
+            seen.movement = try await SyncSessionUploadContinuityTests.movement(seen.session)
+            return SyncReport()
+        }, countUnconfirmed: { 100 - confirmed.value })
+        seen.session = session
+        session.kind = .cloudkit
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where runs.value == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        _ = await session.syncForJoinCheck()
+        _ = await long.value
+        #expect(seen.movement == .uploading(done: 45, of: 100), "30 before, then 10 sent and 5 found: not 15 of 100")
+        session.stop()
+    }
+
+    @Test func theCountNeverPassesItsTotalAndEndsWithTheUpload() async throws {
+        let confirmed = Sync.Counter()
+        let seen = SyncSessionProgressTests.Seen()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            var p = SyncProgress()
+            p.stage = .syncingNotes
+            p.uploaded = 8
+            p.adopted = 4   // 12 moved, 10 were counted as waiting (notes written meanwhile)
+            _ = confirmed.add(10)
+            request.progress?(p)
+            seen.movement = try await SyncSessionUploadContinuityTests.movement(seen.session)
+            return SyncReport()
+        }, countUnconfirmed: { 10 - confirmed.value })
+        seen.session = session
+        session.kind = .cloudkit
+        session.vaultUnlocked()
+        _ = await session.syncNow()
+        #expect(seen.movement == .uploading(done: 12, of: nil), "no total rather than 12 of 10")
+        #expect(session.unconfirmed == 0)
+        #expect(session.status.uploadTotal == 0 && session.status.uploadDoneBefore == 0, "the next upload starts from nothing")
+        session.stop()
+    }
+
+    @Test func aJoinCheckMidRunNeverPublishesAKindButSyncing() async throws {
+        let runs = Sync.Counter()
+        let samples = Samples()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            if runs.add(1) == 1 {
+                for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
+                var report = SyncReport()
+                report.stopReason = .cancelled
+                return report
+            }
+            try await Task.sleep(for: .milliseconds(30))
+            return SyncReport()
+        }, countUnconfirmed: { 7 })   // files wait: between runs the bar would say "7 not synced yet"
+        session.kind = .cloudkit
+        session.joinCheckDuration = 0.01
+        session.handoffHold = .seconds(30)
+        // The coordinator's budget can make the next run wait for a slot: a real gap between the stopped run and the join check's.
+        session.admit = { _ in if runs.value >= 1 { try? await Task.sleep(for: .milliseconds(40)) } }
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where runs.value == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        let sampler = Task { @MainActor in
+            while !Task.isCancelled {
+                samples.add("\(session.status.kind)")
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+        }
+        _ = await session.syncForJoinCheck()
+        _ = await long.value
+        sampler.cancel()
+        #expect(runs.value >= 2)
+        #expect(!samples.kinds.isEmpty)
+        #expect(Set(samples.kinds) == ["syncing"], "\(Set(samples.kinds))")
+        session.stop()
+    }
+
+    @Test func theLastProgressStaysThroughTheHandoffAndTheHoldEnds() async throws {
+        let runs = Sync.Counter()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            if runs.add(1) == 1 {
+                var p = SyncProgress()
+                p.stage = .syncingNotes
+                p.uploaded = 3
+                request.progress?(p)
+                for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
+                var report = SyncReport()
+                report.stopReason = .cancelled
+                return report
+            }
+            return SyncReport()
+        }, countUnconfirmed: { 9 })
+        session.kind = .cloudkit
+        session.handoffHold = .milliseconds(100)
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where runs.value == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<400 where session.runProgress == nil { try await Task.sleep(for: .milliseconds(5)) }
+        session.interruptRun()
+        _ = await long.value
+        #expect(session.status.kind == .syncing && session.runProgress?.uploaded == 3, "between runs: still syncing, progress kept")
+        #expect(await Sync.waitUntil(timeout: .seconds(5)) { session.status.kind != .syncing })
+        #expect(session.runProgress == nil, "no run followed: the hold ends and the line goes")
+        session.stop()
+    }
+}

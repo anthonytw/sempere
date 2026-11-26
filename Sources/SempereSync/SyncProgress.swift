@@ -38,6 +38,9 @@ public struct SyncProgress: Codable, Hashable, Sendable {
     public var bytesTotal: Int64 = 0
     /// Files uploaded so far.
     public var uploaded = 0
+    /// Revisions the server already held, byte for byte, that the run recorded as in step without uploading them (an earlier run
+    /// sent them, or another device did): done as far as an upload count goes, though nothing was sent.
+    public var adopted = 0
 
     public init() {}
 

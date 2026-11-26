@@ -1654,18 +1654,21 @@ public final class SyncEngine {
                 if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
             }
         }
+        var adopted = 0
         for n in shared {
             let k = key(id, n)
             // The target's version tag when both sides were last known equal: moved on only when this run
             // established that (a comparison or a replacement); a first sighting takes the listing's.
             let (rewritten, placed) = locked { (remoteRewritten.contains(k), placedShas[k]) }
             let old = state.files[k]
+            if old == nil, placed == nil { adopted += 1 }
             let stamp = rewritten ? nil : (placed != nil ? entries[n]?.stamp : (old?.stamp ?? entries[n]?.stamp))
             state.files[k] = SyncState.FileRecord(included: coverage[n] ?? old?.included, sha256: placed ?? old?.sha256,
                                                   stamp: stamp)
             // In step on both sides again: no longer a settled deletion.
             state.thinned?[k] = nil
         }
+        if adopted > 0 { updateProgress { $0.adopted += adopted } }
         for n in S where !L.contains(n) && !R.contains(n) {
             state.files[key(id, n)] = nil
             state.sizelessChecked?[key(id, n)] = nil
