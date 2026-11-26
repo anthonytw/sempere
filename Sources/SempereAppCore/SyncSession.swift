@@ -146,6 +146,9 @@ public final class SyncSession {
     /// How many of `runUploadTotal` the runs before the one going have confirmed (uploaded, or found on the target already). The
     /// "done" of the status line is this plus what the run going moved (`SyncStatus.movement`).
     @ObservationIgnored private var uploadDoneBefore = 0
+    /// `uploadDoneBefore` as the run going began, and whether that run ended whole (not cut short): see `endUploadStep`.
+    @ObservationIgnored private var doneAtRunStart = 0
+    @ObservationIgnored private var runEndedWhole = false
     /// A run was stopped to make way for the next one (a join check) and the status stays "syncing" until that one starts (or
     /// `handoffHold` passes): the bar never says "continuing" or "not synced yet" for the moment between them.
     private(set) var syncHandoff = false
@@ -497,6 +500,10 @@ public final class SyncSession {
             // The "of M" of an upload: the count must be in before the run starts (a new target's first run starts before it).
             if let startCount { await startCount.value } else if !counted { unconfirmed = await countUnconfirmed(); counted = true }
             beginUploadRun()
+            runEndedWhole = false
+            // The status may stay "syncing" for the next run only after a normal stop or our own interrupt, never after a failure
+            // (an offline upload must show its failure, not "syncing" for the hold).
+            var mayHandOff = false
             let relay = WebDAVProgressRelay { [weak self] in self?.runProgress = $0 }
             var request = request
             request.progress = { relay.send($0) }
@@ -504,7 +511,7 @@ public final class SyncSession {
                 relay.close()
                 // Another run follows at once when this one was stopped for it, or was a join check with files left: the status
                 // stays "syncing", and the last progress stays until that run publishes its own.
-                if interruptedByUs(own, cancel) || (joinWindow != nil && (unconfirmed > 0 || continuing)) {
+                if mayHandOff, interruptedByUs(own, cancel) || (joinWindow != nil && (unconfirmed > 0 || continuing)) {
                     holdSyncingForNextRun()
                 } else {
                     runProgress = nil
@@ -554,6 +561,8 @@ public final class SyncSession {
                     onSuccess(lastSuccess ?? now())
                 }
                 if mode == .twoWay, let changes = report.changed, !changes.isEmpty { onChanges(changes) }
+                runEndedWhole = !assessed.cutShort
+                mayHandOff = assessed.problems.isEmpty
                 await recount()
                 return report
             } catch is CancellationError {
@@ -563,6 +572,7 @@ public final class SyncSession {
                 // Thrown rather than reported: the same neutral stop (`interruptRun`).
                 continuing = true
                 schedule.finished(at: now(), success: true, changed: true)
+                mayHandOff = true
                 await recount()
                 return nil
             } catch let e as any DeviceUnlockWaiting where e.waitsForDeviceUnlock {
@@ -618,12 +628,16 @@ public final class SyncSession {
     /// The count of an upload when a run starts: a new upload takes what is unconfirmed as its total; one going on keeps its total
     /// and what it has done (more files only raise the total).
     private func beginUploadRun() {
+        doneAtRunStart = uploadDoneBefore
         runUploadTotal = max(runUploadTotal, uploadDoneBefore + unconfirmed)
     }
 
-    /// After a run: what the target confirmed is what the copy no longer counts as unconfirmed. At zero the upload is over.
+    /// After a run: what the target confirmed is what the copy no longer counts as unconfirmed. At zero the upload is over; so it
+    /// is after a run that ended whole (not cut short, `runEndedWhole`) with files still unconfirmed: those never confirm in this
+    /// run (an epoch hold, a full account, a refused file), and every later run would show "Uploading 99 of 100". The count is
+    /// carried only across runs that were cut short.
     private func endUploadStep() {
-        if unconfirmed == 0 {
+        if unconfirmed == 0 || runEndedWhole {
             runUploadTotal = 0
             uploadDoneBefore = 0
         } else {
@@ -631,7 +645,15 @@ public final class SyncSession {
         }
     }
 
+    /// The run's progress stays on the status line through the handoff, but what it moved is folded into `uploadDoneBefore` (never
+    /// below what the line showed), so the line adds it once, not twice, and never goes back.
     private func holdSyncingForNextRun() {
+        if var held = runProgress {
+            if !runEndedWhole { uploadDoneBefore = max(uploadDoneBefore, doneAtRunStart + held.uploaded + held.adopted) }
+            held.uploaded = 0
+            held.adopted = 0
+            runProgress = held
+        }
         syncHandoff = true
         handoffGeneration += 1
         let generation = handoffGeneration, hold = handoffHold

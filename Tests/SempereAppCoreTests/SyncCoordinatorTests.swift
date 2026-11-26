@@ -1105,6 +1105,81 @@ struct SyncSessionUploadContinuityTests {
         session.stop()
     }
 
+    /// Review of batch/120, finding 2: the run's uploads were in `uploadDoneBefore` (the recount) and still in the held progress, so the
+    /// line between two runs said 60 of 100 for 30 files.
+    @Test func theCountIsNotDoubledThroughAJoinCheckHandoff() async throws {
+        let confirmed = Sync.Counter(), runs = Sync.Counter()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            guard runs.add(1) == 1 else { return SyncReport() }
+            var p = SyncProgress()
+            p.stage = .syncingNotes
+            p.uploaded = 30
+            _ = confirmed.add(30)
+            request.progress?(p)
+            for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
+            var report = SyncReport()
+            report.stopReason = .cancelled
+            return report
+        }, countUnconfirmed: { 100 - confirmed.value })
+        session.kind = .cloudkit
+        session.handoffHold = .seconds(30)
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where runs.value == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<400 where session.runProgress == nil { try await Task.sleep(for: .milliseconds(5)) }
+        let during = session.status.movement
+        session.interruptRun()
+        _ = await long.value
+        #expect(during == .uploading(done: 30, of: 100))
+        #expect(session.status.kind == .syncing)
+        #expect(session.status.movement == .uploading(done: 30, of: 100), "held: 30 of 100, not 60")
+        session.stop()
+    }
+
+    /// Finding 3: a file that never confirms must not leave every later run saying "Uploading 99 of 100".
+    @Test func theCountEndsWithARunThatFinishedWholeEvenWithFilesUnconfirmed() async throws {
+        let runs = Sync.Counter()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
+            var p = SyncProgress()
+            p.stage = .syncingNotes
+            p.uploaded = 99
+            request.progress?(p)
+            if runs.add(1) == 1 {
+                for _ in 0..<2_000 where request.soft?.isSet != true { try await Task.sleep(for: .milliseconds(5)) }
+                var report = SyncReport()
+                report.stopReason = .cancelled
+                return report
+            }
+            return SyncReport()
+        }, countUnconfirmed: { 1 })   // one file never confirms
+        session.kind = .cloudkit
+        session.vaultUnlocked()
+        let long = Task { await session.syncNow() }
+        for _ in 0..<400 where runs.value == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<400 where session.runProgress == nil { try await Task.sleep(for: .milliseconds(5)) }
+        session.interruptRun()
+        _ = await long.value
+        #expect(session.status.uploadDoneBefore > 0, "cut short: the count is carried")
+        _ = await session.syncNow()
+        #expect(session.status.uploadDoneBefore == 0 && session.status.uploadTotal == 0, "a whole run ends the count")
+        session.stop()
+    }
+
+    /// Finding 4: a run that threw during join checks shows its failure at once, not "syncing" for the hold.
+    @Test func aFailingRunDuringJoinChecksPublishesItsFailure() async throws {
+        struct Boom: Error {}
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { _ in throw Boom() },
+                                  countUnconfirmed: { 5 })
+        session.kind = .cloudkit
+        session.handoffHold = .seconds(30)
+        session.vaultUnlocked()
+        _ = await session.syncForJoinCheck()
+        #expect(session.failure != nil || session.quietFailure != nil, "the failure is recorded")
+        #expect(!session.syncHandoff, "no hold after a failure")
+        #expect(session.status.kind != .syncing, "\(session.status.kind)")
+        session.stop()
+    }
+
     @Test func theLastProgressStaysThroughTheHandoffAndTheHoldEnds() async throws {
         let runs = Sync.Counter()
         let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { request in
@@ -1128,7 +1203,9 @@ struct SyncSessionUploadContinuityTests {
         for _ in 0..<400 where session.runProgress == nil { try await Task.sleep(for: .milliseconds(5)) }
         session.interruptRun()
         _ = await long.value
-        #expect(session.status.kind == .syncing && session.runProgress?.uploaded == 3, "between runs: still syncing, progress kept")
+        #expect(session.status.kind == .syncing, "between runs: still syncing")
+        #expect(session.status.movement == .uploading(done: 3, of: 9), "the count is kept, counted once")
+        #expect(session.runProgress?.uploaded == 0, "what the run moved is in the count, not in the held progress")
         #expect(await Sync.waitUntil(timeout: .seconds(5)) { session.status.kind != .syncing })
         #expect(session.runProgress == nil, "no run followed: the hold ends and the line goes")
         session.stop()
