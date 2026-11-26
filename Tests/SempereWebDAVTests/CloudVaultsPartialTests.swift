@@ -38,7 +38,7 @@ final class CloudVaultsPartialTests: BlobSyncTestCase {
     private func notePath(_ note: UUID) -> String { "notes/\(note.uuidString.lowercased())" }
 
     /// Vault A with `count` notes and a large blob in three of them, uploaded to `db` (a two-way run with its key, as home does).
-    private func zone(_ db: MemoryCloudDatabase, notes count: Int) throws -> (vault: Vault, notes: [UUID], blobs: [String]) {
+    private func zone(_ db: MemoryCloudDatabase, notes count: Int, inbox: Bool = false) throws -> (vault: Vault, notes: [UUID], blobs: [String]) {
         let a = try makeVault("A")
         var ids: [UUID] = [], blobs: [String] = []
         for i in 0..<count {
@@ -55,6 +55,10 @@ final class CloudVaultsPartialTests: BlobSyncTestCase {
             }
             try a.write(Revision(noteId: note, device: devA, seq: seq, hlc: HLC(millis: ms, counter: 0)!,
                                  wall: Date(timeIntervalSince1970: Double(ms) / 1000), app: "test/0", body: .delta(ops: ops)))
+        }
+        if inbox {
+            let writer = try CaptureWriter(profile: try a.captureProfile(device: devA))
+            try CaptureWriter.store(try writer.seal(audio: Data("voice".utf8), started: Date(), id: UUID()), in: a.inboxURL)
         }
         let state = tmp.appendingPathComponent("home/sync-state.json")
         let report = try CloudTargetRun.run(vaultFolder: dir("A"), remote: CloudTargetRun.remote(store: db, vaultId: a.vaultId, stateURL: state, expectedUser: nil),
@@ -130,7 +134,7 @@ final class CloudVaultsPartialTests: BlobSyncTestCase {
     /// A join run on a partial copy (`controlFilesOnly`, the app's CloudKit session) carries the control files and reads no note.
     func testAControlFilesOnlyRunReadsNoNote() throws {
         let db = MemoryCloudDatabase()
-        let (a, notes, _) = try zone(db, notes: 10)
+        let (a, notes, _) = try zone(db, notes: 10, inbox: true)
         let store = ReadRecordingCloudStore(db)
         let folder = tmp.appendingPathComponent("phone/vault.sempere")
         let state = tmp.appendingPathComponent("phone-state/sync-state.json")
@@ -143,12 +147,43 @@ final class CloudVaultsPartialTests: BlobSyncTestCase {
         XCTAssertNil(report.stoppedEarly)
         XCTAssertTrue(store.assetReads.isEmpty)
         XCTAssertTrue(store.payloadFetches.allSatisfy { !$0.hasPrefix("notes/") }, "\(store.payloadFetches)")
+        // Nor the inbox, the device summaries or the insights: a control-files run is the join's, nothing more.
+        XCTAssertTrue(store.payloadFetches.allSatisfy { !$0.hasPrefix(CaptureFile.folderName + "/") && !$0.hasPrefix(PublishedSummaries.deviceFolderName + "/")
+            && !$0.hasPrefix(Vault.insightsName + "/") }, "\(store.payloadFetches)")
+        XCTAssertTrue(store.assetReads.allSatisfy { !$0.contains("inbox") }, "\(store.assetReads)")
         XCTAssertEqual(PartialCopyState.incompleteNotes(folder).count, notes.count)
         o.controlFilesOnly = false
         let rest = try CloudTargetRun.run(vaultFolder: folder, remote: CloudTargetRun.remote(store: store, vaultId: a.vaultId, stateURL: state, expectedUser: nil),
                                           vault: try Vault.open(at: folder, identities: [identity]), stateURL: state, twoWay: true, options: o)
         XCTAssertTrue(rest.errors.isEmpty, "\(rest)")
         XCTAssertFalse(PartialCopy.isPartial(folder), "the next run completes the copy")
+    }
+
+    /// A keyless (joining) run never uploads `vault.json` (review of #88, M1; format.md §2), not even to give a label-less
+    /// server copy the name this side holds ("a name beats none" is for a listed device whose list checks).
+    func testAKeylessRunNeverUploadsTheManifestToGiveItAName() throws {
+        let db = MemoryCloudDatabase()
+        let (a, _, _) = try zone(db, notes: 2)
+        let zoneName = CloudTargetRun.zone(vaultId: a.vaultId)
+        let recordName = CloudRecordNaming.fileName([Vault.manifestName])
+        let before = try XCTUnwrap(db.rawRecord(zone: zoneName, recordName)?.fields.bytes)
+        XCTAssertNil(VaultLabelText.peekLabel(before), "the zone holds no name")
+        let folder = tmp.appendingPathComponent("phone/vault.sempere")
+        try CloudVaults.downloadMetadata(vaultId: a.vaultId, store: db, into: folder, stateURL: tmp.appendingPathComponent("phone-state/sync-state.json"))
+        let url = folder.appendingPathComponent("vault.json")
+        var obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        obj["label"] = "Phone name"
+        try JSONSerialization.data(withJSONObject: obj).write(to: url)
+        XCTAssertNotNil(VaultLabelText.peekLabel(try Data(contentsOf: url)))
+        // A new state: no record of `vault.json`, so both sides count as changed.
+        let fresh = tmp.appendingPathComponent("fresh-state/sync-state.json")
+        var o = SyncOptions(deviceLabel: "phone")
+        o.firstPullIdentities = [identity]
+        let report = try CloudTargetRun.run(vaultFolder: folder, remote: CloudTargetRun.remote(store: db, vaultId: a.vaultId, stateURL: fresh, expectedUser: nil),
+                                            vault: nil, stateURL: fresh, twoWay: true, options: o)
+        XCTAssertFalse(report.uploaded.contains(Vault.manifestName), "\(report)")
+        let after = try XCTUnwrap(db.rawRecord(zone: zoneName, recordName)?.fields.bytes)
+        XCTAssertNil(VaultLabelText.peekLabel(after), "the zone's vault.json was not replaced")
     }
 
     /// A note opened first is fetched alone (the app's `joinFetch`): `LocalCopy.fetch` against the zone, its blobs left as stand-ins.
