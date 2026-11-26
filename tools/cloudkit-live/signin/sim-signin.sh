@@ -7,9 +7,10 @@
 # The Apple ID and its password come from the login keychain (never a file, a command line or the repository):
 #   security find-generic-password -a sempere-test -s sempere-test-apple-id-email -w
 #   security find-generic-password -a sempere-test -s sempere-test-apple-id -w      (SEMPERE_CKL_PW_SERVICE overrides the service)
-# and reach the test only through the environment (xcodebuild forwards TEST_RUNNER_* variables to the test runner). The variable
-# is exported in a subshell only, but it does spread to that subshell's children (app.sh, xcodebuild, the test runner): a process
-# of this user can read it with `ps eww` while the run lasts. Nothing is written to a file or kept.
+# and reach the test through a 0600 file in the run's own TMPDIR (line 1 the Apple ID, the rest the password; made with shell builtins,
+# never an argument). Only its path is in the environment (TEST_RUNNER_CKL_SIGNIN_FILE; xcodebuild forwards TEST_RUNNER_* to the
+# test runner, which, as a simulator process, reads the host path). The test deletes the file as soon as it has read it, and the
+# trap deletes it again, so `ps eww`, the xcodebuild log, the derived data and the simulator's log carry a path, no secret.
 # The simulator's log files are removed afterwards (see below). One wrong password is never repeated: the test stops at the first refusal and this script writes a marker (~/.cache/sempere/,
 # keyed to the keychain item's modification date); later runs refuse (exit 4) until the item is changed.
 # Exit codes: 0 signed in; 3 two-factor code requested (never answered; needs a code from the account's trusted device);
@@ -40,30 +41,32 @@ if [[ -f $marker && $(<"$marker") == "$mdat" ]]; then
   exit 4
 fi
 
-cleanup() { rm -rf "${rb_dir:-}"; rm -f "${log:-}"; run_tmp_end; }
+cleanup() { rm -f "${credfile:-}"; rm -rf "${rb_dir:-}"; rm -f "${log:-}"; run_tmp_end; }
 trap cleanup EXIT
 sim_lock || exit 1
 rb_dir=$(mktemp -d "${TMPDIR:-/tmp}/signin-rb.XXXXXX")   # the result bundle: this run's own, removed above, never the shared Logs/Test
 log=$rb_dir/xcodebuild.log
 rc=0
 pw=$(security find-generic-password -a sempere-test -s "$pw_service" -w)   # a shell variable, not exported
-# Two steps, so the password is in the environment only for the second: xcodebuild saves its whole environment in the derived data
-# (XCBuildData/…/attachments), which a build with the variable set would keep for good. The build gets none of it; the test run
-# (test-without-building, one attempt: no rerun of a refused password) gets it.
+credfile=$rb_dir/credentials
+( umask 077; printf '%s\n%s\n' "$email" "$pw" > "$credfile" )   # builtins only: no argv
+# Two steps: xcodebuild saves its whole environment in the derived data (XCBuildData/…/attachments), so the build gets none of the
+# variables; the test run (test-without-building, one attempt: no rerun of a refused password) gets the file's path.
 derived=${SEMPERE_DERIVED_DATA:-.build/xcode.noindex}
 xb=(-project Apps/Sempere/Sempere.xcodeproj -scheme SempereScreenshots -derivedDataPath "$derived" -destination "platform=iOS Simulator,id=$sim")
 (
-  unset TEST_RUNNER_CKL_SIGNIN_PASSWORD TEST_RUNNER_CKL_SIGNIN_EMAIL SEMPERE_RESULT_BUNDLE
+  unset TEST_RUNNER_CKL_SIGNIN_FILE SEMPERE_RESULT_BUNDLE
   xcodebuild build-for-testing "${xb[@]}" CODE_SIGNING_ALLOWED=NO
 ) >"$log" 2>&1 || rc=$?
 if [[ $rc -eq 0 ]]; then
   (
-    export TEST_RUNNER_CKL_SIGNIN_EMAIL=$email TEST_RUNNER_CKL_SIGNIN_PASSWORD=$pw
+    export TEST_RUNNER_CKL_SIGNIN_FILE=$credfile
     unset SEMPERE_RESULT_BUNDLE
     xcodebuild test-without-building "${xb[@]}" -testLanguage en -testRegion US -parallel-testing-enabled NO \
       -only-testing:SempereAppUITests/CloudKitSimSignInUITests -resultBundlePath "$rb_dir/signin.xcresult" CODE_SIGNING_ALLOWED=NO
   ) >>"$log" 2>&1 || rc=$?
 fi
+rm -f "$credfile"
 # Scrub: nothing of the log may hold the password (bash's own match: the password is never an argument of a process).
 if [[ $(<"$log") == *"$pw"* ]]; then echo "error: the password appears in the xcodebuild log; log withheld" >&2; pw=""; exit 1; fi
 pw=""

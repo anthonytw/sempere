@@ -3,8 +3,8 @@ import XCTest
 /// Tooling, not a check of the app: signs the `sempere-cloudkit` simulator in to the CloudKit test Apple ID again, by driving the
 /// Settings app. The simulator's sign-in expires about daily (cloudd: AuthTokenError 2011) and the live CloudKit suite
 /// (`scripts/app.sh test-cloudkit`) needs it. Run by `tools/cloudkit-live/signin/sim-signin.sh`, which passes the Apple ID and
-/// its password from the login keychain through `TEST_RUNNER_CKL_SIGNIN_EMAIL` / `TEST_RUNNER_CKL_SIGNIN_PASSWORD` (environment
-/// only: never a command line, a file or an attachment; it is typed once, and a refusal stops the run). Without them the test skips, so no gate or sweep ever signs in.
+/// its password from the login keychain through a 0600 file of the run's own TMPDIR whose path is `TEST_RUNNER_CKL_SIGNIN_FILE` (never
+/// a command line, the environment's contents, a file or an attachment; it is typed once, and a refusal stops the run). Without them the test skips, so no gate or sweep ever signs in.
 ///
 /// Both cases are handled: a signed-out account ("Sign in to your iPhone") and an expired token ("Sign in again" / "Apple
 /// Account update" banner or alert). A verification code (two-factor) is never answered: the test fails with a clear message and
@@ -18,11 +18,18 @@ final class CloudKitSimSignInUITests: XCTestCase {
     private var steps: [String] = []
 
     override func setUpWithError() throws {
-        let env = ProcessInfo.processInfo.environment
-        guard let e = env["CKL_SIGNIN_EMAIL"], !e.isEmpty, let p = env["CKL_SIGNIN_PASSWORD"], !p.isEmpty else {
-            throw XCTSkip("tooling: run through tools/cloudkit-live/signin/sim-signin.sh (needs CKL_SIGNIN_EMAIL and CKL_SIGNIN_PASSWORD)")
+        // The credentials are in a 0600 file of the run's own TMPDIR on the host (a simulator process reads host paths): the
+        // environment carries only its path. Line 1 is the Apple ID, the rest is the password. Deleted as soon as it is read.
+        guard let path = ProcessInfo.processInfo.environment["CKL_SIGNIN_FILE"], !path.isEmpty else {
+            throw XCTSkip("tooling: run through tools/cloudkit-live/signin/sim-signin.sh (needs CKL_SIGNIN_FILE)")
         }
-        email = e; password = p
+        let raw = try? String(contentsOfFile: path, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: path)
+        guard let raw, let nl = raw.firstIndex(of: "\n") else { throw XCTSkip("CKL_SIGNIN_FILE is missing or unreadable") }
+        var pw = String(raw[raw.index(after: nl)...])
+        if pw.hasSuffix("\n") { pw.removeLast() }
+        email = String(raw[..<nl]); password = pw
+        guard !email.isEmpty, !password.isEmpty else { throw XCTSkip("CKL_SIGNIN_FILE holds no credentials") }
         continueAfterFailure = false
     }
 

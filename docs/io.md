@@ -1366,8 +1366,9 @@ account makes it exit 77 and say `SKIPPED`, never pass silently. What it does, i
    `run.sh sim-signin`; `tools/cloudkit-live/signin/sim-signin.sh`) and checks once more. The UI test `CloudKitSimSignInUITests`
    drives Settings (alert, then the "Apple Account Password" sheet). The Apple ID and password are read from the login keychain
    (items `sempere-test-apple-id-email` and `sempere-test-apple-id`, account `sempere-test`) into shell variables and reach the
-   test runner only as an environment variable of the test run (not of the build: xcodebuild would save it in the derived data;
-   it is visible to this user's `ps eww` while the run lasts), and the password is typed once. The run keeps no result bundle and no log, its
+   test through a 0600 file in the run's own TMPDIR (made with shell builtins; the test deletes it as soon as it has read it, and
+   the script again), whose path alone is in the environment of the test run (not of the build), so `ps eww`, the xcodebuild log,
+   the derived data and the simulator's log carry no secret; the password is typed once. The run keeps no result bundle and no log, its
    own TMPDIR is removed, the runner is uninstalled from the base simulator, and the base simulator's unified log files (which
    record the runner's launch environment, and which clones would copy) are deleted with it shut down; a canary password found
    nothing else on this Mac. The base simulator is under an `mkdir` lock (`~/.cache/sempere/sim-cloudkit-base.lock`) from the account check to the clone.
